@@ -1,0 +1,66 @@
+export type Printer = {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  protocol: string;
+  printerType: string;
+  state: string;
+  buildVolumeXmm: number | null;
+  buildVolumeYmm: number | null;
+  buildVolumeZmm: number | null;
+};
+
+export type DiscoveredPrinter = {
+  name: string;
+  host: string;
+  port: number;
+  protocol: string;
+  serviceType: string;
+  confidence: number;
+  state: string;
+};
+
+export type PrinterEndpointGroup = {
+  host: string;
+  name: string;
+  inferredType: string;
+  confidence: number;
+  ports: number[];
+  capabilities: string[];
+  endpoints: DiscoveredPrinter[];
+};
+
+export type PrinterScanResult = {
+  summary: {
+    scanRunId: number | null;
+    status: string;
+    durationMs: number;
+    discoveredCount: number;
+    method: string;
+    scannedHostCount: number;
+    probeCount: number;
+  };
+  printers: DiscoveredPrinter[];
+  groups: PrinterEndpointGroup[];
+};
+
+export type PrinterScanSettings = {
+  scanMethod: "combined" | "mdns" | "http_probe";
+  targetCidr: string;
+  maxHosts: number;
+  timeoutSeconds: number;
+  connectTimeoutSeconds: number;
+  ports: string;
+};
+
+export type CreatePrinterInput = {
+  name: string;
+  host: string;
+  port: number;
+  protocol: string;
+  printerType: string;
+  buildVolumeXmm: number | null;
+  buildVolumeYmm: number | null;
+  buildVolumeZmm: number | null;
+};

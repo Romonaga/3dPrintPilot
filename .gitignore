@@ -1,0 +1,28 @@
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+frontend/test-results/
+frontend/playwright-report/
+
+# Environment and local secrets
+.env
+.env.*
+*.secret
+.secrets/
+
+# Logs
+logs/
+*.log
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,2 @@
+"""Resource request schemas."""
+

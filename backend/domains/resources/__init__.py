@@ -1,0 +1,2 @@
+"""Hardware resource API domain."""
+
