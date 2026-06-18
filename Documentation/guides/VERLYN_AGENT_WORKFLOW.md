@@ -104,6 +104,7 @@ verlyn changes activate <change-id>
 verlyn changes refresh-branch <change-id>
 verlyn work-items list <change-id>
 verlyn work-items update <change-id> --creates-json '[{"title":"Add validation"}]'
+verlyn work-items update <change-id> --updates-json '[{"task_id":"<starter-work-item-id>","notes":"Concrete scope and acceptance for this change."}]'
 verlyn work-items update <change-id> --updates-json '[{"task_id":"<work-item-id>","status":"done"}]'
 verlyn reviews record <change-id> --tier 1 --disposition accepted --summary "Reviewed."
 verlyn workflow gate <change-id> --scope delivery
@@ -114,7 +115,32 @@ Creation and activation are separate. A new change starts as draft. Activate it
 before implementation so Verlyn can bind the work branch and enforce the normal
 workflow trail.
 
+`verlyn changes create` also seeds required starter work items. These are
+workflow tickets, not finished task plans. Read them with
+`verlyn work-items list <change-id>`, then flesh them out for the specific
+change before starting work. The first two starter items are tailored to the
+change type, and `Review findings` plus `Finalize handoff` are always included.
+`Review findings` is the required code/task review ticket when no separate
+mandatory human review applies. Use it to confirm the implementation matches
+the change ticket and work items, did not hallucinate behavior, and did not
+make unrelated edits before delivery. Common seeds are:
+
+| Change type | Starter work items |
+|---|---|
+| `feature` or default | `Implement <title>`, `Validate acceptance for <title>`, `Review findings` code/task review, `Finalize handoff` |
+| `bugfix` | `Reproduce and fix <title>`, `Add regression coverage for <title>`, `Review findings` code/task review, `Finalize handoff` |
+| `workflow` | `Implement workflow change for <title>`, `Validate workflow behavior for <title>`, `Review findings` code/task review, `Finalize handoff` |
+| `api` | `Implement API change for <title>`, `Validate contract and acceptance for <title>`, `Review findings` code/task review, `Finalize handoff` |
+| `performance` | `Profile and optimize <title>`, `Validate <title> responsiveness and load behavior`, `Review findings` code/task review, `Finalize handoff` |
+| `refactor` | `Refactor <title>`, `Validate <title> behavior parity`, `Review findings` code/task review, `Finalize handoff` |
+| `architecture` | `Shape architecture change for <title>`, `Validate dependency and workflow impact for <title>`, `Review findings` code/task review, `Finalize handoff` |
+| `security` or `compliance` | `Implement remediation for <title>`, `Validate <title> security posture`, `Review findings` code/task review, `Finalize handoff` |
+
 Use the batchable work-item update command for one or many work-item mutations.
+When seeded starter implementation and validation items are too generic, update
+those existing starter work item IDs in place with concrete scope, acceptance,
+notes, and validation guidance before implementation. Do not add duplicates and
+do not replace the required starter tickets as the normal path.
 Do not create ad hoc local workflow files as durable truth.
 
 For command intent and optional argument meanings, read
@@ -134,16 +160,17 @@ are intentionally bootstrapping or overriding context.
 8. When the change is ready to land without deployment, use `verlyn changes deliver <change-id> --merge-method squash`.
 9. When the change should land and deploy to the configured provider, use `verlyn changes deploy <change-id>`.
 
-Both commands perform the hosted PR closeout step. `deliver` creates or updates
-the pull request, merges it, records closeout, and stops before deployment.
-`deploy` runs that same PR closeout path first, then triggers or monitors the
-configured deployment provider.
+Important: `verlyn changes deliver` and `verlyn changes deploy` both run the
+PR step. Both commands create or update the pull request, merge it, and record
+source-control closeout. Use `deliver` when you want PR closeout only. Use
+`deploy` when you want that same PR closeout followed by provider deployment.
 
 `verlyn changes deliver` is the normal hosted source-control closeout command. It commits local
 dirty work when `--commit-message` is supplied, pushes with Verlyn-managed
 provider credentials, opens or updates the PR, merges it, switches the local
 checkout back to the delivery base branch when local checkout context exists,
-and records closeout. It does not deploy. `verlyn changes deploy <change-id>`
+records closeout, and reconciles safe client-local branch deletion back into
+the change metadata. It does not deploy. `verlyn changes deploy <change-id>`
 runs the same hosted source-control closeout path and then triggers or monitors
 the configured provider. When an already delivered source ref must be deployed,
 pass `--source-ref` and optional `--commit-sha`; Verlyn then resolves that
