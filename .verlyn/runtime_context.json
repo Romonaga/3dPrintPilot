@@ -1,0 +1,34 @@
+{
+  "schema_family": "assistant_runtime_context",
+  "schema_version": 1,
+  "product": "Verlyn",
+  "summary": "Compact assistant/runtime guidance that separates system governance, editable project rules, and the assistant workflow guide.",
+  "file_roles": {
+    "CONTRIBUTING.md": "Authoritative human commit and branch protocol.",
+    "AGENTS.md": "Repo-wide system governance, routing, verification, and completion policy.",
+    ".verlyn/runtime_context.json": "Compact runtime summary for assistants and compressed sessions.",
+    "RULES.md": "Editable project-specific guidance for people and assistants.",
+    "Documentation/guides/VERLYN_AGENT_WORKFLOW.md": "Single assistant workflow guide with startup order, installed CLI commands, session loop, and completion rules."
+  },
+  "startup_read_order": [
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "RULES.md",
+    ".verlyn/runtime_context.json",
+    "Documentation/AI_USAGE_POLICY.md",
+    "Documentation/guides/VERLYN_AGENT_WORKFLOW.md"
+  ],
+  "control_path_priority": [
+    "Installed public verlyn CLI commands",
+    "Web UI workflow surfaces for run creation, onboarding, and settings",
+    "If the installed Verlyn product path is missing or blocked, stop and record a Verlyn workflow blocker instead of bypassing Verlyn"
+  ],
+  "workflow_defaults": [
+    "Treat Verlyn-managed repo binding, changes, work items, reviews, delivery state, and evidence as the active workflow source of truth.",
+    "Read RULES.md for project-owned guidance; it may be empty on fresh installs, and AGENTS.md remains authoritative for system policy.",
+    "After session compaction, compressed-summary recovery, or other resume paths, reread AGENTS.md, RULES.md, .verlyn/runtime_context.json, Documentation/AI_USAGE_POLICY.md, and Documentation/guides/VERLYN_AGENT_WORKFLOW.md before continuing.",
+    "Run verlyn auth status, verlyn workflow assistant-startup --json, and verlyn target show --json after resume so the local CLI identity, edit route, and repo binding are explicit.",
+    "The first user-facing response after compaction or resume must explicitly say that governance was reloaded and required repo rules were reread; hidden command output, receipt files, or web-only indicators are not enough.",
+    "Use Verlyn-managed change/work-item state before manual code edits; use a recorded active change or an explicit direct-work exception instead of relying on memory."
+  ]
+}
