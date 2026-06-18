@@ -28,6 +28,39 @@ If a command cannot resolve the repo without an override, treat that as a
 target/login/binding issue to repair, not as a reason to hard-code overrides in
 normal workflow.
 
+For managed checkout commands, the CLI uses the local target path only to
+validate that the checkout maps to an authorized Verlyn repository. Server
+workflow mutations bind runs, changes, and work items by the canonical Verlyn
+repository identity, not by the developer filesystem path.
+
+## Local Install Command
+
+Downloaded standalone artifacts can install themselves from wherever the user
+extracted them:
+
+```bash
+./verlyn install
+```
+
+On Windows, run the executable from the extracted artifact folder:
+
+```powershell
+.\verlyn.exe install
+```
+
+The command copies the running executable into the per-user install directory
+and persists that directory on PATH unless `--no-update-path` is supplied. It
+does not require administrator rights. On Windows, PATH changes made with
+`setx` apply to new terminals, so open a new PowerShell or Command Prompt and
+verify from another directory:
+
+```bash
+verlyn --version
+```
+
+Use `--dry-run --json` to inspect the planned source executable, destination,
+and PATH entry without changing the machine.
+
 ## Startup Commands
 
 Use these at the beginning of an assistant session:
@@ -73,7 +106,16 @@ verlyn changes next
 
 - `changes create` creates a draft change. `--change-type` and
   `--effort-band` are required so the change can be categorized and planned.
-- `changes show` reads the current durable change record.
+  It also creates required starter work items for the change.
+- `changes show` reads the current durable change record and prints review
+  context: description, proposal sections, acceptance criteria, work items,
+  review/delivery posture, chain/dependency context, and a next action. With
+  `--json`, it returns the sanitized change record plus a structured
+  `review_context` object so agents do not have to scrape prose. When the
+  command runs from a managed checkout, JSON also includes `client_checkout`
+  and preserves the server record as `recorded_branch`; the displayed `branch`
+  object is refreshed with current client head data when it can be matched
+  safely.
 - `changes update` changes metadata such as proposal sections, acceptance
   criteria, priority, dependencies, and owner.
 - `changes activate` starts implementation and binds or creates the governed
@@ -81,33 +123,78 @@ verlyn changes next
 - `changes refresh-branch` repairs or refreshes the bound local work branch.
 - `changes next` asks Verlyn for the next unblocked change in the current chain.
 
+Starter work items are required workflow tickets, but they are only a starting
+point. After creating a change, run `verlyn work-items list <change-id>` and
+flesh out the seeded tasks for the actual scope before implementation,
+validation, review, or handoff. Verlyn always includes `Review findings` and
+`Finalize handoff`; the first two work items vary by `--change-type`.
+`Review findings` is the required code/task review ticket when no separate
+mandatory human review applies. Use it to check for hallucinated behavior,
+scope drift, unrelated edits, and mismatches between the implementation and
+the change ticket/work items before delivery:
+
+| Change type | Seeded first work items |
+|---|---|
+| `feature` or default | `Implement <title>`; `Validate acceptance for <title>` |
+| `bugfix` | `Reproduce and fix <title>`; `Add regression coverage for <title>` |
+| `workflow` | `Implement workflow change for <title>`; `Validate workflow behavior for <title>` |
+| `api` | `Implement API change for <title>`; `Validate contract and acceptance for <title>` |
+| `performance` | `Profile and optimize <title>`; `Validate <title> responsiveness and load behavior` |
+| `refactor` | `Refactor <title>`; `Validate <title> behavior parity` |
+| `architecture` | `Shape architecture change for <title>`; `Validate dependency and workflow impact for <title>` |
+| `security` or `compliance` | `Implement remediation for <title>`; `Validate <title> security posture` |
+
 Work-item commands use JSON arrays so one call can update one or many items:
 
 ```bash
 verlyn work-items list <change-id>
 verlyn work-items update <change-id> --creates-json '[{"title":"Add validation"}]'
+verlyn work-items update <change-id> --updates-json '[{"task_id":"<starter-work-item-id>","notes":"Concrete scope and acceptance for this change."}]'
 verlyn work-items update <change-id> --updates-json '[{"task_id":"<work-item-id>","status":"done"}]'
 ```
 
 Use `--creates-json` for new work items and `--updates-json` for changes to
 existing work items. Each item in the JSON array is one work-item mutation.
+When seeded implementation and validation items are too generic, update those
+existing starter work item IDs in place with concrete scope, acceptance, notes,
+and validation guidance before implementation. Do not add duplicates and do
+not replace the required starter tickets as the normal path.
+`verlyn work-items list <change-id>` and
+`verlyn work-items show <change-id> <work-item-id>` are the review surfaces for
+task planning. They include parent change context, dependency/chain context,
+purpose, blockers, evidence expectations, and next-action guidance where the
+backend record supplies it. Their `--json` output exposes the same context in
+structured, sanitized fields. `changes show --json` and
+`work-items show --json` also place enriched task descriptions and planning
+fields on the top-level `tasks`, `work_items`, or `work_item` entries so
+consumers do not have to know that `review_context` is the richer source.
 
 ## Delivery Versus Deployment
 
 Use the command that matches the outcome you want:
 
-Both `verlyn changes deliver <change-id>` and
-`verlyn changes deploy <change-id>` run Verlyn's hosted source-control closeout
-path. That path performs the PR step: it commits eligible dirty work when
-requested, pushes the governed branch, opens or updates the pull request,
-merges it, records closeout, and repairs local checkout state when safe.
-`deploy` then continues from the merged source-control result into provider
-deployment.
+Important: `verlyn changes deliver` and `verlyn changes deploy` both run the
+PR step. Both commands create or update the pull request, merge it, and record
+source-control closeout. Use `deliver` when you want PR closeout only. Use
+`deploy` when you want that same PR closeout followed by provider deployment.
 
 | Command | Outcome |
 |---|---|
-| `verlyn changes deliver <change-id>` | Source-control closeout only. It commits local dirty work when `--commit-message` is supplied, pushes with Verlyn-managed provider credentials, opens or updates the pull request, merges it, records closeout, and returns the local checkout to the base branch when safe. It does not deploy. |
-| `verlyn changes deploy <change-id>` | Runs the same source-control closeout path as `deliver`, then triggers or monitors the configured deployment provider and records deployment evidence. |
+| `verlyn changes deliver <change-id>` | PR closeout only. It commits local dirty work when `--commit-message` is supplied, pushes with Verlyn-managed provider credentials, opens or updates the pull request, merges it, records closeout, and returns the local checkout to the base branch when safe. It does not deploy. |
+| `verlyn changes deploy <change-id>` | PR closeout plus deployment. It runs the same source-control closeout path as `deliver`, then triggers or monitors the configured deployment provider and records deployment evidence. |
+
+When the CLI safely deletes the client-local work branch, it records that
+cleanup back to Verlyn so change branch metadata and delivery metrics do not
+show stale local branch state.
+
+In human-readable mode, `deliver` and `deploy` print lightweight phase progress
+while long hosted operations run, such as PR package preparation, delivery gate
+checking, source-control closeout, deployment handoff, provider wait, and
+transient deployment recovery. Before PR package work starts, `deliver` prints
+that it will create or update the pull request, merge it, and record
+source-control closeout without deploying. `deploy` prints that it will run
+that same PR closeout first and then deploy. `--json` output remains
+machine-readable and does not include progress chatter.
 
 Examples:
 
