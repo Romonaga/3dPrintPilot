@@ -10,6 +10,7 @@ from backend.db.base import Base
 from backend.domains.ai.models import AiCostReconciliationRun, AiUsageEvent
 from backend.domains.compatibility.models import CompatibilityCheck, CompatibilityCheckItem
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
+from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
 from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun
 from backend.domains.users.models import User, UserSession
@@ -25,6 +26,8 @@ _ = (
     NetworkScanResult,
     NetworkScanRun,
     Printer,
+    BackgroundJob,
+    ResourceSample,
     ProviderSecret,
     User,
     UserSession,

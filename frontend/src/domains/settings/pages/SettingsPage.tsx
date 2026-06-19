@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, KeyRound, RefreshCw, Trash2 } from "lucide
 import { FormEvent, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
 import { StatusBadge } from "../../../components/StatusBadge";
+import { ResourceControlsPanel } from "../../resources/components/ResourceControlsPanel";
 import { useProviderSecrets } from "../hooks/useProviderSecrets";
 import { type ProviderSecretStatus } from "../types";
 
@@ -10,6 +11,7 @@ export default function SettingsPage() {
 
   return (
     <section className="settings-page">
+      <ResourceControlsPanel />
       <article className="panel">
         <div className="panel-header">
           <div>

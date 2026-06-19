@@ -3,6 +3,7 @@ from __future__ import annotations
 from backend.db.base import Base
 from backend.domains.ai.models import AiUsageEvent
 from backend.domains.compatibility.models import CompatibilityCheck, CompatibilityCheckItem
+from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
 from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun
 from backend.domains.users.models import User, UserSession
@@ -16,6 +17,8 @@ def test_foundation_models_are_registered_by_domain():
     assert AiUsageEvent.__tablename__ in table_names
     assert CompatibilityCheck.__tablename__ in table_names
     assert CompatibilityCheckItem.__tablename__ in table_names
+    assert ResourceSample.__tablename__ in table_names
+    assert BackgroundJob.__tablename__ in table_names
     assert ProviderSecret.__tablename__ in table_names
     assert ModelSiteAdapter.__tablename__ in table_names
     assert ModelSiteScanRun.__tablename__ in table_names
