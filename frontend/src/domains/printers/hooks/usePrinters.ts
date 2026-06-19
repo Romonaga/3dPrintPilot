@@ -11,7 +11,7 @@ const defaultScanSettings: PrinterScanSettings = {
   scanMethod: "combined",
   targetCidr: "",
   maxHosts: 254,
-  timeoutSeconds: 5,
+  timeoutSeconds: 8,
   connectTimeoutSeconds: 1,
   ports: "80,443,4408,5000,6000,7125,8000,8080,8081,8883"
 };

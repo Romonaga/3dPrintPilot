@@ -14,6 +14,8 @@ from backend.domains.printers.service import (
     _detect_generic_http,
     _detect_octoprint_or_prusalink,
     _limited_hosts,
+    _mdns_printer_metadata,
+    _prioritized_probe_ports,
     _probe_http_port,
     _resolve_probe_network,
     _scan_http_printers,
@@ -354,7 +356,7 @@ def test_http_probe_uses_tls_verification_for_https(monkeypatch):
 
 
 def test_http_scan_keeps_partial_results_when_one_worker_fails(monkeypatch):
-    def fake_probe(host, ports, timeout):
+    def fake_probe(host, port, timeout):
         if host == "192.168.50.2":
             raise RuntimeError("probe failed")
         return (
@@ -365,11 +367,11 @@ def test_http_scan_keeps_partial_results_when_one_worker_fails(monkeypatch):
                 protocol="http",
                 service_type="http_probe:moonraker",
                 confidence=90,
-            ),
+            )
         )
 
     monkeypatch.setattr("backend.domains.printers.service._limited_hosts", lambda network, max_hosts: ("192.168.50.1", "192.168.50.2"))
-    monkeypatch.setattr("backend.domains.printers.service._probe_host_ports", fake_probe)
+    monkeypatch.setattr("backend.domains.printers.service._probe_http_port", fake_probe)
 
     result = _scan_http_printers("192.168.50.0/24", max_hosts=2, ports=(80,), connect_timeout_seconds=0.1)
 
@@ -379,10 +381,10 @@ def test_http_scan_keeps_partial_results_when_one_worker_fails(monkeypatch):
 
 
 def test_http_scan_deadline_returns_partial_results_from_completed_hosts(monkeypatch):
-    def fake_probe(host, ports, timeout):
+    def fake_probe(host, port, timeout):
         if host == "192.168.50.2":
             sleep(1.0)
-            return ()
+            return None
         return (
             DiscoveredPrinter(
                 name=f"Printer {host}",
@@ -391,11 +393,11 @@ def test_http_scan_deadline_returns_partial_results_from_completed_hosts(monkeyp
                 protocol="http",
                 service_type="http_probe:moonraker",
                 confidence=90,
-            ),
+            )
         )
 
     monkeypatch.setattr("backend.domains.printers.service._limited_hosts", lambda network, max_hosts: ("192.168.50.1", "192.168.50.2"))
-    monkeypatch.setattr("backend.domains.printers.service._probe_host_ports", fake_probe)
+    monkeypatch.setattr("backend.domains.printers.service._probe_http_port", fake_probe)
 
     started = monotonic()
     result = _scan_http_printers(
@@ -411,6 +413,48 @@ def test_http_scan_deadline_returns_partial_results_from_completed_hosts(monkeyp
     assert result.summary.status == PrinterScanStatus.COMPLETED
     assert result.summary.discovered_count == 1
     assert result.printers[0].host == "192.168.50.1"
+
+
+def test_http_scan_schedules_prioritized_ports_across_hosts(monkeypatch):
+    seen = []
+
+    def fake_probe(host, port, timeout):
+        seen.append((host, port))
+        if host == "192.168.50.185" and port == 4408:
+            return DiscoveredPrinter(
+                name="Klipper/Moonraker at 192.168.50.185:4408",
+                host=host,
+                port=port,
+                protocol="http",
+                service_type="http_probe:moonraker",
+                confidence=84,
+            )
+        return None
+
+    hosts = ("192.168.50.1", "192.168.50.44", "192.168.50.185")
+    monkeypatch.setattr("backend.domains.printers.service._limited_hosts", lambda network, max_hosts: hosts)
+    monkeypatch.setattr("backend.domains.printers.service._probe_http_port", fake_probe)
+
+    result = _scan_http_printers(
+        "192.168.50.0/24",
+        max_hosts=254,
+        ports=(80, 443, 4408, 7125),
+        connect_timeout_seconds=0.1,
+        scan_timeout_seconds=1.0,
+    )
+
+    assert _prioritized_probe_ports((80, 443, 4408, 7125)) == (7125, 4408, 80, 443)
+    assert _prioritized_probe_ports((80, 8883, 7125, 4408)) == (7125, 8883, 4408, 80)
+    assert seen[:3] == [(host, 7125) for host in hosts]
+    assert result.summary.discovered_count == 1
+    assert result.printers[0].host == "192.168.50.185"
+
+
+def test_mdns_metadata_filters_paper_and_generic_http_services():
+    assert _mdns_printer_metadata("_ipp._tcp.local.", "HP OfficeJet Pro 8720") is None
+    assert _mdns_printer_metadata("_http._tcp.local.", "RomoCloud") is None
+    assert _mdns_printer_metadata("_http._tcp.local.", "Bambu Lab X1") == ("http", "mdns:bambu", 86)
+    assert _mdns_printer_metadata("_moonraker._tcp.local.", "mainsail") == ("http", "_moonraker._tcp.local.", 90)
 
 
 def test_combined_scan_passes_timeout_budget_to_http_probe(monkeypatch):

@@ -35,6 +35,7 @@ PRINTER_SERVICE_TYPES = (
 )
 
 DEFAULT_HTTP_PROBE_PORTS = (80, 443, 4408, 5000, 6000, 7125, 8000, 8080, 8081, 8883)
+PREFERRED_HTTP_PROBE_PORTS = (7125, 8883, 4408, 8000, 8080, 80, 443, 5000, 6000, 8081)
 MAX_HTTP_PROBE_PORTS = 10
 MDNS_BRAND_MARKERS = {
     "bambu": ("Bambu Lab", "mdns:bambu", 86),
@@ -57,32 +58,11 @@ class _PrinterServiceListener(ServiceListener):
         addresses = [address for address in info.parsed_scoped_addresses() if address]
         if not addresses:
             return
+        metadata = _mdns_printer_metadata(service_type, name)
+        if metadata is None:
+            return
         host = addresses[0]
-        protocol = "http"
-        service_label = service_type
-        confidence = 55
-        if "octoprint" in service_type:
-            confidence = 90
-        elif any(marker in service_type for marker in ("moonraker", "klipper", "mainsail", "fluidd")):
-            confidence = 90
-        elif "prusalink" in service_type:
-            confidence = 88
-        elif any(marker in service_type for marker in ("bambu", "bblp")) or "bambu" in name.lower():
-            confidence = 86
-            service_label = "mdns:bambu"
-        elif "snapmaker" in service_type or "snapmaker" in name.lower():
-            confidence = 80
-            service_label = "mdns:snapmaker"
-        elif "creality" in service_type or "creality" in name.lower():
-            confidence = 80
-            service_label = "mdns:creality"
-        elif "ipp" in service_type:
-            protocol = "ipp"
-            confidence = 65
-        else:
-            brand_match = _match_mdns_brand_marker(name, service_type)
-            if brand_match is not None:
-                _, service_label, confidence = brand_match
+        protocol, service_label, confidence = metadata
         printer = DiscoveredPrinter(
             name=name.rstrip("."),
             host=host,
@@ -102,7 +82,7 @@ class _PrinterServiceListener(ServiceListener):
 
 
 def scan_lan_for_printers(
-    timeout_seconds: float = 3.0,
+    timeout_seconds: float = 8.0,
     scan_method: str = "combined",
     target_cidr: str | None = None,
     max_hosts: int = 254,
@@ -187,12 +167,16 @@ def _scan_http_printers(
     started = monotonic()
     network = _resolve_probe_network(target_cidr)
     hosts = _limited_hosts(network, max_hosts=max_hosts)
-    checked_ports = tuple(dict.fromkeys(port for port in ports if 1 <= port <= 65535))[:MAX_HTTP_PROBE_PORTS]
+    checked_ports = _prioritized_probe_ports(ports)
     discovered: dict[tuple[str, int], DiscoveredPrinter] = {}
     probe_count = len(hosts) * len(checked_ports)
 
-    executor = ThreadPoolExecutor(max_workers=min(24, max(1, len(hosts))))
-    futures = [executor.submit(_probe_host_ports, host, checked_ports, connect_timeout_seconds) for host in hosts]
+    executor = ThreadPoolExecutor(max_workers=min(128, max(1, probe_count)))
+    futures = [
+        executor.submit(_probe_http_port, host, port, connect_timeout_seconds)
+        for port in checked_ports
+        for host in hosts
+    ]
     try:
         completed_futures = as_completed(
             futures,
@@ -200,10 +184,10 @@ def _scan_http_printers(
         )
         for future in completed_futures:
             try:
-                host_printers = future.result()
+                printer = future.result()
             except Exception:
                 continue
-            for printer in host_printers:
+            if printer is not None:
                 discovered[(printer.host, printer.port)] = printer
     except FuturesTimeoutError:
         pass
@@ -404,6 +388,30 @@ def _http_printer(name: str, host: str, port: int, scheme: str, service_type: st
 
 def _sort_discovered_printers(printers) -> tuple[DiscoveredPrinter, ...]:
     return tuple(sorted(printers, key=lambda printer: (-printer.confidence, printer.host, printer.port, printer.service_type)))
+
+
+def _mdns_printer_metadata(service_type: str, name: str) -> tuple[str, str, int] | None:
+    service_type_lower = service_type.lower()
+    brand_match = _match_mdns_brand_marker(name, service_type)
+    if "octoprint" in service_type_lower:
+        return ("http", service_type, 90)
+    if any(marker in service_type_lower for marker in ("moonraker", "klipper", "mainsail", "fluidd")):
+        return ("http", service_type, 90)
+    if "prusalink" in service_type_lower:
+        return ("http", service_type, 88)
+    if brand_match is not None:
+        _, service_label, confidence = brand_match
+        return ("http", service_label, confidence)
+    if "_ipp._tcp" in service_type_lower or "_http._tcp" in service_type_lower:
+        return None
+    return None
+
+
+def _prioritized_probe_ports(ports: tuple[int, ...]) -> tuple[int, ...]:
+    valid_ports = tuple(dict.fromkeys(port for port in ports if 1 <= port <= 65535))[:MAX_HTTP_PROBE_PORTS]
+    preferred = [port for port in PREFERRED_HTTP_PROBE_PORTS if port in valid_ports]
+    remaining = [port for port in valid_ports if port not in preferred]
+    return tuple(preferred + remaining)
 
 
 def _match_mdns_brand_marker(name: str, service_type: str) -> tuple[str, str, int] | None:
