@@ -192,7 +192,11 @@ def _scan_http_printers(
     with ThreadPoolExecutor(max_workers=min(24, max(1, len(hosts)))) as executor:
         futures = [executor.submit(_probe_host_ports, host, checked_ports, connect_timeout_seconds) for host in hosts]
         for future in as_completed(futures):
-            for printer in future.result():
+            try:
+                host_printers = future.result()
+            except Exception:
+                continue
+            for printer in host_printers:
                 discovered[(printer.host, printer.port)] = printer
 
     printers = _sort_discovered_printers(discovered.values())
@@ -226,9 +230,8 @@ def _probe_http_port(host: str, port: int, timeout_seconds: float) -> Discovered
     scheme = "https" if port == 443 else "http"
     base_url = f"{scheme}://{host}:{port}"
     timeout = httpx.Timeout(timeout_seconds, connect=timeout_seconds)
-    verify = False if scheme == "https" else True
     try:
-        with httpx.Client(timeout=timeout, follow_redirects=True, verify=verify) as client:
+        with httpx.Client(timeout=timeout, follow_redirects=True, verify=True) as client:
             for path, detector in _probe_paths(port):
                 try:
                     response = client.get(urljoin(base_url, path))
@@ -259,6 +262,9 @@ def _probe_bambu_mqtt_port(host: str, port: int, timeout_seconds: float) -> Disc
 
 def _probe_mqtt_over_tls(host: str, port: int, timeout_seconds: float) -> str:
     context = ssl.create_default_context()
+    # Bambu LAN MQTT discovery uses appliance certificates that often cannot be
+    # host-verified during unauthenticated read-only discovery. This exception
+    # is intentionally scoped to the MQTT handshake probe, not HTTP probing.
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     try:
