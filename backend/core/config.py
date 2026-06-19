@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     database_url: str = Field(default="postgresql+psycopg://3dprintpilot:3dprintpilot@localhost:5432/3dprintpilot")
+    database_pool_size: int = 5
+    database_max_overflow: int = 10
+    database_pool_timeout_seconds: int = 30
+    database_pool_recycle_seconds: int = 1800
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
     ollama_base_url: str = "http://localhost:11434/api"
     local_llm_default_model: str = "qwen3-coder:30b"

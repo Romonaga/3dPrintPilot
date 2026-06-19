@@ -14,6 +14,7 @@ from backend.domains.printers.service import (
     _limited_hosts,
     _probe_http_port,
     _resolve_probe_network,
+    _scan_http_printers,
 )
 from backend.domains.printers.store import PrinterStore
 from backend.db.base import Base
@@ -318,6 +319,56 @@ def test_mqtt_probe_labels_confirmed_bambu_mqtt_port(monkeypatch):
     assert printer.service_type == "mqtt_probe:bambu_mqtt"
     assert printer.confidence == 90
     assert "MQTT over TLS CONNACK" in printer.evidence[0]
+
+
+def test_http_probe_uses_tls_verification_for_https(monkeypatch):
+    client_kwargs = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            client_kwargs.update(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def get(self, url):
+            import httpx
+
+            return httpx.Response(404, text="not a printer")
+
+    monkeypatch.setattr("backend.domains.printers.service._tcp_port_open", lambda host, port, timeout: True)
+    monkeypatch.setattr("backend.domains.printers.service.httpx.Client", FakeClient)
+
+    assert _probe_http_port("192.168.1.77", 443, 0.1) is None
+    assert client_kwargs["verify"] is True
+
+
+def test_http_scan_keeps_partial_results_when_one_worker_fails(monkeypatch):
+    def fake_probe(host, ports, timeout):
+        if host == "192.168.50.2":
+            raise RuntimeError("probe failed")
+        return (
+            DiscoveredPrinter(
+                name=f"Printer {host}",
+                host=host,
+                port=80,
+                protocol="http",
+                service_type="http_probe:moonraker",
+                confidence=90,
+            ),
+        )
+
+    monkeypatch.setattr("backend.domains.printers.service._limited_hosts", lambda network, max_hosts: ("192.168.50.1", "192.168.50.2"))
+    monkeypatch.setattr("backend.domains.printers.service._probe_host_ports", fake_probe)
+
+    result = _scan_http_printers("192.168.50.0/24", max_hosts=2, ports=(80,), connect_timeout_seconds=0.1)
+
+    assert result.summary.status == PrinterScanStatus.COMPLETED
+    assert result.summary.discovered_count == 1
+    assert result.printers[0].host == "192.168.50.1"
 
 
 def test_octoprint_and_moonraker_status_parsers_are_read_only():
