@@ -157,13 +157,24 @@ def printer_capabilities(printer: Printer) -> PrinterCapabilities:
 def scan_result_requirements(scan_result: ModelSiteScanResult) -> ModelRequirements:
     raw_payload = scan_result.raw_payload or {}
     evidence = scan_result.evidence or {}
+    requirements = evidence.get("requirements") or raw_payload.get("requirements") or {}
     filename = str(raw_payload.get("filename") or scan_result.normalized_url)
-    file_format = _file_format_from_name(filename)
-    material = _clean_string(raw_payload.get("material") or evidence.get("material"))
+    file_format = _clean_string(requirements.get("file_format")) or _file_format_from_name(filename)
+    material = _clean_string(requirements.get("material") or raw_payload.get("material") or evidence.get("material"))
     return ModelRequirements(
         name=scan_result.title or scan_result.normalized_url,
+        size_x_mm=_float_or_none(requirements.get("size_x_mm")),
+        size_y_mm=_float_or_none(requirements.get("size_y_mm")),
+        size_z_mm=_float_or_none(requirements.get("size_z_mm")),
         material=material,
+        nozzle_temp_c=_float_or_none(requirements.get("nozzle_temp_c")),
+        bed_temp_c=_float_or_none(requirements.get("bed_temp_c")),
+        enclosure_required=bool(requirements.get("enclosure_required", False)),
         file_format=file_format,
+        nozzle_diameter_mm=_float_or_none(requirements.get("nozzle_diameter_mm")),
+        abrasive=bool(requirements.get("abrasive", False)),
+        flexible=bool(requirements.get("flexible", False)),
+        color_count=max(1, int(requirements.get("color_count", 1) or 1)),
         source_type="metadata_only",
     )
 

@@ -6,6 +6,16 @@ export type SiteScanLimits = {
   perHostConcurrency: number;
 };
 
+export type SiteAdapter = {
+  siteKey: string;
+  displayName: string;
+  enabled: boolean;
+  supportsDownloads: boolean;
+  allowedHosts: string[];
+  defaultLimits: Record<string, unknown>;
+  robotsTermsNotes: string | null;
+};
+
 export type SiteScanSummary = {
   scanRunId: number | null;
   status: string;
@@ -35,6 +45,9 @@ export type SiteScanCandidate = {
   status: string;
   confidence: number;
   evidence: string[];
+  license: string | null;
+  attribution: string | null;
+  requirements: Record<string, unknown>;
 };
 
 export type SiteScanRejection = {

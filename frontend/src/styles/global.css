@@ -532,6 +532,36 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.adapter-list {
+  display: grid;
+  gap: 10px;
+}
+
+.adapter-row {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.adapter-row h3 {
+  font-size: 14px;
+}
+
+.adapter-row p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.adapter-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .printer-list {
   display: grid;
   gap: 10px;

@@ -12,3 +12,7 @@ class SiteScanRequest(BaseModel):
     same_domain_only: bool = True
     allowed_hosts: list[str] = Field(default_factory=list, max_length=25)
     per_host_concurrency: int = Field(default=1, ge=1, le=4)
+
+
+class UpdateSiteAdapterRequest(BaseModel):
+    enabled: bool
