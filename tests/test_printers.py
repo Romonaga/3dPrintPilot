@@ -310,6 +310,36 @@ def test_moonraker_probe_detects_creality_k2_pro_marker():
     assert printer.service_type == "http_probe:creality_moonraker"
 
 
+def test_http_probe_prefers_specific_moonraker_model_after_generic_info(monkeypatch):
+    import httpx
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def get(self, url):
+            if url.endswith("/server/info"):
+                return httpx.Response(200, text='{"result":{"software_version":"moonraker","klippy_state":"ready"}}')
+            if url.endswith("/printer/info"):
+                return httpx.Response(200, text='{"result":{"hostname":"K2Plus-6976","klipper_path":"/usr/share/klipper"}}')
+            return httpx.Response(404, text="not found")
+
+    monkeypatch.setattr("backend.domains.printers.service._tcp_port_open", lambda host, port, timeout: True)
+    monkeypatch.setattr("backend.domains.printers.service.httpx.Client", FakeClient)
+
+    printer = _probe_http_port("192.168.1.185", 7125, 0.1)
+
+    assert printer is not None
+    assert printer.name == "Creality K2 Plus Moonraker at 192.168.1.185:7125"
+    assert printer.service_type == "http_probe:creality_moonraker"
+
+
 def test_http_probe_does_not_treat_bare_k2_as_creality():
     import httpx
 
@@ -390,6 +420,7 @@ def test_http_scan_keeps_partial_results_when_one_worker_fails(monkeypatch):
         )
 
     monkeypatch.setattr("backend.domains.printers.service._limited_hosts", lambda network, max_hosts: ("192.168.50.1", "192.168.50.2"))
+    monkeypatch.setattr("backend.domains.printers.service._tcp_port_open", lambda host, port, timeout: True)
     monkeypatch.setattr("backend.domains.printers.service._probe_http_port", fake_probe)
 
     result = _scan_http_printers("192.168.50.0/24", max_hosts=2, ports=(80,), connect_timeout_seconds=0.1)
@@ -416,6 +447,7 @@ def test_http_scan_deadline_returns_partial_results_from_completed_hosts(monkeyp
         )
 
     monkeypatch.setattr("backend.domains.printers.service._limited_hosts", lambda network, max_hosts: ("192.168.50.1", "192.168.50.2"))
+    monkeypatch.setattr("backend.domains.printers.service._tcp_port_open", lambda host, port, timeout: True)
     monkeypatch.setattr("backend.domains.printers.service._probe_http_port", fake_probe)
 
     started = monotonic()
@@ -452,6 +484,7 @@ def test_http_scan_schedules_prioritized_ports_across_hosts(monkeypatch):
 
     hosts = ("192.168.50.1", "192.168.50.44", "192.168.50.185")
     monkeypatch.setattr("backend.domains.printers.service._limited_hosts", lambda network, max_hosts: hosts)
+    monkeypatch.setattr("backend.domains.printers.service._tcp_port_open", lambda host, port, timeout: True)
     monkeypatch.setattr("backend.domains.printers.service._probe_http_port", fake_probe)
 
     result = _scan_http_printers(
@@ -464,7 +497,8 @@ def test_http_scan_schedules_prioritized_ports_across_hosts(monkeypatch):
 
     assert _prioritized_probe_ports((80, 443, 4408, 7125)) == (7125, 4408, 80, 443)
     assert _prioritized_probe_ports((80, 8883, 7125, 4408)) == (7125, 8883, 4408, 80)
-    assert seen[:3] == [(host, 7125) for host in hosts]
+    seen_by_host = {host: [port for seen_host, port in seen if seen_host == host] for host in hosts}
+    assert seen_by_host == {host: [7125, 4408, 80, 443] for host in hosts}
     assert result.summary.discovered_count == 1
     assert result.printers[0].host == "192.168.50.185"
 
