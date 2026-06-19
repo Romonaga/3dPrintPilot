@@ -11,6 +11,19 @@ Local-first 3D printer compatibility dashboard with LAN printer discovery, deter
 
 ## Development
 
+Copy the example environment file when local settings need to be explicit:
+
+```bash
+cp Documentation/examples/printpilot.env.example .env
+```
+
+Start local Postgres:
+
+```bash
+docker compose up -d postgres
+uv run alembic upgrade head
+```
+
 Backend:
 
 ```bash
@@ -74,6 +87,22 @@ enable linger for the user:
 
 ```bash
 loginctl enable-linger "$USER"
+```
+
+Runtime check:
+
+```bash
+scripts/check-runtime.sh
+```
+
+The service uses strict configured ports. If a port is already occupied, update
+`PRINTPILOT_BACKEND_PORT` or `PRINTPILOT_FRONTEND_PORT` in the service env file
+and rerun `scripts/install-user-service.sh`.
+
+If Postgres is intentionally unavailable during a frontend/backend smoke test:
+
+```bash
+PRINTPILOT_SKIP_DB_CHECK=1 scripts/check-runtime.sh
 ```
 
 ## Tests

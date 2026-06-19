@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.core.config import get_settings
+from backend.core.logging import configure_logging
 from backend.domains.ai.routes import router as ai_router
 from backend.domains.compatibility.routes import router as compatibility_router
 from backend.domains.health.routes import router as health_router
@@ -15,6 +16,7 @@ from backend.domains.site_scanning.routes import router as site_scanning_router
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    configure_logging(settings.log_level)
     app = FastAPI(title=settings.app_name, version=settings.app_version)
     app.add_middleware(
         CORSMiddleware,

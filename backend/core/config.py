@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     app_name: str = "3dPrintPilot"
     app_version: str = "0.1.0"
     environment: str = "development"
+    log_level: str = "INFO"
     database_url: str = Field(default="postgresql+psycopg://3dprintpilot:3dprintpilot@localhost:5432/3dprintpilot")
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
     ollama_base_url: str = "http://localhost:11434/api"
