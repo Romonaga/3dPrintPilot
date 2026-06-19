@@ -39,7 +39,7 @@ class ConfirmDiscoveredPrinterRequest(BaseModel):
 
 
 class PrinterScanRequest(BaseModel):
-    timeout_seconds: float = Field(default=3.0, ge=1.0, le=10.0)
+    timeout_seconds: float = Field(default=8.0, ge=1.0, le=10.0)
     scan_method: str = Field(default="combined", pattern="^(mdns|http_probe|combined)$")
     target_cidr: str | None = Field(default=None, max_length=64)
     max_hosts: int = Field(default=254, ge=1, le=512)
