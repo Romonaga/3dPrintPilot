@@ -46,7 +46,7 @@ cd "$PROJECT_ROOT"
 backend_pid=$!
 
 cd "$PROJECT_ROOT/frontend"
-"$NPM_BIN" run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" &
+"$NPM_BIN" run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" --strictPort &
 frontend_pid=$!
 
 wait -n "$backend_pid" "$frontend_pid"
