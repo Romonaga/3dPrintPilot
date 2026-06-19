@@ -47,6 +47,19 @@ def test_ai_accounting_status_advertises_estimated_and_final_costs():
     assert response.json()["reconciliation_required"] is True
 
 
+def test_operations_backup_export_redacts_provider_secret_payloads():
+    client = TestClient(create_app())
+
+    response = client.get("/api/operations/backup.json")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["format"] == "3dprintpilot.operations.backup"
+    assert "provider_secrets" in body["tables"]
+    assert "encrypted_value" not in str(body["tables"]["provider_secrets"])
+    assert "secret_fingerprint" not in str(body["tables"]["provider_secrets"])
+
+
 def test_site_scanning_api_returns_metrics_for_metadata_only_scan():
     app = create_app()
     app.dependency_overrides[get_site_scan_store] = lambda: FakeSiteScanStore()

@@ -9,6 +9,7 @@ from backend.domains.ai.routes import router as ai_router
 from backend.domains.compatibility.routes import router as compatibility_router
 from backend.domains.health.routes import router as health_router
 from backend.domains.models.routes import router as models_router
+from backend.domains.operations.routes import router as operations_router
 from backend.domains.printers.routes import router as printers_router
 from backend.domains.resources.routes import router as resources_router
 from backend.domains.settings.routes import router as settings_router
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
     app.include_router(compatibility_router, prefix="/api")
     app.include_router(site_scanning_router, prefix="/api")
     app.include_router(models_router, prefix="/api")
+    app.include_router(operations_router, prefix="/api")
     return app
 
 
