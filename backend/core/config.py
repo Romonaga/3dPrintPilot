@@ -19,7 +19,16 @@ class Settings(BaseSettings):
     database_max_overflow: int = 10
     database_pool_timeout_seconds: int = 30
     database_pool_recycle_seconds: int = 1800
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
+    cors_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:8001",
+            "http://127.0.0.1:8001",
+            "http://3dprintpilot.local",
+            "http://3dprintpilot.local:8001",
+            "http://3dprintpilot",
+            "http://3dprintpilot:8001",
+        ]
+    )
     ollama_base_url: str = "http://localhost:11434/api"
     local_llm_default_model: str = "qwen3-coder:30b"
     openai_fallback_enabled: bool = False

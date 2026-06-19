@@ -27,7 +27,7 @@ uv run alembic upgrade head
 Backend:
 
 ```bash
-uv run uvicorn backend.app.main:app --host 0.0.0.0 --port 8001
+uv run uvicorn backend.app.main:app --host 0.0.0.0 --port 8002
 ```
 
 Frontend:
@@ -39,11 +39,23 @@ npm run dev
 
 Current dev URLs:
 
-- Frontend: http://localhost:5173/
-- Backend: http://localhost:8001/
-- Backend health: http://localhost:8001/api/health
+- Frontend: http://localhost:8001/
+- Local DNS frontend: http://3dprintpilot.local/
+- Direct local DNS frontend: http://3dprintpilot.local:8001/
+- Backend: http://localhost:8002/
+- Backend health: http://localhost:8002/api/health
 
-Port 8000 was already in use on this machine, so the initial backend dev port is 8001.
+Port 8001 is reserved for the browser-facing web endpoint; the backend API runs
+on port 8002 by default and is proxied by the frontend dev server.
+For no-port browser access, map `3dprintpilot.local` to the host LAN IP in
+`/etc/hosts`, then install the local port-80 proxy:
+
+```bash
+scripts/install-web-proxy.sh
+```
+
+The proxy uses `systemd-socket-proxyd` to forward `http://3dprintpilot.local/`
+to the frontend on `127.0.0.1:8001`.
 
 ## User Service
 
@@ -77,9 +89,9 @@ Optional runtime settings can be placed in
 ```bash
 PRINTPILOT_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/printpilot
 PRINTPILOT_BACKEND_HOST=0.0.0.0
-PRINTPILOT_BACKEND_PORT=8001
+PRINTPILOT_BACKEND_PORT=8002
 PRINTPILOT_FRONTEND_HOST=0.0.0.0
-PRINTPILOT_FRONTEND_PORT=5173
+PRINTPILOT_FRONTEND_PORT=8001
 ```
 
 The service starts when the user logs in. To allow it to start before login,
@@ -93,6 +105,12 @@ Runtime check:
 
 ```bash
 scripts/check-runtime.sh
+```
+
+To include the no-port DNS endpoint in the smoke check:
+
+```bash
+PRINTPILOT_PUBLIC_URL=http://3dprintpilot.local PRINTPILOT_SKIP_DB_CHECK=1 scripts/check-runtime.sh
 ```
 
 The service uses strict configured ports. If a port is already occupied, update
