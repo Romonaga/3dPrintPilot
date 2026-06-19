@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from functools import lru_cache
 from ipaddress import IPv4Network, ip_network
 import socket
@@ -130,6 +130,7 @@ def scan_lan_for_printers(
             max_hosts=max_hosts,
             ports=ports or DEFAULT_HTTP_PROBE_PORTS,
             connect_timeout_seconds=connect_timeout_seconds,
+            scan_timeout_seconds=timeout_seconds,
         )
         for printer in http_result.printers:
             discovered[(printer.host, printer.port, printer.service_type)] = printer
@@ -181,6 +182,7 @@ def _scan_http_printers(
     max_hosts: int,
     ports: tuple[int, ...],
     connect_timeout_seconds: float,
+    scan_timeout_seconds: float | None = None,
 ) -> PrinterScanResult:
     started = monotonic()
     network = _resolve_probe_network(target_cidr)
@@ -189,15 +191,27 @@ def _scan_http_printers(
     discovered: dict[tuple[str, int], DiscoveredPrinter] = {}
     probe_count = len(hosts) * len(checked_ports)
 
-    with ThreadPoolExecutor(max_workers=min(24, max(1, len(hosts)))) as executor:
-        futures = [executor.submit(_probe_host_ports, host, checked_ports, connect_timeout_seconds) for host in hosts]
-        for future in as_completed(futures):
+    executor = ThreadPoolExecutor(max_workers=min(24, max(1, len(hosts))))
+    futures = [executor.submit(_probe_host_ports, host, checked_ports, connect_timeout_seconds) for host in hosts]
+    try:
+        completed_futures = as_completed(
+            futures,
+            timeout=max(scan_timeout_seconds, 0.1) if scan_timeout_seconds is not None else None,
+        )
+        for future in completed_futures:
             try:
                 host_printers = future.result()
             except Exception:
                 continue
             for printer in host_printers:
                 discovered[(printer.host, printer.port)] = printer
+    except FuturesTimeoutError:
+        pass
+    finally:
+        for future in futures:
+            if not future.done():
+                future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
 
     printers = _sort_discovered_printers(discovered.values())
     return PrinterScanResult(

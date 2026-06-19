@@ -11,6 +11,7 @@ from backend.app.main import create_app
 from backend.domains.models.entities import GeometryParseError
 from backend.domains.models.routes import get_model_store
 from backend.domains.models.service import MAX_UPLOAD_BYTES, analyze_model_bytes
+from tests.helpers import allow_anonymous_until_bootstrap
 
 
 ASCII_STL = b"""solid sample
@@ -112,6 +113,7 @@ def test_model_upload_endpoint_persists_geometry_and_source_metadata():
     store = FakeModelStore()
     app = create_app()
     app.dependency_overrides[get_model_store] = lambda: store
+    allow_anonymous_until_bootstrap(app)
     client = TestClient(app)
 
     response = client.post(
@@ -133,6 +135,7 @@ def test_model_upload_endpoint_persists_geometry_and_source_metadata():
 def test_model_upload_rejects_oversized_files_before_parsing():
     app = create_app()
     app.dependency_overrides[get_model_store] = lambda: FakeModelStore()
+    allow_anonymous_until_bootstrap(app)
     client = TestClient(app)
 
     response = client.post(

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from backend.app.main import create_app
 from backend.domains.compatibility.routes import get_compatibility_store
 from backend.domains.site_scanning.routes import get_site_scan_store
+from tests.helpers import allow_anonymous_until_bootstrap
 
 
 class FakeSiteScanRun:
@@ -37,7 +38,7 @@ def test_health_endpoint_returns_app_status():
 
 
 def test_ai_accounting_status_advertises_estimated_and_final_costs():
-    client = TestClient(create_app())
+    client = TestClient(allow_anonymous_until_bootstrap(create_app()))
 
     response = client.get("/api/ai/accounting/status")
 
@@ -48,7 +49,7 @@ def test_ai_accounting_status_advertises_estimated_and_final_costs():
 
 
 def test_operations_backup_export_redacts_provider_secret_payloads():
-    client = TestClient(create_app())
+    client = TestClient(allow_anonymous_until_bootstrap(create_app()))
 
     response = client.get("/api/operations/backup.json")
 
@@ -63,6 +64,7 @@ def test_operations_backup_export_redacts_provider_secret_payloads():
 def test_site_scanning_api_returns_metrics_for_metadata_only_scan():
     app = create_app()
     app.dependency_overrides[get_site_scan_store] = lambda: FakeSiteScanStore()
+    allow_anonymous_until_bootstrap(app)
     client = TestClient(app)
 
     response = client.post(
@@ -85,6 +87,7 @@ def test_site_scanning_api_returns_metrics_for_metadata_only_scan():
 def test_compatibility_api_requires_scan_candidates():
     app = create_app()
     app.dependency_overrides[get_compatibility_store] = lambda: EmptyCompatibilityStore()
+    allow_anonymous_until_bootstrap(app)
     client = TestClient(app)
 
     response = client.post("/api/compatibility/checks", json={"scan_run_id": 999, "max_candidates": 5})
