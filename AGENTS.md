@@ -70,6 +70,7 @@ After session compaction, summary recovery, or any other context-compressed resu
 - Prefer archive/cancel over destructive deletion for durable workflow items.
 - Generated analyzer artifacts are external evidence, not committed source of truth.
 - Prefer installed public `verlyn` CLI commands over retyping workflow steps from memory.
+- Public CLI first, API-backed workflow context, no direct PostgreSQL access, no private helper scripts, no provider-secret handling, and no bypassing gates.
 - Treat a missing active Verlyn change or unauthorized repo binding as a workflow failure to fix before editing, not a suggestion to proceed from memory.
 - Once a Verlyn change is active, use the installed public `verlyn` CLI path first for branch repair, PR delivery, merge, and workflow state changes. If the product path is missing or blocked, record the blocker as Verlyn workflow feedback instead of bypassing it.
 - When a workflow mutation or delivery action exists in Verlyn, use the installed public CLI path before shell fallbacks such as `gh`.

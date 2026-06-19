@@ -1,6 +1,12 @@
 # Verlyn Public CLI Agent Skill
 
-Use the installed public `verlyn` CLI as the control path for governed repository work. Treat the target repository's governance files as authoritative; this reference must not override repo-local policy.
+Use the installed public `verlyn` CLI as the control path for governed
+repository work. Treat the target repository's governance files as
+authoritative; this reference must not override repo-local policy.
+
+The hierarchy is strict: Public CLI first, API-backed workflow context, no
+direct PostgreSQL access, no private helper scripts, no provider secret
+handling, and no bypassing gates.
 
 ## Start Every Governed Session
 
@@ -33,6 +39,64 @@ verlyn runs --limit 3 --json
 ```
 
 Use the JSON output to confirm auth, repo binding, current branch, visible changes, runs, and edit-route status.
+
+These startup commands are required for normal governed sessions. Do not
+replace them with direct database queries, local workflow-file inspection, or
+private Verlyn maintenance scripts.
+
+## Required Versus Optional CLI Inputs
+
+Normal checkout-bound work should not need context overrides. The required path
+is to let the installed CLI resolve auth, repository, project, and checkout
+state from the current directory and saved profile:
+
+```bash
+verlyn auth status
+verlyn workflow assistant-startup --json
+verlyn workflow assert-edit-route --json
+verlyn target show --json
+verlyn changes show <change-id> --json
+verlyn work-items list <change-id>
+verlyn workflow gate <change-id> --scope delivery
+```
+
+Optional overrides are only for bootstrap, diagnostics, automation, or explicit
+recovery:
+
+| Override | Use only when |
+|---|---|
+| `--server` | Logging in to a new Verlyn API server or repairing saved server state. |
+| `--profile` | Diagnosing or automating against a specific saved auth profile. |
+| `--repo-slug` | Working outside a recognized checkout or repairing target resolution. |
+| `--target` | Making a checkout path explicit for diagnostics or install/refresh. |
+| `--source-ref` | Deploying an already delivered source ref instead of normal deliver-and-deploy. |
+| `--commit-sha` | Verifying the expected commit for an explicit `--source-ref` deployment. |
+
+Do not add optional overrides to routine commands just to make a command pass.
+If context cannot be resolved without an override in normal repo work, treat
+that as a binding or auth problem to repair through Verlyn.
+
+## Governance Pack Installation
+
+Use the API-backed governance commands when a repository needs Verlyn
+governance files installed or refreshed:
+
+```bash
+verlyn governance install --target <repo>
+verlyn governance refresh --target <repo>
+verlyn governance refresh --target <repo> --dry-run --json
+```
+
+Verlyn owns files installed from the governance pack except `RULES.md`, which
+is the repo-owned customization layer. Verlyn-owned files include `AGENTS.md`,
+`CONTRIBUTING.md`, `CLAUDE.md`, `.verlyn/runtime_context.json`,
+`.verlyn/workflow_pack.json`, `.verlyn/.gitignore`,
+`Documentation/guides/VERLYN_AGENT_WORKFLOW.md`,
+`Documentation/guides/VERLYN_PUBLIC_CLI.md`, this tool-neutral skill file, and
+the Codex adapter at `.verlyn/.codex/skills/verlyn-public-cli/SKILL.md`.
+
+Skill files guide AI-assisted work; they are not substitutes for the public CLI
+and they must defer to `AGENTS.md`, `CONTRIBUTING.md`, and `RULES.md`.
 
 ## Respect Edit Routing
 
@@ -72,6 +136,14 @@ verlyn reviews record <change-id> --tier 1 --disposition accepted --summary "Rev
 verlyn workflow gate <change-id> --scope delivery
 ```
 
+Before real source-control delivery, make sure changed-file review evidence is
+durable in Verlyn. If the delivery gate reports missing `changed_file_review`,
+review the changed files against the active change and work items, then record:
+
+```bash
+verlyn reviews record <change-id> --tier changed_file_review --disposition accepted --summary "Changed-file review passed."
+```
+
 ## Deliver Or Deploy Through Verlyn
 
 Use the installed Verlyn hosted closeout path when the change is ready.
@@ -85,6 +157,10 @@ verlyn changes deploy <change-id> --merge-method squash
 ```
 
 If local branch repair or checkout cleanup is blocked, follow the deterministic repair command reported by Verlyn instead of using raw Git or provider tools as a bypass.
+
+Use `verlyn runs abort <run-id>` only for controlled recovery of a stuck,
+mis-scoped, or superseded active run. It is not part of normal happy-path work;
+record the reason on the relevant change, work item, or handoff notes.
 
 ## Avoid Unsupported Paths
 

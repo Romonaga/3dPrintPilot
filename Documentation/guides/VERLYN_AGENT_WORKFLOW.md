@@ -66,6 +66,10 @@ Do not use private Verlyn maintenance commands, direct database access, direct
 workflow record edits, or shell tools such as `gh` as a substitute for Verlyn's
 installed product workflow.
 
+The hierarchy is strict for AI-assisted work: Public CLI first, API-backed
+workflow context, no direct PostgreSQL access, no private helper scripts, no
+provider secret handling, and no bypassing gates.
+
 ## Auth And Repo Binding
 
 Normal login:
@@ -109,6 +113,7 @@ verlyn work-items update <change-id> --updates-json '[{"task_id":"<work-item-id>
 verlyn reviews record <change-id> --tier 1 --disposition accepted --summary "Reviewed."
 verlyn workflow gate <change-id> --scope delivery
 verlyn changes deliver <change-id> --merge-method squash
+verlyn changes deploy <change-id>
 ```
 
 Creation and activation are separate. A new change starts as draft. Activate it
@@ -148,6 +153,27 @@ For command intent and optional argument meanings, read
 avoid adding `--profile`, `--server`, `--repo-slug`, or `--target` unless you
 are intentionally bootstrapping or overriding context.
 
+Optional overrides such as `--profile`, `--server`, `--repo-slug`, `--target`,
+`--source-ref`, and `--commit-sha` are diagnostics, bootstrap, or recovery
+controls. They are not required in the normal checkout-bound workflow.
+
+## Governance Pack And Skills
+
+Use these when a repository needs the installable governance pack:
+
+```bash
+verlyn governance install --target <repo>
+verlyn governance refresh --target <repo>
+```
+
+Verlyn owns files installed from the governance pack except
+`RULES.md`, which is the repo-owned customization layer. Installed agent skill
+files such as `.verlyn/agent-skills/verlyn-public-cli.md` and
+`.verlyn/.codex/skills/verlyn-public-cli/SKILL.md` guide AI-assisted tools to
+use the public CLI and defer to `AGENTS.md`, `CONTRIBUTING.md`, and `RULES.md`.
+They are not permission to use direct DB access, private helper scripts,
+provider tokens, or delivery gate bypasses.
+
 ## Session Loop
 
 1. Read the governed files and inspect active change details from Verlyn.
@@ -159,6 +185,11 @@ are intentionally bootstrapping or overriding context.
 7. Update work items, review notes, and risks through Verlyn.
 8. When the change is ready to land without deployment, use `verlyn changes deliver <change-id> --merge-method squash`.
 9. When the change should land and deploy to the configured provider, use `verlyn changes deploy <change-id>`.
+
+Use `verlyn runs abort <run-id>` only as controlled recovery for a stuck,
+mis-scoped, or superseded active run. It is not a normal happy-path workflow
+step, and the reason should be recorded on the relevant change, work item, or
+handoff notes.
 
 Important: `verlyn changes deliver` and `verlyn changes deploy` both run the
 PR step. Both commands create or update the pull request, merge it, and record

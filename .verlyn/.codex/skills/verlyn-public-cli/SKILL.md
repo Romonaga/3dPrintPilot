@@ -16,3 +16,23 @@ If `.verlyn/agent-skills/verlyn-public-cli.md` is missing, fall back to the repo
 5. `Documentation/AI_USAGE_POLICY.md` when present
 6. `Documentation/guides/VERLYN_AGENT_WORKFLOW.md` when present
 7. `Documentation/guides/VERLYN_PUBLIC_CLI.md` when present
+
+Required Codex behavior:
+
+- Use the installed public `verlyn` CLI first.
+- Run `verlyn auth status`, `verlyn workflow assistant-startup --json`,
+  `verlyn workflow assert-edit-route --json`, and `verlyn target show --json`
+  before edits.
+- Inspect active changes and work items through `verlyn changes show --json`
+  and `verlyn work-items list`.
+- Record changed-file review evidence before delivery when real files changed.
+- Use `verlyn changes deliver <change-id>` for source-control closeout and
+  `verlyn changes deploy <change-id>` for closeout plus provider deployment.
+
+Optional overrides such as `--profile`, `--server`, `--repo-slug`, `--target`,
+`--source-ref`, and `--commit-sha` are diagnostics, bootstrap, or recovery
+controls. Do not use them as routine workflow requirements.
+
+Do not use direct PostgreSQL access, private Verlyn helper scripts, provider
+secret handling, raw provider tools, or gate bypasses as substitutes for the
+public CLI workflow.
