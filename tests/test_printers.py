@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
+from backend.domains.printers.adapters import parse_moonraker_status, parse_octoprint_status
 from backend.domains.printers.entities import DiscoveredPrinter, PrinterScanResult, PrinterScanStatus, PrinterScanSummary
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
 from backend.domains.printers.routes import get_printer_store
@@ -26,6 +27,11 @@ class FakePrinter:
     protocol = "http"
     printer_type = "prus link"
     state = "manual"
+    adapter_type = None
+    capabilities = {}
+    credential_secret_name = None
+    last_status = {}
+    last_status_at = None
     build_volume_x_mm = 250
     build_volume_y_mm = 210
     build_volume_z_mm = 220
@@ -55,6 +61,29 @@ class FakePrinterStore:
         printer.build_volume_x_mm = build_volume_x_mm
         printer.build_volume_y_mm = build_volume_y_mm
         printer.build_volume_z_mm = build_volume_z_mm
+        return printer
+
+    def confirm_discovered_printer(
+        self,
+        name,
+        host,
+        port,
+        protocol,
+        service_type,
+        build_volume_x_mm=None,
+        build_volume_y_mm=None,
+        build_volume_z_mm=None,
+        scan_result_id=None,
+    ):
+        printer = FakePrinter()
+        printer.name = name
+        printer.host = host
+        printer.port = port
+        printer.protocol = protocol
+        printer.printer_type = service_type
+        printer.state = "confirmed"
+        printer.adapter_type = "moonraker" if "moonraker" in service_type else None
+        printer.capabilities = {"read_only_status": printer.adapter_type is not None}
         return printer
 
     def delete_printer(self, printer_id):
@@ -113,6 +142,29 @@ def test_printer_api_lists_and_adds_printers():
     assert delete_response.status_code == 204
 
 
+def test_printer_api_confirms_discovered_candidate():
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore()
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/printers/confirm-discovered",
+        json={
+            "name": "Moonraker at 192.168.1.44:7125",
+            "host": "192.168.1.44",
+            "port": 7125,
+            "protocol": "http",
+            "service_type": "http_probe:moonraker",
+            "confidence": 92,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"] == "confirmed"
+    assert body["adapter_type"] == "moonraker"
+
+
 def test_printer_scan_groups_services_by_host(monkeypatch):
     def fake_scan_lan_for_printers(**kwargs):
         return PrinterScanResult(
@@ -132,6 +184,7 @@ def test_printer_scan_groups_services_by_host(monkeypatch):
                     protocol="http",
                     service_type="http_probe:snapmaker_moonraker",
                     confidence=94,
+                    evidence=("Read-only HTTP probe matched http_probe:snapmaker_moonraker",),
                 ),
                 DiscoveredPrinter(
                     name="Moonraker at 192.168.1.44:80",
@@ -140,6 +193,7 @@ def test_printer_scan_groups_services_by_host(monkeypatch):
                     protocol="http",
                     service_type="http_probe:moonraker",
                     confidence=92,
+                    evidence=("Read-only HTTP probe matched http_probe:moonraker",),
                 ),
             ),
         )
@@ -159,6 +213,7 @@ def test_printer_scan_groups_services_by_host(monkeypatch):
     assert "Klipper-compatible status" in group["capabilities"]
     assert "Klipper/Moonraker API" in group["capabilities"]
     assert len(group["endpoints"]) == 2
+    assert "Read-only HTTP probe matched http_probe:snapmaker_moonraker" in group["endpoints"][0]["evidence"]
 
 
 def test_printer_store_persists_scan_metrics_and_results():
@@ -246,6 +301,12 @@ def test_http_probe_does_not_treat_file_browser_html_as_printer():
     assert _detect_generic_http("192.168.1.6", 8080, "http", file_browser_response) is None
 
 
+def test_tcp_only_support_ports_are_not_printer_proof(monkeypatch):
+    monkeypatch.setattr("backend.domains.printers.service._tcp_port_open", lambda host, port, timeout: True)
+
+    assert _probe_http_port("192.168.1.76", 6000, 0.1) is None
+
+
 def test_mqtt_probe_labels_confirmed_bambu_mqtt_port(monkeypatch):
     monkeypatch.setattr("backend.domains.printers.service._tcp_port_open", lambda host, port, timeout: True)
     monkeypatch.setattr("backend.domains.printers.service._probe_mqtt_over_tls", lambda host, port, timeout: "mqtt")
@@ -256,6 +317,25 @@ def test_mqtt_probe_labels_confirmed_bambu_mqtt_port(monkeypatch):
     assert printer.protocol == "mqtts"
     assert printer.service_type == "mqtt_probe:bambu_mqtt"
     assert printer.confidence == 90
+    assert "MQTT over TLS CONNACK" in printer.evidence[0]
+
+
+def test_octoprint_and_moonraker_status_parsers_are_read_only():
+    octoprint = parse_octoprint_status(
+        {"server": "1.10.0", "api": "0.1"},
+        {"state": {"text": "Operational"}},
+    )
+    moonraker = parse_moonraker_status(
+        {"result": {"software_version": "v0.9", "klippy_state": "ready", "components": ["klippy_apis"]}},
+        {"result": {"state": "ready"}},
+    )
+
+    assert octoprint.adapter_type == "octoprint"
+    assert octoprint.state == "operational"
+    assert octoprint.capabilities["control_enabled"] is False
+    assert moonraker.adapter_type == "moonraker"
+    assert moonraker.state == "ready"
+    assert moonraker.capabilities["read_only_status"] is True
 
 
 def test_mqtt_probe_ignores_unacknowledged_bambu_mqtt_port(monkeypatch):

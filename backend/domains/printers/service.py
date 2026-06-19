@@ -36,10 +36,6 @@ PRINTER_SERVICE_TYPES = (
 
 DEFAULT_HTTP_PROBE_PORTS = (80, 443, 4408, 5000, 6000, 7125, 8000, 8080, 8081, 8883)
 MAX_HTTP_PROBE_PORTS = 10
-TCP_ONLY_PRINTER_PORTS = {
-    990: ("Bambu Lab FTPS", "tcp_probe:bambu_ftps", 72),
-    6000: ("Bambu Lab camera/control service", "tcp_probe:bambu_camera", 62),
-}
 MDNS_BRAND_MARKERS = {
     "bambu": ("Bambu Lab", "mdns:bambu", 86),
     "bblp": ("Bambu Lab", "mdns:bambu", 86),
@@ -94,6 +90,7 @@ class _PrinterServiceListener(ServiceListener):
             protocol=protocol,
             service_type=service_label,
             confidence=confidence,
+            evidence=(f"mDNS service {service_type} advertised {name}",),
         )
         self.discovered[(host, info.port)] = printer
 
@@ -226,16 +223,6 @@ def _probe_http_port(host: str, port: int, timeout_seconds: float) -> Discovered
         return None
     if port == 8883:
         return _probe_bambu_mqtt_port(host, port, timeout_seconds)
-    if port in TCP_ONLY_PRINTER_PORTS:
-        name, service_type, confidence = TCP_ONLY_PRINTER_PORTS[port]
-        return DiscoveredPrinter(
-            name=f"{name} at {host}:{port}",
-            host=host,
-            port=port,
-            protocol="tcp",
-            service_type=service_type,
-            confidence=confidence,
-        )
     scheme = "https" if port == 443 else "http"
     base_url = f"{scheme}://{host}:{port}"
     timeout = httpx.Timeout(timeout_seconds, connect=timeout_seconds)
@@ -265,6 +252,7 @@ def _probe_bambu_mqtt_port(host: str, port: int, timeout_seconds: float) -> Disc
             protocol="mqtts",
             service_type="mqtt_probe:bambu_mqtt",
             confidence=90,
+            evidence=("MQTT over TLS CONNACK received; no publish/control commands sent",),
         )
     return None
 
@@ -390,6 +378,7 @@ def _http_printer(name: str, host: str, port: int, scheme: str, service_type: st
         protocol=scheme,
         service_type=service_type,
         confidence=confidence,
+        evidence=(f"Read-only HTTP probe matched {service_type}",),
     )
 
 

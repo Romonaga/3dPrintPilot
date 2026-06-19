@@ -15,6 +15,11 @@ type ApiPrinter = {
   protocol: string;
   printer_type: string;
   state: string;
+  adapter_type: string | null;
+  capabilities: Record<string, unknown>;
+  credential_configured: boolean;
+  last_status: Record<string, unknown>;
+  last_status_at: string | null;
   build_volume_x_mm: number | null;
   build_volume_y_mm: number | null;
   build_volume_z_mm: number | null;
@@ -28,6 +33,8 @@ type ApiDiscoveredPrinter = {
   service_type: string;
   confidence: number;
   state: string;
+  evidence?: string[];
+  scan_result_id?: number | null;
 };
 
 type ApiPrinterScan = {
@@ -78,6 +85,26 @@ export async function createPrinter(input: CreatePrinterInput): Promise<Printer>
   });
   if (!response.ok) {
     throw new Error(`Add printer failed with HTTP ${response.status}`);
+  }
+  return fromApiPrinter(await response.json());
+}
+
+export async function confirmDiscoveredPrinter(input: DiscoveredPrinter): Promise<Printer> {
+  const response = await apiFetch("/api/printers/confirm-discovered", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: input.name,
+      host: input.host,
+      port: input.port,
+      protocol: input.protocol,
+      service_type: input.serviceType,
+      confidence: input.confidence,
+      scan_result_id: input.scanResultId
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`Confirm printer failed with HTTP ${response.status}`);
   }
   return fromApiPrinter(await response.json());
 }
@@ -139,7 +166,9 @@ export async function scanPrinters(settings: PrinterScanSettings): Promise<Print
       protocol: printer.protocol,
       serviceType: printer.service_type,
       confidence: printer.confidence,
-      state: printer.state
+      state: printer.state,
+      evidence: printer.evidence ?? [],
+      scanResultId: printer.scan_result_id ?? null
     })),
     groups: (scan.groups ?? []).map((group) => ({
       host: group.host,
@@ -153,10 +182,12 @@ export async function scanPrinters(settings: PrinterScanSettings): Promise<Print
         host: endpoint.host,
         port: endpoint.port,
         protocol: endpoint.protocol,
-        serviceType: endpoint.service_type,
-        confidence: endpoint.confidence,
-        state: endpoint.state
-      }))
+          serviceType: endpoint.service_type,
+          confidence: endpoint.confidence,
+          state: endpoint.state,
+          evidence: endpoint.evidence ?? [],
+          scanResultId: endpoint.scan_result_id ?? null
+        }))
     }))
   };
 }
@@ -170,6 +201,11 @@ function fromApiPrinter(printer: ApiPrinter): Printer {
     protocol: printer.protocol,
     printerType: printer.printer_type,
     state: printer.state,
+    adapterType: printer.adapter_type,
+    capabilities: printer.capabilities,
+    credentialConfigured: printer.credential_configured,
+    lastStatus: printer.last_status,
+    lastStatusAt: printer.last_status_at,
     buildVolumeXmm: printer.build_volume_x_mm,
     buildVolumeYmm: printer.build_volume_y_mm,
     buildVolumeZmm: printer.build_volume_z_mm

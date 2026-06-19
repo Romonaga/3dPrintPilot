@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createPrinter, deletePrinter, fromDiscoveredPrinter, listPrinters, scanPrinters } from "../api/printersApi";
+import { confirmDiscoveredPrinter, deletePrinter, listPrinters, scanPrinters } from "../api/printersApi";
 import {
   type DiscoveredPrinter,
   type Printer,
@@ -53,7 +53,7 @@ export function usePrinters() {
     setAddingAction(discoveredPrinterKey(printer));
     setError(null);
     try {
-      const created = await createPrinter(fromDiscoveredPrinter(printer));
+      const created = await confirmDiscoveredPrinter(printer);
       setPrinters((current) => [...current, created]);
     } catch (addError) {
       setError(addError instanceof Error ? addError.message : "Add discovered printer failed");

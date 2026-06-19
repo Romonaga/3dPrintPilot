@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.domains.printers.adapters import capabilities_for_service_type, infer_adapter_type
 from backend.domains.printers.entities import PrinterScanResult
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
 
@@ -24,6 +25,9 @@ class PrinterStore:
         build_volume_x_mm: int | None = None,
         build_volume_y_mm: int | None = None,
         build_volume_z_mm: int | None = None,
+        state: str = "manual",
+        adapter_type: str | None = None,
+        capabilities: dict | None = None,
     ) -> Printer:
         printer = Printer(
             name=name,
@@ -31,7 +35,9 @@ class PrinterStore:
             port=port,
             protocol=protocol,
             printer_type=printer_type,
-            state="manual",
+            state=state,
+            adapter_type=adapter_type or infer_adapter_type(None, printer_type),
+            capabilities=capabilities or capabilities_for_service_type(printer_type),
             build_volume_x_mm=build_volume_x_mm,
             build_volume_y_mm=build_volume_y_mm,
             build_volume_z_mm=build_volume_z_mm,
@@ -40,6 +46,48 @@ class PrinterStore:
         self._session.commit()
         self._session.refresh(printer)
         return printer
+
+    def update_printer(self, printer_id: int, **updates) -> Printer | None:
+        printer = self._session.get(Printer, printer_id)
+        if printer is None:
+            return None
+        for field_name, value in updates.items():
+            if value is not None and hasattr(printer, field_name):
+                setattr(printer, field_name, value)
+        if updates.get("printer_type") is not None:
+            printer.adapter_type = infer_adapter_type(None, printer.printer_type)
+            printer.capabilities = capabilities_for_service_type(printer.printer_type)
+        self._session.commit()
+        self._session.refresh(printer)
+        return printer
+
+    def confirm_discovered_printer(
+        self,
+        name: str,
+        host: str,
+        port: int,
+        protocol: str,
+        service_type: str,
+        build_volume_x_mm: int | None = None,
+        build_volume_y_mm: int | None = None,
+        build_volume_z_mm: int | None = None,
+        scan_result_id: int | None = None,
+    ) -> Printer:
+        source = self._session.get(NetworkScanResult, scan_result_id) if scan_result_id is not None else None
+        final_service_type = source.service_type if source is not None else service_type
+        return self.create_printer(
+            name=source.name if source is not None else name,
+            host=source.host if source is not None else host,
+            port=source.port if source is not None else port,
+            protocol=source.protocol if source is not None else protocol,
+            printer_type=final_service_type,
+            build_volume_x_mm=build_volume_x_mm,
+            build_volume_y_mm=build_volume_y_mm,
+            build_volume_z_mm=build_volume_z_mm,
+            state="confirmed",
+            adapter_type=infer_adapter_type(final_service_type),
+            capabilities=capabilities_for_service_type(final_service_type),
+        )
 
     def delete_printer(self, printer_id: int) -> bool:
         printer = self._session.get(Printer, printer_id)
@@ -76,7 +124,8 @@ class PrinterStore:
                     service_type=printer.service_type,
                     confidence=printer.confidence,
                     state=printer.state,
-                    raw_payload={"service_type": printer.service_type},
+                    raw_payload={"service_type": printer.service_type, "confidence": printer.confidence},
+                    evidence=list(printer.evidence),
                 )
             )
         self._session.commit()

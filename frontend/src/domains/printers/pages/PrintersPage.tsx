@@ -175,6 +175,13 @@ export default function PrintersPage({ autoStartScanRequestId = null, onAutoStar
                         </div>
                       ))}
                     </div>
+                    <div className="capability-list" aria-label={`Evidence for ${group.host}`}>
+                      {group.endpoints.flatMap((endpoint) => endpoint.evidence).map((evidence) => (
+                        <span className="capability-pill" key={evidence}>
+                          {evidence}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                   <div className="row-meta">
                     <span>{group.inferredType}</span>
@@ -187,7 +194,7 @@ export default function PrintersPage({ autoStartScanRequestId = null, onAutoStar
                         disabled={printers.isAdding}
                       >
                         {printers.addingAction === primaryEndpointKey ? <Spinner size={14} /> : null}
-                        <span>Add</span>
+                        <span>Confirm</span>
                       </button>
                     ) : null}
                   </div>
@@ -211,7 +218,7 @@ export default function PrintersPage({ autoStartScanRequestId = null, onAutoStar
                         disabled={printers.isAdding}
                       >
                         {printers.addingAction === discoveredPrinterKey(printer) ? <Spinner size={14} /> : null}
-                        <span>Add</span>
+                        <span>Confirm</span>
                       </button>
                     </div>
                   </article>

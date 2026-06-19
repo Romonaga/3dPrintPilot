@@ -4,14 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db_session
+from backend.domains.printers.adapters import fetch_read_only_status
 from backend.domains.printers.entities import PrinterScanResult
-from backend.domains.printers.schemas.request import CreatePrinterRequest, PrinterScanRequest
+from backend.domains.printers.schemas.request import ConfirmDiscoveredPrinterRequest, CreatePrinterRequest, PrinterScanRequest, UpdatePrinterRequest
 from backend.domains.printers.schemas.response import (
     DiscoveredPrinterResponse,
     PrinterEndpointGroupResponse,
     PrinterResponse,
     PrinterScanResponse,
     PrinterScanSummaryResponse,
+    PrinterStatusResponse,
 )
 from backend.domains.printers.service import scan_lan_for_printers
 from backend.domains.printers.store import PrinterStore
@@ -51,6 +53,39 @@ def create_printer(
     return _printer_response(printer)
 
 
+@router.put("/{printer_id}", response_model=PrinterResponse)
+def update_printer(
+    printer_id: int,
+    request: UpdatePrinterRequest,
+    _user=Depends(require_roles("admin")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterResponse:
+    printer = store.update_printer(printer_id, **request.model_dump(exclude_unset=True))
+    if printer is None:
+        raise HTTPException(status_code=404, detail="Printer not found")
+    return _printer_response(printer)
+
+
+@router.post("/confirm-discovered", response_model=PrinterResponse)
+def confirm_discovered_printer(
+    request: ConfirmDiscoveredPrinterRequest,
+    _user=Depends(require_roles("admin")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterResponse:
+    printer = store.confirm_discovered_printer(
+        name=request.name,
+        host=request.host,
+        port=request.port,
+        protocol=request.protocol,
+        service_type=request.service_type,
+        scan_result_id=request.scan_result_id,
+        build_volume_x_mm=request.build_volume_x_mm,
+        build_volume_y_mm=request.build_volume_y_mm,
+        build_volume_z_mm=request.build_volume_z_mm,
+    )
+    return _printer_response(printer)
+
+
 @router.delete("/{printer_id}", status_code=204)
 def delete_printer(
     printer_id: int,
@@ -60,6 +95,26 @@ def delete_printer(
     if not store.delete_printer(printer_id):
         raise HTTPException(status_code=404, detail="Printer not found")
     return Response(status_code=204)
+
+
+@router.get("/{printer_id}/status", response_model=PrinterStatusResponse)
+def read_printer_status(
+    printer_id: int,
+    _user=Depends(require_roles("viewer")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterStatusResponse:
+    printer = next((candidate for candidate in store.list_printers() if candidate.id == printer_id), None)
+    if printer is None:
+        raise HTTPException(status_code=404, detail="Printer not found")
+    status = fetch_read_only_status(printer)
+    return PrinterStatusResponse(
+        printer_id=printer.id,
+        adapter_type=status.adapter_type,
+        state=status.state,
+        capabilities=status.capabilities,
+        raw_status=status.raw_status,
+        observed_at=status.observed_at.isoformat(),
+    )
 
 
 @router.post("/scan", response_model=PrinterScanResponse)
@@ -80,7 +135,7 @@ def scan_printers(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     run = store.save_scan_result(result)
-    return _scan_response(result, scan_run_id=run.id)
+    return _scan_response(result, scan_run_id=run.id, persisted_results=run.results)
 
 
 def _printer_response(printer) -> PrinterResponse:
@@ -92,14 +147,23 @@ def _printer_response(printer) -> PrinterResponse:
         protocol=printer.protocol,
         printer_type=printer.printer_type,
         state=printer.state,
+        adapter_type=getattr(printer, "adapter_type", None),
+        capabilities=getattr(printer, "capabilities", {}) or {},
+        credential_configured=getattr(printer, "credential_secret_name", None) is not None,
+        last_status=getattr(printer, "last_status", {}) or {},
+        last_status_at=printer.last_status_at.isoformat() if getattr(printer, "last_status_at", None) is not None else None,
         build_volume_x_mm=getattr(printer, "build_volume_x_mm", None),
         build_volume_y_mm=getattr(printer, "build_volume_y_mm", None),
         build_volume_z_mm=getattr(printer, "build_volume_z_mm", None),
     )
 
 
-def _scan_response(result: PrinterScanResult, scan_run_id: int | None = None) -> PrinterScanResponse:
-    printers = [_discovered_printer_response(printer) for printer in result.printers]
+def _scan_response(result: PrinterScanResult, scan_run_id: int | None = None, persisted_results=None) -> PrinterScanResponse:
+    scan_result_ids = {
+        (item.host, item.port, item.service_type): item.id
+        for item in (persisted_results or [])
+    }
+    printers = [_discovered_printer_response(printer, scan_result_ids.get((printer.host, printer.port, printer.service_type))) for printer in result.printers]
     return PrinterScanResponse(
         summary=PrinterScanSummaryResponse(
             scan_run_id=scan_run_id,
@@ -115,7 +179,7 @@ def _scan_response(result: PrinterScanResult, scan_run_id: int | None = None) ->
     )
 
 
-def _discovered_printer_response(printer) -> DiscoveredPrinterResponse:
+def _discovered_printer_response(printer, scan_result_id: int | None = None) -> DiscoveredPrinterResponse:
     return DiscoveredPrinterResponse(
         name=printer.name,
         host=printer.host,
@@ -124,6 +188,8 @@ def _discovered_printer_response(printer) -> DiscoveredPrinterResponse:
         service_type=printer.service_type,
         confidence=printer.confidence,
         state=printer.state,
+        evidence=list(getattr(printer, "evidence", ())),
+        scan_result_id=getattr(printer, "scan_result_id", None) or scan_result_id,
     )
 
 

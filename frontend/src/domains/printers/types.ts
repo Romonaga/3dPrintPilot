@@ -6,6 +6,11 @@ export type Printer = {
   protocol: string;
   printerType: string;
   state: string;
+  adapterType: string | null;
+  capabilities: Record<string, unknown>;
+  credentialConfigured: boolean;
+  lastStatus: Record<string, unknown>;
+  lastStatusAt: string | null;
   buildVolumeXmm: number | null;
   buildVolumeYmm: number | null;
   buildVolumeZmm: number | null;
@@ -19,6 +24,8 @@ export type DiscoveredPrinter = {
   serviceType: string;
   confidence: number;
   state: string;
+  evidence: string[];
+  scanResultId: number | null;
 };
 
 export type PrinterEndpointGroup = {
