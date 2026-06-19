@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    allowedHosts: ["3dprintpilot.local", "3dprintpilot"],
     proxy: {
       "/api": "http://127.0.0.1:8001"
     }
