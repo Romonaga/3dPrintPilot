@@ -64,18 +64,38 @@ export async function listReconciliationRuns(): Promise<CostReconciliationRun[]>
 }
 
 export async function reconcileOpenAiCosts(periodStart: string, periodEnd: string): Promise<CostReconciliationResult> {
+  const startIso = dateInputToIso(periodStart, "start");
+  const endIso = dateInputToIso(periodEnd, "end");
+  if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
+    throw new Error("Reconciliation end date must be after start date");
+  }
   const response = await apiFetch("/api/ai/accounting/reconcile/openai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      period_start: new Date(`${periodStart}T00:00:00`).toISOString(),
-      period_end: new Date(`${periodEnd}T00:00:00`).toISOString()
+      period_start: startIso,
+      period_end: endIso
     })
   });
   if (!response.ok) {
     throw new Error(`OpenAI reconciliation failed with HTTP ${response.status}`);
   }
   return fromApiResult(await response.json());
+}
+
+function dateInputToIso(value: string, label: "start" | "end") {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    throw new Error(`Invalid reconciliation ${label} date`);
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    throw new Error(`Invalid reconciliation ${label} date`);
+  }
+  return date.toISOString();
 }
 
 function fromApiStatus(status: ApiAccountingStatus): AiAccountingStatus {
