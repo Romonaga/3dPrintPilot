@@ -279,16 +279,35 @@ def test_http_probe_detects_octoprint_and_moonraker_markers():
 def test_http_probe_detects_creality_and_snapmaker_markers():
     import httpx
 
-    creality_response = httpx.Response(200, text="<title>Fluidd - Creality K2</title>")
+    creality_response = httpx.Response(200, text="<title>Fluidd - Creality K2 Pro</title>")
     snapmaker_response = httpx.Response(200, text='{"brand":"Snapmaker","model":"U1"}')
+    bambu_response = httpx.Response(200, text="<title>Bambu Lab A1</title>")
 
     creality = _detect_generic_http("192.168.1.51", 4408, "http", creality_response)
     snapmaker = _detect_generic_http("192.168.1.52", 8080, "http", snapmaker_response)
+    bambu = _detect_generic_http("192.168.1.76", 80, "http", bambu_response)
 
     assert creality is not None
+    assert creality.name == "Creality K2 Pro at 192.168.1.51:4408"
     assert creality.service_type == "http_probe:creality"
     assert snapmaker is not None
+    assert snapmaker.name == "Snapmaker U1 at 192.168.1.52:8080"
     assert snapmaker.service_type == "http_probe:snapmaker"
+    assert bambu is not None
+    assert bambu.name == "Bambu Lab A1 at 192.168.1.76:80"
+    assert bambu.service_type == "http_probe:bambu"
+
+
+def test_moonraker_probe_detects_creality_k2_pro_marker():
+    import httpx
+
+    response = httpx.Response(200, text='{"result":{"software_version":"moonraker","model":"Creality K2 Pro"}}')
+
+    printer = _detect_moonraker("192.168.1.185", 7125, "http", response)
+
+    assert printer is not None
+    assert printer.name == "Creality K2 Pro Moonraker at 192.168.1.185:7125"
+    assert printer.service_type == "http_probe:creality_moonraker"
 
 
 def test_http_probe_does_not_treat_bare_k2_as_creality():
@@ -454,6 +473,13 @@ def test_mdns_metadata_filters_paper_and_generic_http_services():
     assert _mdns_printer_metadata("_ipp._tcp.local.", "HP OfficeJet Pro 8720") is None
     assert _mdns_printer_metadata("_http._tcp.local.", "RomoCloud") is None
     assert _mdns_printer_metadata("_http._tcp.local.", "Bambu Lab X1") == ("http", "mdns:bambu", 86)
+    assert _mdns_printer_metadata("_bambulab._tcp.local.", "Bambu Lab A1") == ("http", "mdns:bambu", 88)
+    assert _mdns_printer_metadata("_bambulab._tcp.local.", "Bambu Lab H2") == ("http", "mdns:bambu", 88)
+    assert _mdns_printer_metadata("_creality._tcp.local.", "Creality K2 Pro") == ("http", "mdns:creality", 84)
+    assert _mdns_printer_metadata("_http._tcp.local.", "K2 storage widget") is None
+    assert _mdns_printer_metadata("_http._tcp.local.", "U1 storage widget") is None
+    assert _mdns_printer_metadata("_snapmaker._tcp.local.", "Snapmaker U1") == ("http", "mdns:snapmaker", 82)
+    assert _mdns_printer_metadata("_snapmaker._tcp.local.", "U1") == ("http", "mdns:snapmaker", 82)
     assert _mdns_printer_metadata("_moonraker._tcp.local.", "mainsail") == ("http", "_moonraker._tcp.local.", 90)
 
 

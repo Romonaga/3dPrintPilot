@@ -38,12 +38,18 @@ DEFAULT_HTTP_PROBE_PORTS = (80, 443, 4408, 5000, 6000, 7125, 8000, 8080, 8081, 8
 PREFERRED_HTTP_PROBE_PORTS = (7125, 8883, 4408, 8000, 8080, 80, 443, 5000, 6000, 8081)
 MAX_HTTP_PROBE_PORTS = 10
 MDNS_BRAND_MARKERS = {
+    "bambu a1": ("Bambu Lab A1", "mdns:bambu", 88),
+    "a1 mini": ("Bambu Lab A1 mini", "mdns:bambu", 88),
+    "bambu h2": ("Bambu Lab H2", "mdns:bambu", 88),
+    "bambu h2d": ("Bambu Lab H2D", "mdns:bambu", 88),
     "bambu": ("Bambu Lab", "mdns:bambu", 86),
     "bblp": ("Bambu Lab", "mdns:bambu", 86),
+    "k2 pro": ("Creality K2 Pro", "mdns:creality", 84),
+    "k2pro": ("Creality K2 Pro", "mdns:creality", 84),
+    "creality k2": ("Creality K2", "mdns:creality", 82),
     "creality": ("Creality", "mdns:creality", 80),
-    "k2": ("Creality K2", "mdns:creality", 80),
+    "snapmaker u1": ("Snapmaker U1", "mdns:snapmaker", 82),
     "snapmaker": ("Snapmaker", "mdns:snapmaker", 80),
-    "u1": ("Snapmaker U1", "mdns:snapmaker", 76),
 }
 
 
@@ -335,7 +341,9 @@ def _detect_moonraker(host: str, port: int, scheme: str, response: httpx.Respons
     text = response.text.lower()
     if response.status_code == 200 and "snapmakercloud" in text:
         return _http_printer("Snapmaker U1 Moonraker", host, port, scheme, "http_probe:snapmaker_moonraker", 94)
-    if response.status_code == 200 and "k2plus" in text:
+    if response.status_code == 200 and any(marker in text for marker in ("k2 pro", "k2pro")):
+        return _http_printer("Creality K2 Pro Moonraker", host, port, scheme, "http_probe:creality_moonraker", 94)
+    if response.status_code == 200 and any(marker in text for marker in ("k2 plus", "k2plus")):
         return _http_printer("Creality K2 Plus Moonraker", host, port, scheme, "http_probe:creality_moonraker", 94)
     if response.status_code == 200 and ("moonraker" in text or "klippy" in text or "klipper" in text):
         return _http_printer("Moonraker", host, port, scheme, "http_probe:moonraker", 92)
@@ -352,11 +360,24 @@ def _detect_duet(host: str, port: int, scheme: str, response: httpx.Response) ->
 def _detect_generic_http(host: str, port: int, scheme: str, response: httpx.Response) -> DiscoveredPrinter | None:
     text = response.text.lower()
     server = response.headers.get("server", "").lower()
+    haystack = f"{server}\n{text}"
+    contextual_match = _match_http_contextual_marker(haystack)
+    if contextual_match is not None:
+        name, service_type, confidence = contextual_match
+        return _http_printer(name, host, port, scheme, service_type, confidence)
     markers = {
         "octoprint": ("OctoPrint", "http_probe:octoprint", 88),
+        "creality k2 pro": ("Creality K2 Pro", "http_probe:creality", 88),
+        "k2 pro": ("Creality K2 Pro", "http_probe:creality", 88),
+        "k2pro": ("Creality K2 Pro", "http_probe:creality", 88),
+        "creality k2 plus": ("Creality K2 Plus", "http_probe:creality", 86),
+        "k2 plus": ("Creality K2 Plus", "http_probe:creality", 86),
+        "k2plus": ("Creality K2 Plus", "http_probe:creality", 86),
         "creality": ("Creality", "http_probe:creality", 84),
         "creality k2": ("Creality K2", "http_probe:creality", 84),
-        "k2plus": ("Creality K2 Plus", "http_probe:creality", 84),
+        "bambu h2d": ("Bambu Lab H2D", "http_probe:bambu", 82),
+        "bambu h2": ("Bambu Lab H2", "http_probe:bambu", 82),
+        "bambu a1": ("Bambu Lab A1", "http_probe:bambu", 82),
         "moonraker": ("Moonraker", "http_probe:moonraker", 88),
         "klipper": ("Klipper/Moonraker", "http_probe:moonraker", 84),
         "mainsail": ("Mainsail/Klipper", "http_probe:moonraker", 82),
@@ -365,9 +386,9 @@ def _detect_generic_http(host: str, port: int, scheme: str, response: httpx.Resp
         "prusa link": ("PrusaLink", "http_probe:prusalink", 84),
         "duet": ("Duet Web Control", "http_probe:duet", 78),
         "bambu": ("Bambu Lab", "http_probe:bambu", 78),
+        "snapmaker u1": ("Snapmaker U1", "http_probe:snapmaker", 82),
         "snapmaker": ("Snapmaker", "http_probe:snapmaker", 78),
     }
-    haystack = f"{server}\n{text}"
     for marker, (name, service_type, confidence) in markers.items():
         if marker in haystack:
             return _http_printer(name, host, port, scheme, service_type, confidence)
@@ -414,8 +435,51 @@ def _prioritized_probe_ports(ports: tuple[int, ...]) -> tuple[int, ...]:
     return tuple(preferred + remaining)
 
 
+def _match_http_contextual_marker(haystack: str) -> tuple[str, str, int] | None:
+    if "bambu" in haystack:
+        if "h2d" in haystack:
+            return ("Bambu Lab H2D", "http_probe:bambu", 82)
+        if "h2" in haystack:
+            return ("Bambu Lab H2", "http_probe:bambu", 82)
+        if "a1 mini" in haystack:
+            return ("Bambu Lab A1 mini", "http_probe:bambu", 82)
+        if "a1" in haystack:
+            return ("Bambu Lab A1", "http_probe:bambu", 82)
+    if "snapmaker" in haystack and "u1" in haystack:
+        return ("Snapmaker U1", "http_probe:snapmaker", 82)
+    if "creality" in haystack:
+        if "k2 pro" in haystack or "k2pro" in haystack:
+            return ("Creality K2 Pro", "http_probe:creality", 88)
+        if "k2 plus" in haystack or "k2plus" in haystack:
+            return ("Creality K2 Plus", "http_probe:creality", 86)
+    return None
+
+
 def _match_mdns_brand_marker(name: str, service_type: str) -> tuple[str, str, int] | None:
-    haystack = f"{name} {service_type}".lower()
+    name_lower = name.lower()
+    haystack = f"{name_lower} {service_type}".lower()
+    if any(marker in haystack for marker in ("bambu", "bblp")):
+        if "h2d" in name_lower:
+            return ("Bambu Lab H2D", "mdns:bambu", 88)
+        if "h2" in name_lower:
+            return ("Bambu Lab H2", "mdns:bambu", 88)
+        if "a1 mini" in name_lower:
+            return ("Bambu Lab A1 mini", "mdns:bambu", 88)
+        if "a1" in name_lower:
+            return ("Bambu Lab A1", "mdns:bambu", 88)
+        return ("Bambu Lab", "mdns:bambu", 86)
+    if "creality" in haystack:
+        if "k2 pro" in name_lower or "k2pro" in name_lower:
+            return ("Creality K2 Pro", "mdns:creality", 84)
+        if "k2 plus" in name_lower or "k2plus" in name_lower:
+            return ("Creality K2 Plus", "mdns:creality", 84)
+        if "k2" in name_lower:
+            return ("Creality K2", "mdns:creality", 82)
+        return ("Creality", "mdns:creality", 80)
+    if "snapmaker" in haystack:
+        if "u1" in name_lower:
+            return ("Snapmaker U1", "mdns:snapmaker", 82)
+        return ("Snapmaker", "mdns:snapmaker", 80)
     for marker, result in MDNS_BRAND_MARKERS.items():
         if marker in haystack:
             return result
