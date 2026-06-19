@@ -14,12 +14,16 @@ from backend.domains.ai.schemas.response import (
 from backend.domains.ai.service import create_openai_cost_reconciliation_service
 from backend.domains.ai.store import AiAccountingStore
 from backend.domains.settings.store import ProviderSecretStore
+from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
 @router.get("/accounting/status", response_model=AiAccountingStatusResponse)
-def accounting_status(session: Session = Depends(get_db_session)) -> AiAccountingStatusResponse:
+def accounting_status(
+    _user=Depends(require_roles("admin")),
+    session: Session = Depends(get_db_session),
+) -> AiAccountingStatusResponse:
     secret_store = ProviderSecretStore(session, get_secret_cipher())
     return AiAccountingStatusResponse(
         estimated_cost_supported=True,
@@ -34,6 +38,7 @@ def accounting_status(session: Session = Depends(get_db_session)) -> AiAccountin
 @router.post("/accounting/reconcile/openai", response_model=CostReconciliationResponse)
 def reconcile_openai_costs(
     request: ReconcileOpenAICostsRequest,
+    _user=Depends(require_roles("admin")),
     session: Session = Depends(get_db_session),
 ) -> CostReconciliationResponse:
     secret_store = ProviderSecretStore(session, get_secret_cipher())
@@ -63,7 +68,10 @@ def reconcile_openai_costs(
 
 
 @router.get("/accounting/reconciliation-runs", response_model=list[CostReconciliationRunResponse])
-def list_reconciliation_runs(session: Session = Depends(get_db_session)) -> list[CostReconciliationRunResponse]:
+def list_reconciliation_runs(
+    _user=Depends(require_roles("admin")),
+    session: Session = Depends(get_db_session),
+) -> list[CostReconciliationRunResponse]:
     runs = AiAccountingStore(session).list_reconciliation_runs()
     return [
         CostReconciliationRunResponse(

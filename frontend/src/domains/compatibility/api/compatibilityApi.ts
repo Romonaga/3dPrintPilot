@@ -1,4 +1,5 @@
 import { type CompatibilityCheckResult, type CompatibilityRunResult } from "../types";
+import { apiFetch } from "../../../lib/apiFetch";
 
 type ApiCheck = {
   id: number;
@@ -28,7 +29,7 @@ type ApiRun = {
 };
 
 export async function runCompatibilityChecks(scanRunId: number, maxCandidates: number): Promise<CompatibilityRunResult> {
-  const response = await fetch("/api/compatibility/checks", {
+  const response = await apiFetch("/api/compatibility/checks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -43,7 +44,7 @@ export async function runCompatibilityChecks(scanRunId: number, maxCandidates: n
 }
 
 export async function listCompatibilityChecks(): Promise<CompatibilityCheckResult[]> {
-  const response = await fetch("/api/compatibility/checks");
+  const response = await apiFetch("/api/compatibility/checks");
   if (!response.ok) {
     throw new Error(`Compatibility list failed with HTTP ${response.status}`);
   }

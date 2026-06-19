@@ -12,6 +12,7 @@ from backend.domains.printers.routes import router as printers_router
 from backend.domains.resources.routes import router as resources_router
 from backend.domains.settings.routes import router as settings_router
 from backend.domains.site_scanning.routes import router as site_scanning_router
+from backend.domains.users.routes import router as users_router
 
 
 def create_app() -> FastAPI:
@@ -26,6 +27,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health_router, prefix="/api")
+    app.include_router(users_router, prefix="/api")
     app.include_router(printers_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
     app.include_router(resources_router, prefix="/api")

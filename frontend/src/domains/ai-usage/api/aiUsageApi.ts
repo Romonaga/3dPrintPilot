@@ -3,6 +3,7 @@ import {
   type CostReconciliationResult,
   type CostReconciliationRun
 } from "../types";
+import { apiFetch } from "../../../lib/apiFetch";
 
 type ApiAccountingStatus = {
   estimated_cost_supported: boolean;
@@ -38,7 +39,7 @@ type ApiReconciliationResult = {
 };
 
 export async function getAiAccountingStatus(): Promise<AiAccountingStatus> {
-  const response = await fetch("/api/ai/accounting/status");
+  const response = await apiFetch("/api/ai/accounting/status");
   if (!response.ok) {
     throw new Error(`AI accounting status failed with HTTP ${response.status}`);
   }
@@ -46,7 +47,7 @@ export async function getAiAccountingStatus(): Promise<AiAccountingStatus> {
 }
 
 export async function listReconciliationRuns(): Promise<CostReconciliationRun[]> {
-  const response = await fetch("/api/ai/accounting/reconciliation-runs");
+  const response = await apiFetch("/api/ai/accounting/reconciliation-runs");
   if (!response.ok) {
     throw new Error(`Reconciliation run list failed with HTTP ${response.status}`);
   }
@@ -55,7 +56,7 @@ export async function listReconciliationRuns(): Promise<CostReconciliationRun[]>
 }
 
 export async function reconcileOpenAiCosts(periodStart: string, periodEnd: string): Promise<CostReconciliationResult> {
-  const response = await fetch("/api/ai/accounting/reconcile/openai", {
+  const response = await apiFetch("/api/ai/accounting/reconcile/openai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

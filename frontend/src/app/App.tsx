@@ -1,6 +1,8 @@
 import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../components/AppShell";
 import { LoadingView } from "../components/LoadingView";
+import { AuthPage } from "../domains/auth/pages/AuthPage";
+import { useAuthSession } from "../domains/auth/hooks/useAuthSession";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { navItems, type AppRouteId } from "./navigation";
 
@@ -19,6 +21,7 @@ const routeLabels: Record<AppRouteId, string> = Object.fromEntries(
 export function App() {
   const [activeRoute, setActiveRoute] = useState<AppRouteId>("dashboard");
   const [printerScanRequestId, setPrinterScanRequestId] = useState<number | null>(null);
+  const auth = useAuthSession();
   const themeMode = useThemeMode();
   const handleRouteChange = (route: AppRouteId) => {
     setActiveRoute(route);
@@ -31,11 +34,41 @@ export function App() {
     setActiveRoute("printers");
   };
 
+  if (auth.isLoading) {
+    return <LoadingView label="Session" />;
+  }
+
+  if (auth.bootstrapRequired || auth.user === null) {
+    return (
+      <AuthPage
+        mode={auth.bootstrapRequired ? "bootstrap" : "login"}
+        error={auth.error}
+        onBootstrap={auth.bootstrap}
+        onLogin={auth.signIn}
+        onChangePassword={auth.updatePassword}
+      />
+    );
+  }
+
+  if (auth.user.forcePasswordChange) {
+    return (
+      <AuthPage
+        mode="change-password"
+        error={auth.error}
+        onBootstrap={auth.bootstrap}
+        onLogin={auth.signIn}
+        onChangePassword={auth.updatePassword}
+      />
+    );
+  }
+
   return (
     <AppShell
       activeRoute={activeRoute}
       isDarkMode={themeMode.isDark}
       navItems={navItems}
+      user={auth.user}
+      onLogout={auth.signOut}
       onRouteChange={handleRouteChange}
       onThemeToggle={themeMode.toggleTheme}
     >
