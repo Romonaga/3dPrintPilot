@@ -19,7 +19,13 @@ class PrinterCapabilities:
     supported_materials: frozenset[str] = field(default_factory=frozenset)
     max_nozzle_temp_c: float | None = None
     max_bed_temp_c: float | None = None
+    nozzle_diameter_mm: float | None = None
+    hardened_nozzle: bool = False
+    flexible_capable: bool = False
+    color_count: int = 1
+    supported_file_formats: frozenset[str] = field(default_factory=lambda: frozenset({"stl", "3mf"}))
     enclosed: bool = False
+    online: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +38,12 @@ class ModelRequirements:
     nozzle_temp_c: float | None = None
     bed_temp_c: float | None = None
     enclosure_required: bool = False
+    file_format: str | None = None
+    nozzle_diameter_mm: float | None = None
+    abrasive: bool = False
+    flexible: bool = False
+    color_count: int = 1
+    source_type: str = "metadata_only"
 
 
 @dataclass(frozen=True)

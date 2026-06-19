@@ -13,7 +13,12 @@ from backend.domains.compatibility.schemas.response import (
     CompatibilityRunResponse,
 )
 from backend.domains.compatibility.service import check_compatibility
-from backend.domains.compatibility.store import CompatibilityStore, printer_capabilities, scan_result_requirements
+from backend.domains.compatibility.store import (
+    CompatibilityStore,
+    printer_capabilities,
+    report_confidence_label,
+    report_source_type,
+)
 from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/compatibility", tags=["compatibility"])
@@ -38,7 +43,7 @@ def run_compatibility_checks(
 
     checks = []
     for candidate in candidates:
-        requirements = scan_result_requirements(candidate)
+        requirements = store.requirements_for_scan_result(candidate)
         for printer in printers:
             started = perf_counter()
             report = check_compatibility(printer_capabilities(printer), requirements)
@@ -50,6 +55,8 @@ def run_compatibility_checks(
                     report=report,
                     requirements=requirements,
                     duration_ms=duration_ms,
+                    source_type=report_source_type(requirements),
+                    confidence_label=report_confidence_label(requirements),
                 )
             )
     return CompatibilityRunResponse(
