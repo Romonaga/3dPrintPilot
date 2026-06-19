@@ -14,6 +14,30 @@ class CreatePrinterRequest(BaseModel):
     build_volume_z_mm: int | None = Field(default=None, ge=1, le=2000)
 
 
+class UpdatePrinterRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    host: str | None = Field(default=None, min_length=1, max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    protocol: str | None = Field(default=None, min_length=2, max_length=40)
+    printer_type: str | None = Field(default=None, min_length=1, max_length=80)
+    build_volume_x_mm: int | None = Field(default=None, ge=1, le=2000)
+    build_volume_y_mm: int | None = Field(default=None, ge=1, le=2000)
+    build_volume_z_mm: int | None = Field(default=None, ge=1, le=2000)
+
+
+class ConfirmDiscoveredPrinterRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=160)
+    host: str = Field(..., min_length=1, max_length=255)
+    port: int = Field(ge=1, le=65535)
+    protocol: str = Field(default="http", min_length=2, max_length=40)
+    service_type: str = Field(default="unknown", min_length=1, max_length=160)
+    confidence: int = Field(default=50, ge=0, le=100)
+    scan_result_id: int | None = None
+    build_volume_x_mm: int | None = Field(default=None, ge=1, le=2000)
+    build_volume_y_mm: int | None = Field(default=None, ge=1, le=2000)
+    build_volume_z_mm: int | None = Field(default=None, ge=1, le=2000)
+
+
 class PrinterScanRequest(BaseModel):
     timeout_seconds: float = Field(default=3.0, ge=1.0, le=10.0)
     scan_method: str = Field(default="combined", pattern="^(mdns|http_probe|combined)$")

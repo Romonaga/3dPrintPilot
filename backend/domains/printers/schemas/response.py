@@ -11,6 +11,11 @@ class PrinterResponse(BaseModel):
     protocol: str
     printer_type: str
     state: str
+    adapter_type: str | None = None
+    capabilities: dict = Field(default_factory=dict)
+    credential_configured: bool = False
+    last_status: dict = Field(default_factory=dict)
+    last_status_at: str | None = None
     build_volume_x_mm: int | None
     build_volume_y_mm: int | None
     build_volume_z_mm: int | None
@@ -24,6 +29,17 @@ class DiscoveredPrinterResponse(BaseModel):
     service_type: str
     confidence: int
     state: str
+    evidence: list[str] = Field(default_factory=list)
+    scan_result_id: int | None = None
+
+
+class PrinterStatusResponse(BaseModel):
+    printer_id: int
+    adapter_type: str
+    state: str
+    capabilities: dict = Field(default_factory=dict)
+    raw_status: dict = Field(default_factory=dict)
+    observed_at: str
 
 
 class PrinterScanSummaryResponse(BaseModel):

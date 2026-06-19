@@ -17,6 +17,8 @@ class DiscoveredPrinter:
     service_type: str
     confidence: int
     state: str = "discovered"
+    evidence: tuple[str, ...] = ()
+    scan_result_id: int | None = None
 
 
 @dataclass(frozen=True)
