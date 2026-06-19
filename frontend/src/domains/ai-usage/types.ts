@@ -5,6 +5,14 @@ export type AiAccountingStatus = {
   reusablePackage: string;
   openAiApiTokenConfigured: boolean;
   openAiAccountKeyConfigured: boolean;
+  openAiFallbackEnabled: boolean;
+  localModel: string;
+  openAiFallbackModel: string;
+  qualityThreshold: number;
+  monthlyBudgetUsd: string;
+  singleRequestBudgetUsd: string;
+  estimatedMonthToDateUsd: string;
+  budgetRemainingUsd: string;
 };
 
 export type CostReconciliationRun = {

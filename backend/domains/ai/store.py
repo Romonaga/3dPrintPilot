@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.domains.ai.models import AiCostReconciliationRun, AiUsageEvent
@@ -29,6 +29,80 @@ class AiAccountingStore:
 
     def sum_estimated_cost(self, start: datetime, end: datetime) -> Decimal:
         return sum((event.estimated_cost_usd for event in self.list_reconcilable_events(start, end)), Decimal("0"))
+
+    def sum_provider_estimated_cost(self, provider: str, start: datetime, end: datetime) -> Decimal:
+        statement = select(func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0)).where(
+            AiUsageEvent.provider == provider,
+            AiUsageEvent.created_at >= start,
+            AiUsageEvent.created_at < end,
+        )
+        return Decimal(str(self._session.execute(statement).scalar_one() or "0"))
+
+    def record_usage_event(
+        self,
+        *,
+        provider: str,
+        model_name: str,
+        task_type: str,
+        input_tokens: int,
+        output_tokens: int,
+        estimated_cost_usd: Decimal,
+        cost_status: str,
+        user_id: int | None = None,
+        context_type: str | None = None,
+        context_id: str | None = None,
+        cached_input_tokens: int = 0,
+        reasoning_tokens: int = 0,
+        latency_ms: int | None = None,
+        success: bool = True,
+        error_message: str | None = None,
+        raw_usage: dict | None = None,
+    ) -> AiUsageEvent:
+        event = AiUsageEvent(
+            user_id=user_id,
+            provider=provider,
+            model_name=model_name,
+            task_type=task_type,
+            context_type=context_type,
+            context_id=context_id,
+            input_tokens=input_tokens,
+            cached_input_tokens=cached_input_tokens,
+            output_tokens=output_tokens,
+            reasoning_tokens=reasoning_tokens,
+            estimated_cost_usd=estimated_cost_usd,
+            cost_status=cost_status,
+            cost_source="local_estimate",
+            latency_ms=latency_ms,
+            success=success,
+            error_message=error_message,
+            raw_usage=raw_usage or {},
+        )
+        self._session.add(event)
+        self._session.commit()
+        self._session.refresh(event)
+        return event
+
+    def usage_events(self, start: datetime, end: datetime) -> list[AiUsageEvent]:
+        statement = (
+            select(AiUsageEvent)
+            .where(AiUsageEvent.created_at >= start, AiUsageEvent.created_at < end)
+            .order_by(AiUsageEvent.created_at.desc(), AiUsageEvent.id.desc())
+        )
+        return list(self._session.scalars(statement).all())
+
+    def usage_summary(self, start: datetime, end: datetime, budget_limit_usd: Decimal) -> dict:
+        events = self.usage_events(start, end)
+        estimated_total = sum((Decimal(event.estimated_cost_usd) for event in events), Decimal("0"))
+        final_values = [Decimal(event.final_cost_usd) for event in events if event.final_cost_usd is not None]
+        return {
+            "estimated_total_usd": estimated_total,
+            "final_total_usd": sum(final_values, Decimal("0")) if final_values else None,
+            "event_count": len(events),
+            "openai_event_count": sum(1 for event in events if event.provider == "openai"),
+            "local_event_count": sum(1 for event in events if event.provider == "ollama"),
+            "budget_limit_usd": budget_limit_usd,
+            "budget_remaining_usd": max(Decimal("0"), budget_limit_usd - estimated_total),
+        }
 
     def create_reconciliation_run(
         self,

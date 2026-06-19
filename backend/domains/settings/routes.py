@@ -23,6 +23,10 @@ def feature_settings() -> FeatureSettingsResponse:
     settings = get_settings()
     return FeatureSettingsResponse(
         openai_fallback_enabled=settings.openai_fallback_enabled,
+        openai_fallback_model=settings.openai_fallback_model,
+        ai_quality_threshold=settings.ai_quality_threshold,
+        openai_monthly_budget_usd=str(settings.openai_monthly_budget_usd),
+        openai_single_request_budget_usd=str(settings.openai_single_request_budget_usd),
         cost_reconciliation_required=True,
         local_ai_provider="ollama",
         local_ai_default_model=settings.local_llm_default_model,

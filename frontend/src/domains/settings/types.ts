@@ -7,3 +7,14 @@ export type ProviderSecretStatus = {
   maskedValue: string | null;
   updatedAt: string | null;
 };
+
+export type FeatureSettings = {
+  openAiFallbackEnabled: boolean;
+  openAiFallbackModel: string;
+  aiQualityThreshold: number;
+  openAiMonthlyBudgetUsd: string;
+  openAiSingleRequestBudgetUsd: string;
+  costReconciliationRequired: boolean;
+  localAiProvider: string;
+  localAiDefaultModel: string;
+};

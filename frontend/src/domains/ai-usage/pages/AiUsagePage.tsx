@@ -47,6 +47,27 @@ export default function AiUsagePage() {
           <span>{status?.reusablePackage ?? "local_ai_accounting"}</span>
         </div>
 
+        {status ? (
+          <dl className="metric-grid reconciliation-result">
+            <div>
+              <dt>Local Model</dt>
+              <dd>{status.localModel}</dd>
+            </div>
+            <div>
+              <dt>Fallback</dt>
+              <dd>{status.openAiFallbackEnabled ? status.openAiFallbackModel : "Disabled"}</dd>
+            </div>
+            <div>
+              <dt>Quality Gate</dt>
+              <dd>{status.qualityThreshold}</dd>
+            </div>
+            <div>
+              <dt>Budget Left</dt>
+              <dd>${status.budgetRemainingUsd}</dd>
+            </div>
+          </dl>
+        ) : null}
+
         <form className="reconciliation-form" onSubmit={handleSubmit}>
           <label className="field-label">
             Start
@@ -82,6 +103,9 @@ export default function AiUsagePage() {
             </div>
           </dl>
         ) : null}
+        <a className="text-button icon-action export-link" href="/api/ai/accounting/usage.csv">
+          Export CSV
+        </a>
       </article>
 
       <article className="panel">

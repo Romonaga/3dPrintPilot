@@ -1,17 +1,84 @@
 import { AlertTriangle, CheckCircle2, KeyRound, RefreshCw, Trash2 } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { ResourceControlsPanel } from "../../resources/components/ResourceControlsPanel";
+import { getFeatureSettings } from "../api/settingsApi";
 import { useProviderSecrets } from "../hooks/useProviderSecrets";
-import { type ProviderSecretStatus } from "../types";
+import { type FeatureSettings, type ProviderSecretStatus } from "../types";
 
 export default function SettingsPage() {
   const { secrets, isLoading, isSaving, error, reload, saveSecret, removeSecret } = useProviderSecrets();
+  const [features, setFeatures] = useState<FeatureSettings | null>(null);
+  const [featureError, setFeatureError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getFeatureSettings()
+      .then((settings) => {
+        if (active) {
+          setFeatures(settings);
+          setFeatureError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setFeatureError(err instanceof Error ? err.message : "Feature settings failed");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <section className="settings-page">
       <ResourceControlsPanel />
+      <article className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>AI Settings</h2>
+            {featureError ? <p className="form-error">{featureError}</p> : null}
+          </div>
+          {features ? (
+            <StatusBadge
+              icon={features.openAiFallbackEnabled ? CheckCircle2 : AlertTriangle}
+              label={features.openAiFallbackEnabled ? "Fallback enabled" : "Fallback disabled"}
+              tone={features.openAiFallbackEnabled ? "ok" : "warn"}
+            />
+          ) : null}
+        </div>
+        {features ? (
+          <dl className="metric-grid settings-metric-grid">
+            <div>
+              <dt>Local AI</dt>
+              <dd>
+                {features.localAiProvider} / {features.localAiDefaultModel}
+              </dd>
+            </div>
+            <div>
+              <dt>OpenAI Model</dt>
+              <dd>{features.openAiFallbackModel}</dd>
+            </div>
+            <div>
+              <dt>Quality Gate</dt>
+              <dd>{features.aiQualityThreshold}</dd>
+            </div>
+            <div>
+              <dt>Monthly Budget</dt>
+              <dd>${features.openAiMonthlyBudgetUsd}</dd>
+            </div>
+            <div>
+              <dt>Request Budget</dt>
+              <dd>${features.openAiSingleRequestBudgetUsd}</dd>
+            </div>
+            <div>
+              <dt>Cost Reconcile</dt>
+              <dd>{features.costReconciliationRequired ? "Required" : "Optional"}</dd>
+            </div>
+          </dl>
+        ) : null}
+      </article>
       <article className="panel">
         <div className="panel-header">
           <div>

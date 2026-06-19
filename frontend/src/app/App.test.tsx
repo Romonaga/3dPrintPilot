@@ -277,8 +277,26 @@ describe("App", () => {
   });
 
   it("lazy-loads the settings page for encrypted provider secrets", async () => {
-    mockApiFetch(() =>
-      Promise.resolve(
+    mockApiFetch((input) => {
+      const url = String(input);
+      if (url.includes("/api/settings/features")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              openai_fallback_enabled: false,
+              openai_fallback_model: "gpt-5.4",
+              ai_quality_threshold: 0.72,
+              openai_monthly_budget_usd: "5.00",
+              openai_single_request_budget_usd: "0.25",
+              cost_reconciliation_required: true,
+              local_ai_provider: "ollama",
+              local_ai_default_model: "qwen3-coder:30b"
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      return Promise.resolve(
         new Response(
           JSON.stringify([
             {
@@ -293,14 +311,16 @@ describe("App", () => {
           ]),
           { status: 200 }
         )
-      )
-    );
+      );
+    });
     const user = userEvent.setup();
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Settings" }));
 
     expect(await screen.findByRole("heading", { name: "Provider Secrets" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI Settings" })).toBeInTheDocument();
+    expect(await screen.findByText("Fallback disabled")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "OpenAI API Token" })).toBeInTheDocument();
     expect(screen.getByLabelText("New value")).toHaveAttribute("type", "password");
   });
