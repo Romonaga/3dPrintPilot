@@ -144,7 +144,7 @@ export async function scanPrinters(settings: PrinterScanSettings): Promise<Print
         .map((port) => Number(port.trim()))
         .filter((port) => Number.isInteger(port) && port > 0 && port <= 65535)
     })
-  });
+  }, { timeoutMs: 60_000 });
   if (!response.ok) {
     throw new Error(`Printer scan failed with HTTP ${response.status}`);
   }

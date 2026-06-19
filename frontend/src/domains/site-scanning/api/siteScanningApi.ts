@@ -92,7 +92,7 @@ export async function createSiteScan(url: string, limits: SiteScanLimits): Promi
       same_domain_only: limits.sameDomainOnly,
       per_host_concurrency: limits.perHostConcurrency
     })
-  });
+  }, { timeoutMs: 60_000 });
 
   if (!response.ok) {
     throw new Error(`Scan failed with HTTP ${response.status}`);
