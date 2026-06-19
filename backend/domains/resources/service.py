@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import os
 import subprocess
+import urllib.error
+import urllib.request
 from typing import Any
+
+from backend.core.config import get_settings
+from backend.domains.resources.store import SUPPORTED_JOB_TYPES
+from backend.domains.resources.worker import LocalLlmAdmissionPolicy
 
 
 def build_resource_status() -> dict[str, Any]:
+    policy = LocalLlmAdmissionPolicy()
     return {
         "cpu": {
             "cores": os.cpu_count() or 1,
@@ -13,6 +20,25 @@ def build_resource_status() -> dict[str, Any]:
         },
         "memory": _read_memory_status(),
         "gpu": _read_gpu_status(),
+        "queues": {
+            "local_llm": {
+                "pending_count": 0,
+                "active_count": 0,
+                "max_concurrent": policy.max_concurrent_requests,
+                "supported_job_types": list(SUPPORTED_JOB_TYPES),
+            }
+        },
+        "ollama": _read_ollama_status(),
+        "local_llm": {
+            "max_concurrent_requests": policy.max_concurrent_requests,
+            "request_timeout_seconds": policy.request_timeout_seconds,
+            "max_context_tokens": policy.max_context_tokens,
+            "max_output_tokens": policy.max_output_tokens,
+            "min_free_vram_mib": policy.min_free_vram_mib,
+            "max_gpu_memory_used_percent": policy.max_gpu_memory_used_percent,
+            "max_gpu_temperature_c": policy.max_gpu_temperature_c,
+            "oom_cooldown_seconds": policy.oom_cooldown_seconds,
+        },
     }
 
 
@@ -71,3 +97,24 @@ def _read_gpu_status() -> dict[str, Any]:
     except ValueError:
         return {"available": False, "error": "could not parse nvidia-smi output"}
 
+
+def _read_ollama_status() -> dict[str, Any]:
+    settings = get_settings()
+    base_url = settings.ollama_base_url.rstrip("/")
+    tags_url = f"{base_url}/tags"
+    try:
+        with urllib.request.urlopen(tags_url, timeout=1.5) as response:
+            available = 200 <= response.status < 300
+    except (OSError, urllib.error.URLError) as exc:
+        return {
+            "available": False,
+            "base_url": settings.ollama_base_url,
+            "model": settings.local_llm_default_model,
+            "error": str(exc)[:200],
+        }
+    return {
+        "available": available,
+        "base_url": settings.ollama_base_url,
+        "model": settings.local_llm_default_model,
+        "error": None if available else "Ollama tags endpoint returned a non-success status",
+    }
