@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BACKEND_URL="${PRINTPILOT_BACKEND_URL:-http://127.0.0.1:${PRINTPILOT_BACKEND_PORT:-8001}}"
-FRONTEND_URL="${PRINTPILOT_FRONTEND_URL:-http://127.0.0.1:${PRINTPILOT_FRONTEND_PORT:-5173}}"
+BACKEND_URL="${PRINTPILOT_BACKEND_URL:-http://127.0.0.1:${PRINTPILOT_BACKEND_PORT:-8002}}"
+FRONTEND_URL="${PRINTPILOT_FRONTEND_URL:-http://127.0.0.1:${PRINTPILOT_FRONTEND_PORT:-8001}}"
 SERVICE_NAME="${PRINTPILOT_SERVICE_NAME:-3dprintpilot.service}"
+PUBLIC_URL="${PRINTPILOT_PUBLIC_URL:-}"
 SKIP_DB="${PRINTPILOT_SKIP_DB_CHECK:-0}"
 CHECK_RETRIES="${PRINTPILOT_CHECK_RETRIES:-5}"
 CHECK_RETRY_DELAY="${PRINTPILOT_CHECK_RETRY_DELAY:-1}"
@@ -35,6 +36,11 @@ printf '\n'
 
 section "Frontend"
 retry curl -fsSI "$FRONTEND_URL/" | sed -n '1,8p'
+
+if [[ -n "$PUBLIC_URL" ]]; then
+    section "Public web endpoint"
+    retry curl -fsSI "$PUBLIC_URL/" | sed -n '1,8p'
+fi
 
 section "Systemd user service"
 if command -v systemctl >/dev/null 2>&1; then
