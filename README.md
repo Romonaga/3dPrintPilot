@@ -105,6 +105,19 @@ If Postgres is intentionally unavailable during a frontend/backend smoke test:
 PRINTPILOT_SKIP_DB_CHECK=1 scripts/check-runtime.sh
 ```
 
+## Authentication
+
+On a fresh install with no users, create the first owner in the UI or with:
+
+```bash
+uv run scripts/bootstrap-owner.py --username owner
+```
+
+The command prompts for the password without echo. After the first user exists,
+API routes that read or mutate provider secrets, AI budget data, printer
+inventory, site scans, and compatibility checks require a bearer session token.
+Owners include admin access; admins include user and viewer access.
+
 ## Tests
 
 Backend and reusable Python packages:

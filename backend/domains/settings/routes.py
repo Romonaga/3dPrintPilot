@@ -9,6 +9,7 @@ from backend.core.secrets import get_secret_cipher
 from backend.domains.settings.schemas.request import UpsertProviderSecretRequest
 from backend.domains.settings.schemas.response import FeatureSettingsResponse, ProviderSecretStatusResponse
 from backend.domains.settings.store import ProviderSecretStore, mask_secret
+from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -30,6 +31,7 @@ def feature_settings() -> FeatureSettingsResponse:
 
 @router.get("/provider-secrets", response_model=list[ProviderSecretStatusResponse])
 def list_provider_secrets(
+    _user=Depends(require_roles("admin")),
     store: ProviderSecretStore = Depends(get_provider_secret_store),
 ) -> list[ProviderSecretStatusResponse]:
     return [_secret_status_response(known, record) for known, record in store.list_secret_statuses()]
@@ -40,6 +42,7 @@ def upsert_provider_secret(
     provider: str,
     secret_name: str,
     request: UpsertProviderSecretRequest,
+    _user=Depends(require_roles("admin")),
     store: ProviderSecretStore = Depends(get_provider_secret_store),
 ) -> ProviderSecretStatusResponse:
     try:
@@ -58,6 +61,7 @@ def upsert_provider_secret(
 def delete_provider_secret(
     provider: str,
     secret_name: str,
+    _user=Depends(require_roles("admin")),
     store: ProviderSecretStore = Depends(get_provider_secret_store),
 ) -> Response:
     if not store.delete_secret(provider, secret_name):

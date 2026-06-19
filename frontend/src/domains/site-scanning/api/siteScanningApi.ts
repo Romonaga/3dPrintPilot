@@ -1,4 +1,5 @@
 import { type SiteScanLimits, type SiteScanResult } from "../types";
+import { apiFetch } from "../../../lib/apiFetch";
 
 type ApiSummary = {
   scan_run_id: number | null;
@@ -45,7 +46,7 @@ type ApiResult = {
 };
 
 export async function createSiteScan(url: string, limits: SiteScanLimits): Promise<SiteScanResult> {
-  const response = await fetch("/api/site-scanning/scans", {
+  const response = await apiFetch("/api/site-scanning/scans", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

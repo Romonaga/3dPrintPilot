@@ -5,6 +5,7 @@ import {
   type PrinterScanResult,
   type PrinterScanSettings
 } from "../types";
+import { apiFetch } from "../../../lib/apiFetch";
 
 type ApiPrinter = {
   id: number;
@@ -52,7 +53,7 @@ type ApiPrinterScan = {
 };
 
 export async function listPrinters(): Promise<Printer[]> {
-  const response = await fetch("/api/printers");
+  const response = await apiFetch("/api/printers");
   if (!response.ok) {
     throw new Error(`Printer list failed with HTTP ${response.status}`);
   }
@@ -61,7 +62,7 @@ export async function listPrinters(): Promise<Printer[]> {
 }
 
 export async function createPrinter(input: CreatePrinterInput): Promise<Printer> {
-  const response = await fetch("/api/printers", {
+  const response = await apiFetch("/api/printers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -82,7 +83,7 @@ export async function createPrinter(input: CreatePrinterInput): Promise<Printer>
 }
 
 export async function deletePrinter(printerId: number): Promise<void> {
-  const response = await fetch(`/api/printers/${printerId}`, { method: "DELETE" });
+  const response = await apiFetch(`/api/printers/${printerId}`, { method: "DELETE" });
   if (!response.ok) {
     throw new Error(`Delete printer failed with HTTP ${response.status}`);
   }
@@ -102,7 +103,7 @@ export function fromDiscoveredPrinter(printer: DiscoveredPrinter): CreatePrinter
 }
 
 export async function scanPrinters(settings: PrinterScanSettings): Promise<PrinterScanResult> {
-  const response = await fetch("/api/printers/scan", {
+  const response = await apiFetch("/api/printers/scan", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

@@ -15,6 +15,7 @@ from backend.domains.site_scanning.schemas.response import (
 )
 from backend.domains.site_scanning.service import SiteScanService
 from backend.domains.site_scanning.store import SiteScanStore
+from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/site-scanning", tags=["site-scanning"])
 service = SiteScanService()
@@ -25,7 +26,7 @@ def get_site_scan_store(session: Session = Depends(get_db_session)) -> SiteScanS
 
 
 @router.get("/adapters", response_model=list[SiteScanAdapterResponse])
-def list_adapters() -> list[SiteScanAdapterResponse]:
+def list_adapters(_user=Depends(require_roles("viewer"))) -> list[SiteScanAdapterResponse]:
     return [
         SiteScanAdapterResponse(
             site_key=adapter.site_key,
@@ -37,7 +38,11 @@ def list_adapters() -> list[SiteScanAdapterResponse]:
 
 
 @router.post("/scans", response_model=SiteScanResponse)
-def create_scan(request: SiteScanRequest, store: SiteScanStore = Depends(get_site_scan_store)) -> SiteScanResponse:
+def create_scan(
+    request: SiteScanRequest,
+    _user=Depends(require_roles("user")),
+    store: SiteScanStore = Depends(get_site_scan_store),
+) -> SiteScanResponse:
     try:
         result = service.scan(
             start_url=request.url,

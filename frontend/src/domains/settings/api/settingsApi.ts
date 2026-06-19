@@ -1,3 +1,4 @@
+import { apiFetch } from "../../../lib/apiFetch";
 import { type ProviderSecretStatus } from "../types";
 
 type ApiProviderSecretStatus = {
@@ -11,7 +12,7 @@ type ApiProviderSecretStatus = {
 };
 
 export async function listProviderSecrets(): Promise<ProviderSecretStatus[]> {
-  const response = await fetch("/api/settings/provider-secrets");
+  const response = await apiFetch("/api/settings/provider-secrets");
   if (!response.ok) {
     throw new Error(`Provider secret status failed with HTTP ${response.status}`);
   }
@@ -20,7 +21,7 @@ export async function listProviderSecrets(): Promise<ProviderSecretStatus[]> {
 }
 
 export async function saveProviderSecret(provider: string, secretName: string, value: string) {
-  const response = await fetch(`/api/settings/provider-secrets/${provider}/${secretName}`, {
+  const response = await apiFetch(`/api/settings/provider-secrets/${provider}/${secretName}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ value })
@@ -32,7 +33,7 @@ export async function saveProviderSecret(provider: string, secretName: string, v
 }
 
 export async function deleteProviderSecret(provider: string, secretName: string) {
-  const response = await fetch(`/api/settings/provider-secrets/${provider}/${secretName}`, { method: "DELETE" });
+  const response = await apiFetch(`/api/settings/provider-secrets/${provider}/${secretName}`, { method: "DELETE" });
   if (!response.ok) {
     throw new Error(`Provider secret delete failed with HTTP ${response.status}`);
   }

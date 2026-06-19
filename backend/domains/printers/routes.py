@@ -15,6 +15,7 @@ from backend.domains.printers.schemas.response import (
 )
 from backend.domains.printers.service import scan_lan_for_printers
 from backend.domains.printers.store import PrinterStore
+from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/printers", tags=["printers"])
 
@@ -24,12 +25,19 @@ def get_printer_store(session: Session = Depends(get_db_session)) -> PrinterStor
 
 
 @router.get("", response_model=list[PrinterResponse])
-def list_printers(store: PrinterStore = Depends(get_printer_store)) -> list[PrinterResponse]:
+def list_printers(
+    _user=Depends(require_roles("viewer")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> list[PrinterResponse]:
     return [_printer_response(printer) for printer in store.list_printers()]
 
 
 @router.post("", response_model=PrinterResponse)
-def create_printer(request: CreatePrinterRequest, store: PrinterStore = Depends(get_printer_store)) -> PrinterResponse:
+def create_printer(
+    request: CreatePrinterRequest,
+    _user=Depends(require_roles("user")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterResponse:
     printer = store.create_printer(
         name=request.name,
         host=request.host,
@@ -44,14 +52,22 @@ def create_printer(request: CreatePrinterRequest, store: PrinterStore = Depends(
 
 
 @router.delete("/{printer_id}", status_code=204)
-def delete_printer(printer_id: int, store: PrinterStore = Depends(get_printer_store)) -> Response:
+def delete_printer(
+    printer_id: int,
+    _user=Depends(require_roles("admin")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> Response:
     if not store.delete_printer(printer_id):
         raise HTTPException(status_code=404, detail="Printer not found")
     return Response(status_code=204)
 
 
 @router.post("/scan", response_model=PrinterScanResponse)
-def scan_printers(request: PrinterScanRequest, store: PrinterStore = Depends(get_printer_store)) -> PrinterScanResponse:
+def scan_printers(
+    request: PrinterScanRequest,
+    _user=Depends(require_roles("user")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterScanResponse:
     try:
         result = scan_lan_for_printers(
             timeout_seconds=request.timeout_seconds,

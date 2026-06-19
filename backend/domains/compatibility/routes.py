@@ -14,6 +14,7 @@ from backend.domains.compatibility.schemas.response import (
 )
 from backend.domains.compatibility.service import check_compatibility
 from backend.domains.compatibility.store import CompatibilityStore, printer_capabilities, scan_result_requirements
+from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/compatibility", tags=["compatibility"])
 
@@ -25,6 +26,7 @@ def get_compatibility_store(session: Session = Depends(get_db_session)) -> Compa
 @router.post("/checks", response_model=CompatibilityRunResponse)
 def run_compatibility_checks(
     request: RunCompatibilityChecksRequest,
+    _user=Depends(require_roles("user")),
     store: CompatibilityStore = Depends(get_compatibility_store),
 ) -> CompatibilityRunResponse:
     candidates = store.list_candidate_results(request.scan_run_id, request.max_candidates)
@@ -62,6 +64,7 @@ def run_compatibility_checks(
 @router.get("/checks", response_model=list[CompatibilityCheckResponse])
 def list_recent_compatibility_checks(
     limit: int = 50,
+    _user=Depends(require_roles("viewer")),
     store: CompatibilityStore = Depends(get_compatibility_store),
 ) -> list[CompatibilityCheckResponse]:
     return [_check_response(check) for check in store.list_recent_checks(max(1, min(limit, 100)))]

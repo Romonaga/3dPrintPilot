@@ -70,6 +70,31 @@ button {
   min-height: 100vh;
 }
 
+.auth-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-panel {
+  display: grid;
+  width: min(100%, 420px);
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 24px;
+}
+
+.auth-panel h1 {
+  font-size: 24px;
+}
+
+.auth-brand {
+  margin-bottom: 4px;
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
