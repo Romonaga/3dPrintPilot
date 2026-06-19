@@ -1,7 +1,8 @@
-import { AlertTriangle, CheckCircle2, KeyRound, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, KeyRound, RefreshCw, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
 import { StatusBadge } from "../../../components/StatusBadge";
+import { downloadOperationsBackup } from "../../operations/api";
 import { ResourceControlsPanel } from "../../resources/components/ResourceControlsPanel";
 import { getFeatureSettings } from "../api/settingsApi";
 import { useProviderSecrets } from "../hooks/useProviderSecrets";
@@ -11,6 +12,8 @@ export default function SettingsPage() {
   const { secrets, isLoading, isSaving, error, reload, saveSecret, removeSecret } = useProviderSecrets();
   const [features, setFeatures] = useState<FeatureSettings | null>(null);
   const [featureError, setFeatureError] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -31,9 +34,33 @@ export default function SettingsPage() {
     };
   }, []);
 
+  async function handleBackupExport() {
+    setIsExporting(true);
+    try {
+      await downloadOperationsBackup();
+      setBackupError(null);
+    } catch (err) {
+      setBackupError(err instanceof Error ? err.message : "Backup export failed");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   return (
     <section className="settings-page">
       <ResourceControlsPanel />
+      <article className="panel">
+        <div className="panel-header">
+          <div>
+            <h2>Operations</h2>
+            {backupError ? <p className="form-error">{backupError}</p> : null}
+          </div>
+          <button className="primary-action icon-action" type="button" onClick={handleBackupExport} disabled={isExporting}>
+            {isExporting ? <Spinner size={15} /> : <Download size={15} aria-hidden="true" />}
+            <span>{isExporting ? "Exporting" : "Export Backup"}</span>
+          </button>
+        </div>
+      </article>
       <article className="panel">
         <div className="panel-header">
           <div>
