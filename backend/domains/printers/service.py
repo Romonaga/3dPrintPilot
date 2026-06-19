@@ -88,12 +88,12 @@ class _PrinterServiceListener(ServiceListener):
 
 
 def scan_lan_for_printers(
-    timeout_seconds: float = 8.0,
+    timeout_seconds: float = 20.0,
     scan_method: str = "combined",
     target_cidr: str | None = None,
     max_hosts: int = 254,
     ports: tuple[int, ...] | None = None,
-    connect_timeout_seconds: float = 0.35,
+    connect_timeout_seconds: float = 2.0,
 ) -> PrinterScanResult:
     scan_method = scan_method.lower()
     if scan_method not in {"mdns", "http_probe", "combined"}:
@@ -176,12 +176,12 @@ def _scan_http_printers(
     checked_ports = _prioritized_probe_ports(ports)
     discovered: dict[tuple[str, int], DiscoveredPrinter] = {}
     probe_count = len(hosts) * len(checked_ports)
+    candidate_hosts = _hosts_with_open_probe_ports(hosts, checked_ports, connect_timeout_seconds)
 
-    executor = ThreadPoolExecutor(max_workers=min(128, max(1, probe_count)))
+    executor = ThreadPoolExecutor(max_workers=min(32, max(1, len(candidate_hosts))))
     futures = [
-        executor.submit(_probe_http_port, host, port, connect_timeout_seconds)
-        for port in checked_ports
-        for host in hosts
+        executor.submit(_probe_host_ports, host, checked_ports, connect_timeout_seconds)
+        for host in candidate_hosts
     ]
     try:
         completed_futures = as_completed(
@@ -190,10 +190,10 @@ def _scan_http_printers(
         )
         for future in completed_futures:
             try:
-                printer = future.result()
+                printers = future.result()
             except Exception:
                 continue
-            if printer is not None:
+            for printer in printers:
                 discovered[(printer.host, printer.port)] = printer
     except FuturesTimeoutError:
         pass
@@ -217,6 +217,34 @@ def _scan_http_printers(
     )
 
 
+def _hosts_with_open_probe_ports(
+    hosts: tuple[str, ...],
+    ports: tuple[int, ...],
+    timeout_seconds: float,
+) -> tuple[str, ...]:
+    open_hosts: set[str] = set()
+    if not hosts or not ports:
+        return ()
+
+    executor = ThreadPoolExecutor(max_workers=min(128, max(1, len(hosts))))
+    futures = {executor.submit(_host_has_open_probe_port, host, ports, timeout_seconds): host for host in hosts}
+    try:
+        for future in as_completed(futures):
+            host = futures[future]
+            try:
+                if future.result():
+                    open_hosts.add(host)
+            except Exception:
+                continue
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    return tuple(host for host in hosts if host in open_hosts)
+
+
+def _host_has_open_probe_port(host: str, ports: tuple[int, ...], timeout_seconds: float) -> bool:
+    return any(_tcp_port_open(host, port, timeout_seconds) for port in ports)
+
+
 def _probe_host_ports(host: str, ports: tuple[int, ...], timeout_seconds: float) -> tuple[DiscoveredPrinter, ...]:
     printers = []
     for port in ports:
@@ -234,6 +262,7 @@ def _probe_http_port(host: str, port: int, timeout_seconds: float) -> Discovered
     scheme = "https" if port == 443 else "http"
     base_url = f"{scheme}://{host}:{port}"
     timeout = httpx.Timeout(timeout_seconds, connect=timeout_seconds)
+    best_printer: DiscoveredPrinter | None = None
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True, verify=True) as client:
             for path, detector in _probe_paths(port):
@@ -243,10 +272,13 @@ def _probe_http_port(host: str, port: int, timeout_seconds: float) -> Discovered
                     continue
                 printer = detector(host, port, scheme, response)
                 if printer is not None:
-                    return printer
+                    if best_printer is None or printer.confidence > best_printer.confidence:
+                        best_printer = printer
+                    if printer.confidence >= 94:
+                        return printer
     except httpx.HTTPError:
-        return None
-    return None
+        return best_printer
+    return best_printer
 
 
 def _probe_bambu_mqtt_port(host: str, port: int, timeout_seconds: float) -> DiscoveredPrinter | None:
