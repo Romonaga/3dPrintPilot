@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from decimal import Decimal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +19,10 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434/api"
     local_llm_default_model: str = "qwen3-coder:30b"
     openai_fallback_enabled: bool = False
+    openai_fallback_model: str = "gpt-5.4"
+    ai_quality_threshold: float = 0.72
+    openai_monthly_budget_usd: Decimal = Decimal("5.00")
+    openai_single_request_budget_usd: Decimal = Decimal("0.25")
     field_encryption_key: str | None = None
     field_encryption_key_file: str = ".secrets/field-encryption.key"
 

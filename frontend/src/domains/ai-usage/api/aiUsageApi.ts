@@ -12,6 +12,14 @@ type ApiAccountingStatus = {
   reusable_package: string;
   openai_api_token_configured: boolean;
   openai_account_key_configured: boolean;
+  openai_fallback_enabled: boolean;
+  local_model: string;
+  openai_fallback_model: string;
+  quality_threshold: number;
+  monthly_budget_usd: string;
+  single_request_budget_usd: string;
+  estimated_month_to_date_usd: string;
+  budget_remaining_usd: string;
 };
 
 type ApiReconciliationRun = {
@@ -77,7 +85,15 @@ function fromApiStatus(status: ApiAccountingStatus): AiAccountingStatus {
     reconciliationRequired: status.reconciliation_required,
     reusablePackage: status.reusable_package,
     openAiApiTokenConfigured: status.openai_api_token_configured,
-    openAiAccountKeyConfigured: status.openai_account_key_configured
+    openAiAccountKeyConfigured: status.openai_account_key_configured,
+    openAiFallbackEnabled: status.openai_fallback_enabled,
+    localModel: status.local_model,
+    openAiFallbackModel: status.openai_fallback_model,
+    qualityThreshold: status.quality_threshold,
+    monthlyBudgetUsd: status.monthly_budget_usd,
+    singleRequestBudgetUsd: status.single_request_budget_usd,
+    estimatedMonthToDateUsd: status.estimated_month_to_date_usd,
+    budgetRemainingUsd: status.budget_remaining_usd
   };
 }
 

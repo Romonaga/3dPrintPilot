@@ -522,6 +522,16 @@ h3 {
   font-weight: 650;
 }
 
+.export-link {
+  width: fit-content;
+  padding: 8px 12px;
+  text-decoration: none;
+}
+
+.settings-metric-grid dd {
+  overflow-wrap: anywhere;
+}
+
 .printer-list {
   display: grid;
   gap: 10px;

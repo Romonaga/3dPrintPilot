@@ -13,6 +13,7 @@ from local_ai_accounting import (
     reconcile_cost_bucket,
 )
 from backend.domains.ai.service import OpenAICostReconciliationService, extract_openai_cost_total_usd
+from backend.domains.ai.service import AiTaskInput, AiTaskRunner, BudgetExceededError, fallback_reason_for_quality
 
 
 def test_estimate_openai_cost_separates_cached_input_tokens():
@@ -159,6 +160,85 @@ def test_openai_cost_reconciliation_service_fetches_costs_and_updates_events():
     assert store.completed["status"] == "completed"
 
 
+def test_ai_task_runner_records_local_ollama_usage_when_fallback_disabled():
+    store = FakeAiTaskStore()
+    runner = AiTaskRunner(
+        store=store,
+        local_model="qwen3",
+        openai_model="gpt-5.4",
+        quality_threshold=0.99,
+        openai_fallback_enabled=False,
+        openai_api_token_configured=False,
+        monthly_budget_usd=Decimal("5.00"),
+        single_request_budget_usd=Decimal("0.25"),
+    )
+
+    result = runner.run(AiTaskInput(task_type="compatibility_explanation", prompt="Explain model printer material compatibility."))
+
+    assert result.provider == "ollama"
+    assert result.fallback_used is False
+    assert result.estimated_cost_usd == Decimal("0")
+    assert store.events[0]["provider"] == "ollama"
+    assert store.events[0]["cost_status"] == "not_billable"
+
+
+def test_ai_task_runner_uses_openai_fallback_only_when_enabled_and_budget_allows():
+    store = FakeAiTaskStore()
+    runner = AiTaskRunner(
+        store=store,
+        local_model="qwen3",
+        openai_model="gpt-5.4",
+        quality_threshold=0.99,
+        openai_fallback_enabled=True,
+        openai_api_token_configured=True,
+        monthly_budget_usd=Decimal("5.00"),
+        single_request_budget_usd=Decimal("0.25"),
+    )
+
+    result = runner.run(
+        AiTaskInput(
+            task_type="requirement_extraction",
+            prompt="x",
+            allow_openai_fallback=True,
+        )
+    )
+
+    assert result.provider == "openai"
+    assert result.fallback_used is True
+    assert result.fallback_reason == "local_quality_below_threshold"
+    assert result.estimated_cost_usd > Decimal("0")
+    assert store.events[0]["provider"] == "openai"
+    assert store.events[0]["cost_status"] == "estimated"
+
+
+def test_ai_task_runner_blocks_openai_fallback_when_request_budget_would_be_exceeded():
+    store = FakeAiTaskStore()
+    runner = AiTaskRunner(
+        store=store,
+        local_model="qwen3",
+        openai_model="gpt-5.4",
+        quality_threshold=0.99,
+        openai_fallback_enabled=True,
+        openai_api_token_configured=True,
+        monthly_budget_usd=Decimal("5.00"),
+        single_request_budget_usd=Decimal("0.00000001"),
+    )
+
+    try:
+        runner.run(AiTaskInput(task_type="expensive", prompt="x", allow_openai_fallback=True))
+    except BudgetExceededError as exc:
+        assert "single-request budget" in str(exc)
+    else:
+        raise AssertionError("Expected BudgetExceededError")
+
+    assert store.events == []
+
+
+def test_fallback_reason_is_none_when_quality_meets_threshold():
+    assert fallback_reason_for_quality(0.8, 0.72) is None
+    assert fallback_reason_for_quality(0.5, 0.72) == "local_quality_below_threshold"
+
+
 class FakeOpenAICostClient:
     def __init__(self, payload):
         self.payload = payload
@@ -187,3 +267,18 @@ class FakeAiAccountingStore:
 
     def complete_reconciliation_run(self, run_id, **kwargs):
         self.completed = {"run_id": run_id, **kwargs}
+
+
+class FakeAiTaskStore:
+    def __init__(self):
+        self.events = []
+        self.next_id = 1
+
+    def sum_provider_estimated_cost(self, provider, start, end):
+        return Decimal("0")
+
+    def record_usage_event(self, **kwargs):
+        self.events.append(kwargs)
+        event = type("Event", (), {"id": self.next_id})()
+        self.next_id += 1
+        return event
