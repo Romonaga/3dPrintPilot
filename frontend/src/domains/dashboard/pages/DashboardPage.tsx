@@ -23,6 +23,9 @@ export default function DashboardPage({ onRouteChange, onScanLan }: DashboardPag
           if (action === "Scan LAN") {
             onScanLan();
           }
+          if (action === "Upload Model") {
+            onRouteChange("models");
+          }
           if (action === "View Costs") {
             openAiUsage();
           }

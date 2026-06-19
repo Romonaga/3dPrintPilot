@@ -179,6 +179,40 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Scan Metrics" })).toBeInTheDocument();
   });
 
+  it("lazy-loads the models page from navigation", async () => {
+    mockApiFetch((input) => {
+      if (String(input) === "/api/models") {
+        return Promise.resolve(new Response(JSON.stringify(sampleModels()), { status: 200 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Models" }));
+
+    expect(await screen.findByRole("heading", { name: "Upload Model" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Model Library" })).toBeInTheDocument();
+    expect(screen.getAllByText("Calibration Cube")).toHaveLength(2);
+    expect(screen.getByText("1,024")).toBeInTheDocument();
+  });
+
+  it("opens model uploads from the dashboard Upload Model action", async () => {
+    mockApiFetch((input) => {
+      if (String(input) === "/api/models") {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const uploadActions = await screen.findAllByRole("button", { name: "Upload Model" });
+    await user.click(uploadActions[0]);
+
+    expect(await screen.findByRole("heading", { name: "Upload Model" })).toBeInTheDocument();
+  });
+
   it("lazy-loads the printers domain page from navigation", async () => {
     mockApiFetch(() => Promise.resolve(new Response(JSON.stringify([]), { status: 200 })));
     const user = userEvent.setup();
@@ -316,3 +350,45 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Run Checks" })).toBeInTheDocument();
   });
 });
+
+function sampleModels() {
+  return [
+    {
+      id: 1,
+      title: "Calibration Cube",
+      source_url: "https://models.example/cube",
+      status: "analyzed",
+      created_at: "2026-06-19T00:00:00Z",
+      updated_at: "2026-06-19T00:00:00Z",
+      files: [
+        {
+          id: 2,
+          filename: "cube.stl",
+          content_type: "model/stl",
+          file_format: "stl",
+          size_bytes: 4096,
+          storage_status: "metadata_only",
+          analysis_status: "completed",
+          analysis_job_id: 9,
+          analysis_warnings: [],
+          geometry: {
+            units: "millimeter",
+            size_x_mm: 20,
+            size_y_mm: 20,
+            size_z_mm: 20,
+            min_x_mm: 0,
+            min_y_mm: 0,
+            min_z_mm: 0,
+            max_x_mm: 20,
+            max_y_mm: 20,
+            max_z_mm: 20,
+            volume_mm3: 8000,
+            triangle_count: 1024,
+            warnings: []
+          },
+          created_at: "2026-06-19T00:00:00Z"
+        }
+      ]
+    }
+  ];
+}

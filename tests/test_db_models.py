@@ -3,6 +3,7 @@ from __future__ import annotations
 from backend.db.base import Base
 from backend.domains.ai.models import AiUsageEvent
 from backend.domains.compatibility.models import CompatibilityCheck, CompatibilityCheckItem
+from backend.domains.models.models import Model, ModelFile, ModelGeometry
 from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
 from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun
@@ -17,6 +18,9 @@ def test_foundation_models_are_registered_by_domain():
     assert AiUsageEvent.__tablename__ in table_names
     assert CompatibilityCheck.__tablename__ in table_names
     assert CompatibilityCheckItem.__tablename__ in table_names
+    assert Model.__tablename__ in table_names
+    assert ModelFile.__tablename__ in table_names
+    assert ModelGeometry.__tablename__ in table_names
     assert ResourceSample.__tablename__ in table_names
     assert BackgroundJob.__tablename__ in table_names
     assert ProviderSecret.__tablename__ in table_names
@@ -69,3 +73,15 @@ def test_compatibility_checks_are_persistable_with_items():
     assert "confidence_label" in check_columns
     assert "check_id" in item_columns
     assert "severity" in item_columns
+
+
+def test_model_upload_geometry_tables_are_persistable():
+    model_columns = Model.__table__.columns
+    file_columns = ModelFile.__table__.columns
+    geometry_columns = ModelGeometry.__table__.columns
+
+    assert "source_url" in model_columns
+    assert "analysis_job_id" in file_columns
+    assert "analysis_warnings" in file_columns
+    assert "triangle_count" in geometry_columns
+    assert "volume_mm3" in geometry_columns

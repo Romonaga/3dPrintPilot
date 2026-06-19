@@ -276,6 +276,13 @@ h3 {
   align-items: start;
 }
 
+.models-page {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.75fr) minmax(0, 1.25fr);
+  gap: 18px;
+  align-items: start;
+}
+
 .site-scan-main,
 .site-scan-side {
   display: grid;
@@ -287,6 +294,16 @@ h3 {
 .printer-list-panel,
 .discovered-printers-panel {
   grid-column: 1;
+}
+
+.model-upload-panel,
+.model-list-panel {
+  grid-column: 1;
+}
+
+.model-detail-panel {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .panel {
@@ -358,6 +375,10 @@ h3 {
   font: inherit;
 }
 
+.field-label input[type="file"] {
+  padding: 8px 11px;
+}
+
 .field-label input:focus {
   border-color: var(--brand);
   outline: 2px solid color-mix(in srgb, var(--brand) 24%, transparent);
@@ -412,6 +433,78 @@ h3 {
   border-right-color: transparent;
   border-radius: 50%;
   animation: spin 0.75s linear infinite;
+}
+
+.model-upload-form {
+  display: grid;
+  gap: 12px;
+}
+
+.model-list {
+  display: grid;
+  gap: 8px;
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-row.active,
+.model-row:hover {
+  border-color: var(--brand);
+  background: var(--surface-subtle);
+}
+
+.model-row span:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.model-row strong,
+.model-row small,
+.model-detail-title a {
+  overflow-wrap: anywhere;
+}
+
+.model-row small {
+  color: var(--muted);
+}
+
+.model-detail-title {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.model-detail-title a {
+  color: var(--muted-strong);
+  font-size: 13px;
+}
+
+.model-geometry-grid {
+  margin-bottom: 14px;
+}
+
+.model-warning-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--warn-text);
+  font-size: 13px;
 }
 
 @keyframes spin {
@@ -798,7 +891,8 @@ dd {
 
   .dashboard-grid,
   .site-scan-layout,
-  .printers-page {
+  .printers-page,
+  .models-page {
     grid-template-columns: 1fr;
   }
 
@@ -809,8 +903,12 @@ dd {
   .resource-panel,
   .printer-actions-panel,
   .printer-list-panel,
-  .discovered-printers-panel {
+  .discovered-printers-panel,
+  .model-upload-panel,
+  .model-list-panel,
+  .model-detail-panel {
     grid-column: 1;
+    grid-row: auto;
   }
 }
 

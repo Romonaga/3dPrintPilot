@@ -9,6 +9,7 @@ import { navItems, type AppRouteId } from "./navigation";
 const DashboardPage = lazy(() => import("../domains/dashboard/pages/DashboardPage"));
 const AiUsagePage = lazy(() => import("../domains/ai-usage/pages/AiUsagePage"));
 const CompatibilityPage = lazy(() => import("../domains/compatibility/pages/CompatibilityPage"));
+const ModelsPage = lazy(() => import("../domains/models/pages/ModelsPage"));
 const PrintersPage = lazy(() => import("../domains/printers/pages/PrintersPage"));
 const SiteScanningPage = lazy(() => import("../domains/site-scanning/pages/SiteScanningPage"));
 const SettingsPage = lazy(() => import("../domains/settings/pages/SettingsPage"));
@@ -76,6 +77,7 @@ export function App() {
         {activeRoute === "dashboard" ? <DashboardPage onRouteChange={setActiveRoute} onScanLan={handleDashboardScanLan} /> : null}
         {activeRoute === "aiUsage" ? <AiUsagePage /> : null}
         {activeRoute === "compatibility" ? <CompatibilityPage /> : null}
+        {activeRoute === "models" ? <ModelsPage /> : null}
         {activeRoute === "printers" ? (
           <PrintersPage autoStartScanRequestId={printerScanRequestId} onAutoStartScanConsumed={() => setPrinterScanRequestId(null)} />
         ) : null}
@@ -84,6 +86,7 @@ export function App() {
         {activeRoute !== "dashboard" &&
         activeRoute !== "aiUsage" &&
         activeRoute !== "compatibility" &&
+        activeRoute !== "models" &&
         activeRoute !== "printers" &&
         activeRoute !== "siteScanning" &&
         activeRoute !== "settings" ? (
