@@ -1,0 +1,20 @@
+[Unit]
+Description=3dPrintPilot local application
+Documentation=file://@PROJECT_DIR@/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@PROJECT_DIR@
+Environment=PATH=@SERVICE_PATH@
+Environment=UV_BIN=@UV_BIN@
+Environment=NPM_BIN=@NPM_BIN@
+EnvironmentFile=-%h/.config/3dprintpilot/3dprintpilot.env
+ExecStart=/usr/bin/env bash @PROJECT_DIR@/scripts/start-user-service.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target
