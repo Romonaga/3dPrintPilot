@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from time import monotonic, sleep
+
 from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
@@ -15,9 +17,11 @@ from backend.domains.printers.service import (
     _probe_http_port,
     _resolve_probe_network,
     _scan_http_printers,
+    scan_lan_for_printers,
 )
 from backend.domains.printers.store import PrinterStore
 from backend.db.base import Base
+from tests.helpers import allow_anonymous_until_bootstrap
 
 
 class FakePrinter:
@@ -129,6 +133,7 @@ def test_printer_models_are_registered():
 def test_printer_api_lists_and_adds_printers():
     app = create_app()
     app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore()
+    allow_anonymous_until_bootstrap(app)
     client = TestClient(app)
 
     list_response = client.get("/api/printers")
@@ -146,6 +151,7 @@ def test_printer_api_lists_and_adds_printers():
 def test_printer_api_confirms_discovered_candidate():
     app = create_app()
     app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore()
+    allow_anonymous_until_bootstrap(app)
     client = TestClient(app)
 
     response = client.post(
@@ -201,6 +207,7 @@ def test_printer_scan_groups_services_by_host(monkeypatch):
 
     app = create_app()
     app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore()
+    allow_anonymous_until_bootstrap(app)
     monkeypatch.setattr("backend.domains.printers.routes.scan_lan_for_printers", fake_scan_lan_for_printers)
     client = TestClient(app)
 
@@ -369,6 +376,78 @@ def test_http_scan_keeps_partial_results_when_one_worker_fails(monkeypatch):
     assert result.summary.status == PrinterScanStatus.COMPLETED
     assert result.summary.discovered_count == 1
     assert result.printers[0].host == "192.168.50.1"
+
+
+def test_http_scan_deadline_returns_partial_results_from_completed_hosts(monkeypatch):
+    def fake_probe(host, ports, timeout):
+        if host == "192.168.50.2":
+            sleep(1.0)
+            return ()
+        return (
+            DiscoveredPrinter(
+                name=f"Printer {host}",
+                host=host,
+                port=80,
+                protocol="http",
+                service_type="http_probe:moonraker",
+                confidence=90,
+            ),
+        )
+
+    monkeypatch.setattr("backend.domains.printers.service._limited_hosts", lambda network, max_hosts: ("192.168.50.1", "192.168.50.2"))
+    monkeypatch.setattr("backend.domains.printers.service._probe_host_ports", fake_probe)
+
+    started = monotonic()
+    result = _scan_http_printers(
+        "192.168.50.0/24",
+        max_hosts=2,
+        ports=(80,),
+        connect_timeout_seconds=0.1,
+        scan_timeout_seconds=0.2,
+    )
+    elapsed = monotonic() - started
+
+    assert elapsed < 0.7
+    assert result.summary.status == PrinterScanStatus.COMPLETED
+    assert result.summary.discovered_count == 1
+    assert result.printers[0].host == "192.168.50.1"
+
+
+def test_combined_scan_passes_timeout_budget_to_http_probe(monkeypatch):
+    captured = {}
+
+    def fake_mdns(timeout_seconds):
+        return PrinterScanResult(
+            summary=PrinterScanSummary(
+                status=PrinterScanStatus.COMPLETED,
+                duration_ms=1,
+                discovered_count=0,
+                method="mdns",
+                probe_count=0,
+            ),
+            printers=(),
+        )
+
+    def fake_http(target_cidr, max_hosts, ports, connect_timeout_seconds, scan_timeout_seconds=None):
+        captured["scan_timeout_seconds"] = scan_timeout_seconds
+        return PrinterScanResult(
+            summary=PrinterScanSummary(
+                status=PrinterScanStatus.COMPLETED,
+                duration_ms=1,
+                discovered_count=0,
+                method="http_probe",
+                scanned_host_count=0,
+                probe_count=0,
+            ),
+            printers=(),
+        )
+
+    monkeypatch.setattr("backend.domains.printers.service._scan_mdns", fake_mdns)
+    monkeypatch.setattr("backend.domains.printers.service._scan_http_printers", fake_http)
+
+    scan_lan_for_printers(timeout_seconds=4.5, scan_method="combined")
+
+    assert captured["scan_timeout_seconds"] == 4.5
 
 
 def test_octoprint_and_moonraker_status_parsers_are_read_only():

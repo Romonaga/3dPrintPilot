@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from backend.app.main import create_app
 from backend.domains.resources.service import build_resource_status
 from backend.domains.resources.worker import LocalLlmAdmissionPolicy, LocalLlmRequestGate, QueueState, WorkQueue
+from tests.helpers import allow_anonymous_until_bootstrap
 
 
 def test_resource_status_reports_unavailable_gpu_and_controls(monkeypatch):
@@ -37,7 +38,7 @@ def test_resource_status_endpoint_exposes_clear_unavailable_state(monkeypatch):
         "backend.domains.resources.service._read_ollama_status",
         lambda: {"available": False, "base_url": "http://localhost:11434/api", "model": "qwen3", "error": "offline"},
     )
-    client = TestClient(create_app())
+    client = TestClient(allow_anonymous_until_bootstrap(create_app()))
 
     response = client.get("/api/resources/status")
 
