@@ -103,7 +103,7 @@ function CompatibilityResult({ check }: { check: CompatibilityCheckResult }) {
           <h3>{check.modelTitle}</h3>
           <p>{check.printerName}</p>
         </div>
-        <span className={`result-pill ${resultTone(check.status)}`}>{check.status}</span>
+        <span className={`result-pill ${resultTone(check.status)}`}>{resultLabel(check.status)}</span>
       </div>
       <p>
         {check.sourceType.replace("_", " ")} · {check.confidenceLabel} confidence
@@ -129,4 +129,14 @@ function resultTone(status: string) {
     return "bad";
   }
   return "warn";
+}
+
+function resultLabel(status: string) {
+  if (status === "pass") {
+    return "compatible";
+  }
+  if (status === "fail") {
+    return "not compatible";
+  }
+  return "maybe";
 }
