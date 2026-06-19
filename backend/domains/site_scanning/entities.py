@@ -54,6 +54,10 @@ class CrawlCandidate:
     confidence: float
     evidence: tuple[str, ...] = ()
     external_model_id: str | None = None
+    license: str | None = None
+    attribution: str | None = None
+    requirements: dict = field(default_factory=dict)
+    raw_payload: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

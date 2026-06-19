@@ -4,7 +4,7 @@ from collections import deque
 from time import monotonic
 from urllib.parse import urlparse
 
-from backend.domains.site_scanning.adapters.base import SiteScanAdapter
+from backend.domains.site_scanning.adapters.base import SiteAdapterDeclaration, SiteScanAdapter
 from backend.domains.site_scanning.adapters.metadata_only import MetadataOnlyAdapter
 from backend.domains.site_scanning.adapters.printables import PRINTABLES_HOSTS, PrintablesAdapter
 from backend.domains.site_scanning.entities import (
@@ -28,7 +28,28 @@ class SiteScanService:
     def list_adapters(self) -> list[SiteScanAdapter]:
         return list(self._adapters.values())
 
-    def scan(self, start_url: str, policy: CrawlPolicy | None = None, site_key: str = "auto") -> ScanResult:
+    def adapter_declarations(self) -> list[SiteAdapterDeclaration]:
+        declarations = []
+        for adapter in self.list_adapters():
+            declarations.append(
+                SiteAdapterDeclaration(
+                    site_key=adapter.site_key,
+                    display_name=adapter.display_name,
+                    allowed_hosts=tuple(sorted(adapter.allowed_hosts)),
+                    supports_downloads=adapter.supports_downloads,
+                    default_limits=getattr(adapter, "default_limits", {}),
+                    robots_terms_notes=getattr(adapter, "robots_terms_notes", None),
+                )
+            )
+        return declarations
+
+    def scan(
+        self,
+        start_url: str,
+        policy: CrawlPolicy | None = None,
+        site_key: str = "auto",
+        enabled_site_keys: frozenset[str] | None = None,
+    ) -> ScanResult:
         started = monotonic()
         active_policy = (policy or CrawlPolicy()).normalized()
         normalized_start_url = try_normalize_url(start_url)
@@ -36,6 +57,8 @@ class SiteScanService:
         adapter = self._adapters.get(selected_site_key)
         if adapter is None:
             raise ValueError(f"Unknown site scanning adapter: {selected_site_key}")
+        if enabled_site_keys is not None and selected_site_key not in enabled_site_keys:
+            raise ValueError(f"Site scanning adapter is disabled: {selected_site_key}")
 
         if normalized_start_url is None:
             return self._rejected_result(

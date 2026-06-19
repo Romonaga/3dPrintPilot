@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.database import get_db_session
 from backend.domains.site_scanning.entities import CrawlPolicy, ScanResult
-from backend.domains.site_scanning.schemas.request import SiteScanRequest
+from backend.domains.site_scanning.schemas.request import SiteScanRequest, UpdateSiteAdapterRequest
 from backend.domains.site_scanning.schemas.response import (
     SiteScanAdapterResponse,
     SiteScanCandidateResponse,
@@ -26,21 +26,49 @@ def get_site_scan_store(session: Session = Depends(get_db_session)) -> SiteScanS
 
 
 @router.get("/adapters", response_model=list[SiteScanAdapterResponse])
-def list_adapters(_user=Depends(require_roles("viewer"))) -> list[SiteScanAdapterResponse]:
+def list_adapters(
+    _user=Depends(require_roles("viewer")),
+    store: SiteScanStore = Depends(get_site_scan_store),
+) -> list[SiteScanAdapterResponse]:
     return [
         SiteScanAdapterResponse(
-            site_key=adapter.site_key,
-            display_name=adapter.display_name,
-            supports_downloads=adapter.supports_downloads,
+            site_key=record.site_key,
+            display_name=record.display_name,
+            enabled=record.enabled,
+            supports_downloads=record.supports_downloads,
+            allowed_hosts=list((record.allowed_hosts or {}).get("hosts") or []),
+            default_limits=record.default_limits or {},
+            robots_terms_notes=record.robots_terms_notes,
         )
-        for adapter in service.list_adapters()
+        for record in store.list_adapter_records(service.adapter_declarations())
     ]
+
+
+@router.put("/adapters/{site_key}", response_model=SiteScanAdapterResponse)
+def update_adapter(
+    site_key: str,
+    request: UpdateSiteAdapterRequest,
+    _user=Depends(require_roles("admin")),
+    store: SiteScanStore = Depends(get_site_scan_store),
+) -> SiteScanAdapterResponse:
+    record = store.update_adapter_enabled(service.adapter_declarations(), site_key, request.enabled)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Site adapter not found")
+    return SiteScanAdapterResponse(
+        site_key=record.site_key,
+        display_name=record.display_name,
+        enabled=record.enabled,
+        supports_downloads=record.supports_downloads,
+        allowed_hosts=list((record.allowed_hosts or {}).get("hosts") or []),
+        default_limits=record.default_limits or {},
+        robots_terms_notes=record.robots_terms_notes,
+    )
 
 
 @router.post("/scans", response_model=SiteScanResponse)
 def create_scan(
     request: SiteScanRequest,
-    _user=Depends(require_roles("user")),
+    user=Depends(require_roles("user")),
     store: SiteScanStore = Depends(get_site_scan_store),
 ) -> SiteScanResponse:
     try:
@@ -55,10 +83,11 @@ def create_scan(
                 allowed_hosts=frozenset(request.allowed_hosts),
                 per_host_concurrency=request.per_host_concurrency,
             ),
+            enabled_site_keys=store.enabled_site_keys(service.adapter_declarations()),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    scan_run = store.save_scan_result(result)
+    scan_run = store.save_scan_result(result, requested_by_user_id=getattr(user, "id", None))
     return _to_response(result, scan_run_id=scan_run.id)
 
 
@@ -94,6 +123,9 @@ def _to_response(result: ScanResult, scan_run_id: int | None = None) -> SiteScan
                 status=candidate.status,
                 confidence=candidate.confidence,
                 evidence=list(candidate.evidence),
+                license=candidate.license,
+                attribution=candidate.attribution,
+                requirements=candidate.requirements,
             )
             for candidate in result.candidates
         ],

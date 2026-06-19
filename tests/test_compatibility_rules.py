@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from backend.domains.compatibility.entities import CompatibilitySeverity, ModelRequirements, PrinterCapabilities
 from backend.domains.compatibility.service import check_compatibility
+from backend.domains.compatibility.store import scan_result_requirements
 
 
 def test_compatibility_passes_when_model_fits_and_material_limits_match():
@@ -169,3 +170,31 @@ def test_offline_status_lowers_confidence_without_failing_fit():
 
     assert report.status == CompatibilitySeverity.WARNING
     assert any(item.code == "printer_status" and item.severity == CompatibilitySeverity.WARNING for item in report.items)
+
+
+def test_metadata_requirements_are_read_from_scan_candidate_evidence():
+    scan_result = type(
+        "ScanResult",
+        (),
+        {
+            "title": "ABS bracket",
+            "normalized_url": "https://example.com/model/abs-bracket",
+            "raw_payload": {"metadata_only": True},
+            "evidence": {
+                "requirements": {
+                    "material": "ABS",
+                    "file_format": "3mf",
+                    "nozzle_diameter_mm": 0.4,
+                    "color_count": 2,
+                }
+            },
+        },
+    )()
+
+    requirements = scan_result_requirements(scan_result)
+
+    assert requirements.source_type == "metadata_only"
+    assert requirements.material == "ABS"
+    assert requirements.file_format == "3mf"
+    assert requirements.nozzle_diameter_mm == 0.4
+    assert requirements.color_count == 2

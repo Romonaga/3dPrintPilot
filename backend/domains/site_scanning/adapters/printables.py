@@ -19,6 +19,10 @@ class PrintablesAdapter:
     display_name = "Printables public model pages"
     allowed_hosts = PRINTABLES_HOSTS
     supports_downloads = False
+    default_limits = {"max_depth": 1, "max_pages": 50, "max_runtime_seconds": 300, "per_host_concurrency": 1}
+    robots_terms_notes = (
+        "Public metadata only. Does not sign in, bypass paywalls, evade anti-bot controls, or download model files."
+    )
 
     def discover(self, url: str, depth: int, parent_url: str | None) -> AdapterDiscoveryResult:
         normalized_url = normalize_url(url)
@@ -122,6 +126,14 @@ def _candidate(
             "No files were downloaded; compatibility remains metadata-only.",
         ),
         external_model_id=external_model_id,
+        license="unknown",
+        attribution="Printables",
+        requirements={"file_format": None, "material": None},
+        raw_payload={
+            "external_model_id": external_model_id,
+            "source": "public_printables_metadata",
+            "metadata_only": True,
+        },
     )
 
 

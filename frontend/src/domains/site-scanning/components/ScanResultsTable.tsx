@@ -19,6 +19,7 @@ export function ScanResultsTable({ result }: ScanResultsTableProps) {
               <th>Status</th>
               <th>Depth</th>
               <th>Confidence</th>
+              <th>Attribution</th>
               <th>Source</th>
             </tr>
           </thead>
@@ -31,6 +32,7 @@ export function ScanResultsTable({ result }: ScanResultsTableProps) {
                 </td>
                 <td>{candidate.depth}</td>
                 <td>{Math.round(candidate.confidence * 100)}%</td>
+                <td>{candidate.attribution ?? candidate.license ?? "Unknown"}</td>
                 <td>
                   <a href={candidate.sourceUrl} target="_blank" rel="noreferrer">
                     Open
@@ -40,7 +42,7 @@ export function ScanResultsTable({ result }: ScanResultsTableProps) {
             ))}
             {!result || result.candidates.length === 0 ? (
               <tr>
-                <td colSpan={5}>No candidates yet.</td>
+                <td colSpan={6}>No candidates yet.</td>
               </tr>
             ) : null}
           </tbody>

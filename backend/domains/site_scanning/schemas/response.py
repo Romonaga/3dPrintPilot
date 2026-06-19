@@ -6,7 +6,11 @@ from pydantic import BaseModel
 class SiteScanAdapterResponse(BaseModel):
     site_key: str
     display_name: str
+    enabled: bool
     supports_downloads: bool
+    allowed_hosts: list[str]
+    default_limits: dict
+    robots_terms_notes: str | None
 
 
 class SiteScanSummaryResponse(BaseModel):
@@ -38,6 +42,9 @@ class SiteScanCandidateResponse(BaseModel):
     status: str
     confidence: float
     evidence: list[str]
+    license: str | None
+    attribution: str | None
+    requirements: dict
 
 
 class SiteScanRejectionResponse(BaseModel):

@@ -12,6 +12,9 @@ class FakeSiteScanRun:
 
 
 class FakeSiteScanStore:
+    def enabled_site_keys(self, declarations):
+        return frozenset(declaration.site_key for declaration in declarations)
+
     def save_scan_result(self, result, requested_by_user_id=None):
         return FakeSiteScanRun()
 
@@ -62,6 +65,8 @@ def test_site_scanning_api_returns_metrics_for_metadata_only_scan():
     assert body["summary"]["accepted_result_count"] == 1
     assert body["summary"]["duration_ms"] >= 0
     assert body["candidates"][0]["status"] == "needs_file"
+    assert body["candidates"][0]["license"] == "unknown"
+    assert body["candidates"][0]["attribution"] == "example.com"
 
 
 def test_compatibility_api_requires_scan_candidates():

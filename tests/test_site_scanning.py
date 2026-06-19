@@ -67,6 +67,8 @@ def test_metadata_only_scan_records_status_timing_and_counts():
     assert result.summary.duration_ms >= 0
     assert result.candidates[0].status == "needs_file"
     assert result.candidates[0].depth == 0
+    assert result.candidates[0].license == "unknown"
+    assert result.candidates[0].attribution == "example.com"
 
 
 def test_scan_rejects_invalid_urls_with_chartable_summary():
@@ -113,6 +115,17 @@ def test_scan_enforces_page_limit_before_draining_queue():
     assert result.summary.accepted_result_count == 1
 
 
+def test_scan_rejects_disabled_adapters():
+    service = SiteScanService()
+
+    try:
+        service.scan("https://example.com/models/calibration-cube", enabled_site_keys=frozenset({"printables"}))
+    except ValueError as exc:
+        assert "disabled" in str(exc)
+    else:
+        raise AssertionError("Expected disabled adapter error")
+
+
 def test_store_maps_scan_result_to_run_and_result_rows():
     service = SiteScanService()
     result = service.scan("https://example.com/models/calibration-cube")
@@ -131,3 +144,6 @@ def test_store_maps_scan_result_to_run_and_result_rows():
     assert len(result_rows) == 1
     assert result_rows[0].result_type == "candidate"
     assert result_rows[0].status == "needs_file"
+    assert result_rows[0].evidence["license"] == "unknown"
+    assert result_rows[0].evidence["attribution"] == "example.com"
+    assert result_rows[0].raw_payload["metadata_only"] is True

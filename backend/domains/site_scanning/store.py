@@ -2,15 +2,61 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.domains.site_scanning.adapters.base import SiteAdapterDeclaration
 from backend.domains.site_scanning.entities import ScanResult
-from backend.domains.site_scanning.models import ModelSiteScanResult, ModelSiteScanRun
+from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun
 
 
 class SiteScanStore:
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def list_adapter_records(self, declarations: list[SiteAdapterDeclaration]) -> list[ModelSiteAdapter]:
+        configured = {adapter.site_key: adapter for adapter in self._session.scalars(select(ModelSiteAdapter)).all()}
+        changed = False
+        for declaration in declarations:
+            if declaration.site_key in configured:
+                continue
+            record = ModelSiteAdapter(
+                site_key=declaration.site_key,
+                display_name=declaration.display_name,
+                enabled=declaration.enabled,
+                supports_downloads=declaration.supports_downloads,
+                allowed_hosts={"hosts": list(declaration.allowed_hosts)},
+                default_limits=declaration.default_limits,
+                robots_terms_notes=declaration.robots_terms_notes,
+            )
+            self._session.add(record)
+            configured[declaration.site_key] = record
+            changed = True
+        if changed:
+            self._session.commit()
+        return [configured[declaration.site_key] for declaration in declarations]
+
+    def enabled_site_keys(self, declarations: list[SiteAdapterDeclaration]) -> frozenset[str]:
+        return frozenset(
+            record.site_key
+            for record in self.list_adapter_records(declarations)
+            if record.enabled
+        )
+
+    def update_adapter_enabled(
+        self,
+        declarations: list[SiteAdapterDeclaration],
+        site_key: str,
+        enabled: bool,
+    ) -> ModelSiteAdapter | None:
+        records = {record.site_key: record for record in self.list_adapter_records(declarations)}
+        record = records.get(site_key)
+        if record is None:
+            return None
+        record.enabled = enabled
+        self._session.commit()
+        self._session.refresh(record)
+        return record
 
     def save_scan_result(self, result: ScanResult, requested_by_user_id: int | None = None) -> ModelSiteScanRun:
         summary = result.summary
@@ -70,7 +116,13 @@ class SiteScanStore:
                     status=candidate.status,
                     confidence=candidate.confidence,
                     inclusion_reason=candidate.inclusion_reason,
-                    evidence={"items": list(candidate.evidence)},
+                    evidence={
+                        "items": list(candidate.evidence),
+                        "license": candidate.license,
+                        "attribution": candidate.attribution,
+                        "requirements": candidate.requirements,
+                    },
+                    raw_payload=candidate.raw_payload,
                 )
             )
 

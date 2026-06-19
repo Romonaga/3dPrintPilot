@@ -1,5 +1,15 @@
-import { type SiteScanLimits, type SiteScanResult } from "../types";
+import { type SiteAdapter, type SiteScanLimits, type SiteScanResult } from "../types";
 import { apiFetch } from "../../../lib/apiFetch";
+
+type ApiAdapter = {
+  site_key: string;
+  display_name: string;
+  enabled: boolean;
+  supports_downloads: boolean;
+  allowed_hosts: string[];
+  default_limits: Record<string, unknown>;
+  robots_terms_notes: string | null;
+};
 
 type ApiSummary = {
   scan_run_id: number | null;
@@ -30,6 +40,9 @@ type ApiCandidate = {
   status: string;
   confidence: number;
   evidence: string[];
+  license: string | null;
+  attribution: string | null;
+  requirements: Record<string, unknown>;
 };
 
 type ApiRejection = {
@@ -44,6 +57,27 @@ type ApiResult = {
   candidates: ApiCandidate[];
   rejections: ApiRejection[];
 };
+
+export async function listSiteAdapters(): Promise<SiteAdapter[]> {
+  const response = await apiFetch("/api/site-scanning/adapters");
+  if (!response.ok) {
+    throw new Error(`Adapter list failed with HTTP ${response.status}`);
+  }
+  const adapters = (await response.json()) as ApiAdapter[];
+  return adapters.map(fromApiAdapter);
+}
+
+export async function updateSiteAdapter(siteKey: string, enabled: boolean): Promise<SiteAdapter> {
+  const response = await apiFetch(`/api/site-scanning/adapters/${siteKey}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled })
+  });
+  if (!response.ok) {
+    throw new Error(`Adapter update failed with HTTP ${response.status}`);
+  }
+  return fromApiAdapter((await response.json()) as ApiAdapter);
+}
 
 export async function createSiteScan(url: string, limits: SiteScanLimits): Promise<SiteScanResult> {
   const response = await apiFetch("/api/site-scanning/scans", {
@@ -96,7 +130,10 @@ function fromApi(result: ApiResult): SiteScanResult {
       inclusionReason: candidate.inclusion_reason,
       status: candidate.status,
       confidence: candidate.confidence,
-      evidence: candidate.evidence
+      evidence: candidate.evidence,
+      license: candidate.license,
+      attribution: candidate.attribution,
+      requirements: candidate.requirements
     })),
     rejections: result.rejections.map((rejection) => ({
       sourceUrl: rejection.source_url,
@@ -104,5 +141,17 @@ function fromApi(result: ApiResult): SiteScanResult {
       depth: rejection.depth,
       parentUrl: rejection.parent_url
     }))
+  };
+}
+
+function fromApiAdapter(adapter: ApiAdapter): SiteAdapter {
+  return {
+    siteKey: adapter.site_key,
+    displayName: adapter.display_name,
+    enabled: adapter.enabled,
+    supportsDownloads: adapter.supports_downloads,
+    allowedHosts: adapter.allowed_hosts,
+    defaultLimits: adapter.default_limits,
+    robotsTermsNotes: adapter.robots_terms_notes
   };
 }
