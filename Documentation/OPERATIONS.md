@@ -20,6 +20,8 @@ Restore into a matching application schema version. Recreate the database from m
 
 The app is intended for trusted local-network use. Default OpenAI fallback is disabled, provider secrets stay encrypted at rest, printer discovery uses bounded probes, site scanning is adapter-bound, and authenticated admin routes are required for provider secrets and backup export.
 
+Analysis report closeout notes live in `Documentation/ANALYSIS_REPORT_DISPOSITIONS.md`. Verlyn remains the source of work truth for change tickets, work items, reviews, and delivery state.
+
 ## Packaging Decision
 
 Tauri desktop packaging is deferred. The web app workflows are usable and covered by tests, but packaging should wait until restore import, installer signing, and OS-specific secret storage requirements are designed.

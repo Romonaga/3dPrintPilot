@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -123,6 +124,65 @@ def test_protected_routes_require_sessions_and_roles_once_users_exist():
     owner_me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {owner_token}"})
     assert owner_me.status_code == 200
     assert owner_me.json()["user"]["role"] == "owner"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("POST", "/api/printers/scan", {"scan_method": "http", "max_hosts": 1, "ports": [80]}),
+        ("POST", "/api/site-scanning/scans", {"url": "https://example.com/models/cube"}),
+        ("POST", "/api/resources/samples", None),
+        ("GET", "/api/settings/provider-secrets", None),
+        (
+            "POST",
+            "/api/ai/accounting/reconcile/openai",
+            {"period_start": "2026-06-01T00:00:00Z", "period_end": "2026-06-02T00:00:00Z"},
+        ),
+        ("GET", "/api/operations/backup.json", None),
+    ],
+)
+def test_sensitive_routes_block_anonymous_and_low_privilege_users(method: str, path: str, payload: dict | None):
+    client, SessionLocal = _auth_client()
+
+    client.post("/api/auth/bootstrap", json={"username": "owner", "password": "correct-password"})
+    with SessionLocal() as session:
+        viewer = User(username="viewer", password_hash=hash_password("correct-password"), role="viewer", is_active=True)
+        session.add(viewer)
+        session.commit()
+    viewer_token = client.post("/api/auth/login", json={"username": "viewer", "password": "correct-password"}).json()[
+        "token"
+    ]
+
+    request_kwargs = {"json": payload} if payload is not None else {}
+    anonymous = client.request(method, path, **request_kwargs)
+    low_privilege = client.request(
+        method,
+        path,
+        headers={"Authorization": f"Bearer {viewer_token}"},
+        **request_kwargs,
+    )
+
+    assert anonymous.status_code == 401
+    assert low_privilege.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/printers",
+        "/api/resources/status",
+        "/api/site-scanning/adapters",
+        "/api/models",
+    ],
+)
+def test_read_routes_block_anonymous_users_after_bootstrap(path: str):
+    client, _SessionLocal = _auth_client()
+
+    client.post("/api/auth/bootstrap", json={"username": "owner", "password": "correct-password"})
+
+    response = client.get(path)
+
+    assert response.status_code == 401
 
 
 def _auth_client() -> tuple[TestClient, sessionmaker[Session]]:
