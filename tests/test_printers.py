@@ -34,6 +34,7 @@ class FakePrinter:
     protocol = "http"
     printer_type = "prus link"
     state = "manual"
+    identity_key = None
     adapter_type = None
     capabilities = {}
     credential_secret_name = None
@@ -77,6 +78,7 @@ class FakePrinterStore:
         port,
         protocol,
         service_type,
+        identity_key=None,
         build_volume_x_mm=None,
         build_volume_y_mm=None,
         build_volume_z_mm=None,
@@ -103,9 +105,11 @@ class FakePrinterStore:
 
 
 class FakeSession:
-    def __init__(self):
+    def __init__(self, known_printer=None, scan_results=None):
         self.added = []
         self.committed = False
+        self.known_printer = known_printer
+        self.scan_results = scan_results or {}
 
     def add(self, item):
         self.added.append(item)
@@ -121,6 +125,17 @@ class FakeSession:
     def refresh(self, item):
         return None
 
+    def get(self, model, item_id):
+        if model is Printer and self.known_printer is not None and self.known_printer.id == item_id:
+            return self.known_printer
+        if model is NetworkScanResult:
+            return self.scan_results.get(item_id)
+        return None
+
+    def scalar(self, statement):
+        _ = statement
+        return self.known_printer
+
 
 def test_printer_models_are_registered():
     table_names = set(Base.metadata.tables)
@@ -130,6 +145,9 @@ def test_printer_models_are_registered():
     assert NetworkScanResult.__tablename__ in table_names
     assert "scanned_host_count" in NetworkScanRun.__table__.columns
     assert "probe_count" in NetworkScanRun.__table__.columns
+    assert "identity_key" in Printer.__table__.columns
+    assert "identity_key" in NetworkScanResult.__table__.columns
+    assert "matched_printer_id" in NetworkScanResult.__table__.columns
 
 
 def test_printer_api_lists_and_adds_printers():
@@ -255,6 +273,93 @@ def test_printer_store_persists_scan_metrics_and_results():
     assert session.committed is True
     assert any(isinstance(item, NetworkScanRun) for item in session.added)
     assert any(isinstance(item, NetworkScanResult) for item in session.added)
+
+
+def test_confirm_discovered_printer_returns_known_match_instead_of_duplicate():
+    known = Printer(
+        id=7,
+        name="Bambu A1",
+        host="192.168.1.20",
+        port=80,
+        protocol="http",
+        printer_type="mdns:bambu",
+        state="confirmed",
+        identity_key="mdns:_bambu._tcp.local.:bambu-a1._bambu._tcp.local.",
+    )
+    source = NetworkScanResult(
+        id=4,
+        scan_run_id=1,
+        name="Bambu A1",
+        host="192.168.1.25",
+        port=80,
+        protocol="http",
+        service_type="mdns:bambu",
+        identity_key=known.identity_key,
+        matched_printer_id=known.id,
+        confidence=88,
+        evidence=["mDNS service _bambu._tcp.local. advertised Bambu-A1._bambu._tcp.local."],
+    )
+    session = FakeSession(known_printer=known, scan_results={source.id: source})
+
+    returned = PrinterStore(session).confirm_discovered_printer(
+        name="Bambu A1",
+        host="192.168.1.25",
+        port=80,
+        protocol="http",
+        service_type="mdns:bambu",
+        scan_result_id=source.id,
+    )
+
+    assert returned is known
+    assert known.host == "192.168.1.25"
+    assert known.state == "confirmed"
+    assert session.committed is True
+    assert not any(isinstance(item, Printer) for item in session.added)
+
+
+def test_scan_result_updates_known_printer_by_identity_after_ip_change():
+    known = Printer(
+        id=8,
+        name="Bambu A1",
+        host="192.168.1.20",
+        port=8883,
+        protocol="mqtts",
+        printer_type="mqtt_probe:bambu_mqtt",
+        state="confirmed",
+        identity_key="mdns:_bambu._tcp.local.:bambu-a1._bambu._tcp.local.",
+    )
+    result = PrinterScanResult(
+        summary=PrinterScanSummary(
+            status=PrinterScanStatus.COMPLETED,
+            duration_ms=100,
+            discovered_count=1,
+            method="mdns",
+            scanned_host_count=0,
+            probe_count=4,
+        ),
+        printers=(
+            DiscoveredPrinter(
+                name="Bambu A1",
+                host="192.168.1.44",
+                port=80,
+                protocol="http",
+                service_type="mdns:bambu",
+                confidence=88,
+                evidence=("mDNS service _bambu._tcp.local. advertised Bambu-A1._bambu._tcp.local.",),
+            ),
+        ),
+    )
+    session = FakeSession(known_printer=known)
+
+    PrinterStore(session).save_scan_result(result)
+
+    saved_result = next(item for item in session.added if isinstance(item, NetworkScanResult))
+    assert known.host == "192.168.1.44"
+    assert known.port == 8883
+    assert known.protocol == "mqtts"
+    assert known.state == "online"
+    assert saved_result.identity_key == known.identity_key
+    assert saved_result.matched_printer_id == known.id
 
 
 def test_http_probe_detects_octoprint_and_moonraker_markers():

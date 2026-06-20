@@ -22,6 +22,7 @@ class Printer(Base):
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, default="http")
     printer_type: Mapped[str] = mapped_column(String(80), nullable=False, default="unknown")
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="manual")
+    identity_key: Mapped[str | None] = mapped_column(String(255))
     adapter_type: Mapped[str | None] = mapped_column(String(80))
     capabilities: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     credential_secret_name: Mapped[str | None] = mapped_column(String(120))
@@ -36,6 +37,7 @@ class Printer(Base):
     __table_args__ = (
         Index("ix_printers_owner_user_id", "owner_user_id"),
         Index("ix_printers_host_port", "host", "port"),
+        Index("uq_printers_identity_key", "identity_key", unique=True),
     )
 
 
@@ -71,6 +73,8 @@ class NetworkScanResult(Base):
     port: Mapped[int] = mapped_column(Integer, nullable=False)
     protocol: Mapped[str] = mapped_column(String(40), nullable=False, default="http")
     service_type: Mapped[str] = mapped_column(String(160), nullable=False)
+    identity_key: Mapped[str | None] = mapped_column(String(255))
+    matched_printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"))
     confidence: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="discovered")
     raw_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -82,4 +86,6 @@ class NetworkScanResult(Base):
     __table_args__ = (
         Index("ix_network_scan_results_scan_run_id", "scan_run_id"),
         Index("ix_network_scan_results_host", "host"),
+        Index("ix_network_scan_results_identity_key", "identity_key"),
+        Index("ix_network_scan_results_matched_printer_id", "matched_printer_id"),
     )

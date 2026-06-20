@@ -19,6 +19,8 @@ class DiscoveredPrinter:
     state: str = "discovered"
     evidence: tuple[str, ...] = ()
     scan_result_id: int | None = None
+    identity_key: str | None = None
+    matched_printer_id: int | None = None
 
 
 @dataclass(frozen=True)

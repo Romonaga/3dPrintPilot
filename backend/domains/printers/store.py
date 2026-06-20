@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.domains.printers.adapters import capabilities_for_service_type, infer_adapter_type
 from backend.domains.printers.entities import PrinterScanResult
+from backend.domains.printers.identity import is_stable_printer_identity, printer_identity_key
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
 
 
@@ -26,6 +27,7 @@ class PrinterStore:
         build_volume_y_mm: int | None = None,
         build_volume_z_mm: int | None = None,
         state: str = "manual",
+        identity_key: str | None = None,
         adapter_type: str | None = None,
         capabilities: dict | None = None,
     ) -> Printer:
@@ -36,6 +38,7 @@ class PrinterStore:
             protocol=protocol,
             printer_type=printer_type,
             state=state,
+            identity_key=identity_key,
             adapter_type=adapter_type or infer_adapter_type(None, printer_type),
             capabilities=capabilities or capabilities_for_service_type(printer_type),
             build_volume_x_mm=build_volume_x_mm,
@@ -68,6 +71,7 @@ class PrinterStore:
         port: int,
         protocol: str,
         service_type: str,
+        identity_key: str | None = None,
         build_volume_x_mm: int | None = None,
         build_volume_y_mm: int | None = None,
         build_volume_z_mm: int | None = None,
@@ -75,16 +79,56 @@ class PrinterStore:
     ) -> Printer:
         source = self._session.get(NetworkScanResult, scan_result_id) if scan_result_id is not None else None
         final_service_type = source.service_type if source is not None else service_type
+        final_name = source.name if source is not None else name
+        final_host = source.host if source is not None else host
+        final_port = source.port if source is not None else port
+        final_protocol = source.protocol if source is not None else protocol
+        final_identity_key = (
+            identity_key
+            or (source.identity_key if source is not None else None)
+            or printer_identity_key(
+                name=final_name,
+                host=final_host,
+                port=final_port,
+                protocol=final_protocol,
+                service_type=final_service_type,
+                evidence=source.evidence if source is not None else (),
+            )
+        )
+        existing = None
+        if source is not None and source.matched_printer_id is not None:
+            existing = self._session.get(Printer, source.matched_printer_id)
+        existing = existing or self.find_known_printer(
+            identity_key=final_identity_key,
+            host=final_host,
+            port=final_port,
+            protocol=final_protocol,
+        )
+        if existing is not None:
+            self._update_known_printer_from_discovery(
+                existing,
+                host=final_host,
+                port=final_port,
+                protocol=final_protocol,
+                service_type=final_service_type,
+                identity_key=final_identity_key,
+                state="confirmed",
+            )
+            self._session.commit()
+            self._session.refresh(existing)
+            return existing
+
         return self.create_printer(
-            name=source.name if source is not None else name,
-            host=source.host if source is not None else host,
-            port=source.port if source is not None else port,
-            protocol=source.protocol if source is not None else protocol,
+            name=final_name,
+            host=final_host,
+            port=final_port,
+            protocol=final_protocol,
             printer_type=final_service_type,
             build_volume_x_mm=build_volume_x_mm,
             build_volume_y_mm=build_volume_y_mm,
             build_volume_z_mm=build_volume_z_mm,
             state="confirmed",
+            identity_key=final_identity_key,
             adapter_type=infer_adapter_type(final_service_type),
             capabilities=capabilities_for_service_type(final_service_type),
         )
@@ -114,6 +158,30 @@ class PrinterStore:
         self._session.add(run)
         self._session.flush()
         for printer in result.printers:
+            identity_key = printer.identity_key or printer_identity_key(
+                name=printer.name,
+                host=printer.host,
+                port=printer.port,
+                protocol=printer.protocol,
+                service_type=printer.service_type,
+                evidence=printer.evidence,
+            )
+            matched_printer = self.find_known_printer(
+                identity_key=identity_key,
+                host=printer.host,
+                port=printer.port,
+                protocol=printer.protocol,
+            )
+            if matched_printer is not None:
+                self._update_known_printer_from_discovery(
+                    matched_printer,
+                    host=printer.host,
+                    port=printer.port,
+                    protocol=printer.protocol,
+                    service_type=printer.service_type,
+                    identity_key=identity_key,
+                    state="online",
+                )
             self._session.add(
                 NetworkScanResult(
                     scan_run_id=run.id,
@@ -122,12 +190,64 @@ class PrinterStore:
                     port=printer.port,
                     protocol=printer.protocol,
                     service_type=printer.service_type,
+                    identity_key=identity_key,
+                    matched_printer_id=matched_printer.id if matched_printer is not None else None,
                     confidence=printer.confidence,
                     state=printer.state,
-                    raw_payload={"service_type": printer.service_type, "confidence": printer.confidence},
+                    raw_payload={
+                        "service_type": printer.service_type,
+                        "confidence": printer.confidence,
+                        "identity_key": identity_key,
+                    },
                     evidence=list(printer.evidence),
                 )
             )
         self._session.commit()
         self._session.refresh(run)
         return run
+
+    def find_known_printer(
+        self,
+        identity_key: str | None,
+        host: str,
+        port: int,
+        protocol: str,
+    ) -> Printer | None:
+        if identity_key:
+            matched = self._session.scalar(select(Printer).where(Printer.identity_key == identity_key))
+            if matched is not None:
+                return matched
+        return self._session.scalar(
+            select(Printer).where(
+                Printer.host == host,
+                Printer.port == port,
+                Printer.protocol == protocol,
+            )
+        )
+
+    def _update_known_printer_from_discovery(
+        self,
+        printer: Printer,
+        host: str,
+        port: int,
+        protocol: str,
+        service_type: str,
+        identity_key: str | None,
+        state: str,
+    ) -> None:
+        preserve_confirmed_endpoint = (
+            state == "online"
+            and identity_key is not None
+            and printer.identity_key == identity_key
+            and is_stable_printer_identity(identity_key)
+        )
+        printer.host = host
+        if not preserve_confirmed_endpoint:
+            printer.port = port
+            printer.protocol = protocol
+            printer.printer_type = service_type
+            printer.adapter_type = infer_adapter_type(service_type)
+            printer.capabilities = capabilities_for_service_type(service_type)
+        printer.state = state
+        if identity_key and printer.identity_key is None:
+            printer.identity_key = identity_key
