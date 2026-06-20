@@ -13,7 +13,8 @@ afterEach(() => {
 });
 
 function authenticatedFetch(input: RequestInfo | URL): Promise<Response> {
-  if (String(input) === "/api/auth/me") {
+  const url = String(input);
+  if (url === "/api/auth/me") {
     return Promise.resolve(
       new Response(
         JSON.stringify({
@@ -34,6 +35,18 @@ function authenticatedFetch(input: RequestInfo | URL): Promise<Response> {
       )
     );
   }
+  if (url === "/api/printers") {
+    return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+  }
+  if (url === "/api/compatibility/checks") {
+    return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+  }
+  if (url === "/api/ai/accounting/status") {
+    return Promise.resolve(new Response(JSON.stringify(sampleAiAccountingStatus()), { status: 200 }));
+  }
+  if (url === "/api/resources/status") {
+    return Promise.resolve(new Response(JSON.stringify(sampleResourceStatus()), { status: 200 }));
+  }
   return Promise.resolve(new Response("{}", { status: 404 }));
 }
 
@@ -53,8 +66,13 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Printers" })).toBeInTheDocument();
     expect(screen.getAllByText("3D Print Pilot").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Scan LAN" })).toHaveLength(2);
-    expect(screen.getAllByText("Estimated")).toHaveLength(2);
-    expect(screen.getByText("Final")).toBeInTheDocument();
+    expect(await screen.findByText("No saved printers yet. Scan LAN to discover printers.")).toBeInTheDocument();
+    expect(screen.getByText("No compatibility checks yet.")).toBeInTheDocument();
+    expect(screen.getByText("qwen3-coder:30b")).toBeInTheDocument();
+    expect(screen.getByText("$5.00")).toBeInTheDocument();
+    expect(screen.queryByText("Voron 2.4")).not.toBeInTheDocument();
+    expect(screen.queryByText("Prusa MK4")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bambu X1C")).not.toBeInTheDocument();
   });
 
   it("toggles dark mode from the app shell", async () => {
@@ -477,4 +495,43 @@ function sampleModels() {
       ]
     }
   ];
+}
+
+function sampleAiAccountingStatus() {
+  return {
+    estimated_cost_supported: true,
+    final_cost_supported: true,
+    reconciliation_required: true,
+    reusable_package: "local_ai_accounting",
+    openai_api_token_configured: false,
+    openai_account_key_configured: false,
+    openai_fallback_enabled: false,
+    local_model: "qwen3-coder:30b",
+    openai_fallback_model: "gpt-5.4",
+    quality_threshold: 0.72,
+    monthly_budget_usd: "5.00",
+    single_request_budget_usd: "0.25",
+    estimated_month_to_date_usd: "0",
+    budget_remaining_usd: "5.00"
+  };
+}
+
+function sampleResourceStatus() {
+  return {
+    cpu: { cores: 32, load_average: [0.1, 0.2, 0.3] },
+    memory: { total_bytes: null, available_bytes: null, used_percent: 41 },
+    gpu: {
+      available: false,
+      name: null,
+      utilization_percent: null,
+      memory_used_mib: null,
+      memory_total_mib: null,
+      memory_used_percent: null,
+      temperature_c: null,
+      error: "not available"
+    },
+    queues: {},
+    ollama: null,
+    local_llm: null
+  };
 }

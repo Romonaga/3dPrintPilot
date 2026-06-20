@@ -15,10 +15,10 @@ export type CompatibilityCheck = {
 };
 
 export type AiUsageSummary = {
-  ollamaRequests: number;
-  openAiFallbacks: number;
-  estimatedCost: string;
-  finalCost: string;
+  localModel: string;
+  fallbackStatus: string;
+  estimatedMonthToDate: string;
+  budgetRemaining: string;
   status: string;
 };
 
@@ -27,6 +27,7 @@ export type ResourceSnapshot = {
   vram: string;
   queueDepth: number;
   cpu: string;
+  status: string;
 };
 
 export type DashboardSnapshot = {
@@ -36,4 +37,3 @@ export type DashboardSnapshot = {
   aiUsage: AiUsageSummary;
   resources: ResourceSnapshot;
 };
-

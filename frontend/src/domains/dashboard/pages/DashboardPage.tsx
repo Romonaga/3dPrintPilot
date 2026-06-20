@@ -5,14 +5,16 @@ import { AiCostSummary } from "../../ai-usage/components/AiCostSummary";
 import { ResourceSummary } from "../../resources/components/ResourceSummary";
 import { useDashboardSnapshot } from "../hooks/useDashboardSnapshot";
 import { type AppRouteId } from "../../../app/navigation";
+import { type Printer } from "../../printers/types";
 
 type DashboardPageProps = {
   onRouteChange: (route: AppRouteId) => void;
   onScanLan: () => void;
+  printers: Printer[];
 };
 
-export default function DashboardPage({ onRouteChange, onScanLan }: DashboardPageProps) {
-  const snapshot = useDashboardSnapshot();
+export default function DashboardPage({ onRouteChange, onScanLan, printers }: DashboardPageProps) {
+  const snapshot = useDashboardSnapshot({ printers });
   const openAiUsage = () => onRouteChange("aiUsage");
 
   return (

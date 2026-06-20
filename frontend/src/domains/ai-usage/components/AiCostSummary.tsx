@@ -13,23 +13,22 @@ export function AiCostSummary({ usage }: AiCostSummaryProps) {
       </div>
       <dl className="metric-grid">
         <div>
-          <dt>Ollama</dt>
-          <dd>{usage.ollamaRequests}</dd>
+          <dt>Local model</dt>
+          <dd>{usage.localModel}</dd>
         </div>
         <div>
-          <dt>OpenAI</dt>
-          <dd>{usage.openAiFallbacks}</dd>
+          <dt>Fallback</dt>
+          <dd>{usage.fallbackStatus}</dd>
         </div>
         <div>
-          <dt>Estimated</dt>
-          <dd>{usage.estimatedCost}</dd>
+          <dt>Month-to-date</dt>
+          <dd>{usage.estimatedMonthToDate}</dd>
         </div>
         <div>
-          <dt>Final</dt>
-          <dd>{usage.finalCost}</dd>
+          <dt>Budget left</dt>
+          <dd>{usage.budgetRemaining}</dd>
         </div>
       </dl>
     </section>
   );
 }
-

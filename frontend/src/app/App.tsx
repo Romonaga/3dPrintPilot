@@ -78,7 +78,13 @@ export function App() {
       onThemeToggle={themeMode.toggleTheme}
     >
       <Suspense fallback={<LoadingView label={routeLabels[activeRoute]} />}>
-        {activeRoute === "dashboard" ? <DashboardPage onRouteChange={setActiveRoute} onScanLan={handleDashboardScanLan} /> : null}
+        {activeRoute === "dashboard" ? (
+          <DashboardPage
+            printers={printers.printers}
+            onRouteChange={setActiveRoute}
+            onScanLan={handleDashboardScanLan}
+          />
+        ) : null}
         {activeRoute === "aiUsage" ? <AiUsagePage /> : null}
         {activeRoute === "compatibility" ? <CompatibilityPage /> : null}
         {activeRoute === "models" ? <ModelsPage /> : null}
