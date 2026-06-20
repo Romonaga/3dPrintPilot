@@ -14,7 +14,6 @@ const ModelsPage = lazy(() => import("../domains/models/pages/ModelsPage"));
 const PrintersPage = lazy(() => import("../domains/printers/pages/PrintersPage"));
 const SiteScanningPage = lazy(() => import("../domains/site-scanning/pages/SiteScanningPage"));
 const SettingsPage = lazy(() => import("../domains/settings/pages/SettingsPage"));
-const PlaceholderPage = lazy(() => import("../domains/system/pages/PlaceholderPage"));
 
 const routeLabels: Record<AppRouteId, string> = Object.fromEntries(
   navItems.map((item) => [item.id, item.label])
@@ -22,13 +21,26 @@ const routeLabels: Record<AppRouteId, string> = Object.fromEntries(
 
 export function App() {
   const [activeRoute, setActiveRoute] = useState<AppRouteId>("dashboard");
+  const [visitedRoutes, setVisitedRoutes] = useState<Set<AppRouteId>>(() => new Set(["dashboard"]));
   const [printerScanRequestId, setPrinterScanRequestId] = useState<number | null>(null);
   const auth = useAuthSession();
   const themeMode = useThemeMode();
   const isAppSessionReady =
     !auth.isLoading && !auth.bootstrapRequired && auth.user !== null && !auth.user.forcePasswordChange;
   const printers = usePrinters({ enabled: isAppSessionReady });
+  const isRouteVisited = (route: AppRouteId) => visitedRoutes.has(route);
+  const markRouteVisited = (route: AppRouteId) => {
+    setVisitedRoutes((current) => {
+      if (current.has(route)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(route);
+      return next;
+    });
+  };
   const handleRouteChange = (route: AppRouteId) => {
+    markRouteVisited(route);
     setActiveRoute(route);
     if (route !== "printers") {
       setPrinterScanRequestId(null);
@@ -36,6 +48,7 @@ export function App() {
   };
   const handleDashboardScanLan = () => {
     setPrinterScanRequestId((current) => (current ?? 0) + 1);
+    markRouteVisited("printers");
     setActiveRoute("printers");
   };
 
@@ -78,33 +91,48 @@ export function App() {
       onThemeToggle={themeMode.toggleTheme}
     >
       <Suspense fallback={<LoadingView label={routeLabels[activeRoute]} />}>
-        {activeRoute === "dashboard" ? (
-          <DashboardPage
-            printers={printers.printers}
-            onRouteChange={setActiveRoute}
-            onScanLan={handleDashboardScanLan}
-          />
+        {isRouteVisited("dashboard") ? (
+          <div hidden={activeRoute !== "dashboard"}>
+            <DashboardPage
+              printers={printers.printers}
+              onRouteChange={handleRouteChange}
+              onScanLan={handleDashboardScanLan}
+            />
+          </div>
         ) : null}
-        {activeRoute === "aiUsage" ? <AiUsagePage /> : null}
-        {activeRoute === "compatibility" ? <CompatibilityPage /> : null}
-        {activeRoute === "models" ? <ModelsPage /> : null}
-        {activeRoute === "printers" ? (
-          <PrintersPage
-            autoStartScanRequestId={printerScanRequestId}
-            printers={printers}
-            onAutoStartScanConsumed={() => setPrinterScanRequestId(null)}
-          />
+        {isRouteVisited("aiUsage") ? (
+          <div hidden={activeRoute !== "aiUsage"}>
+            <AiUsagePage />
+          </div>
         ) : null}
-        {activeRoute === "siteScanning" ? <SiteScanningPage /> : null}
-        {activeRoute === "settings" ? <SettingsPage /> : null}
-        {activeRoute !== "dashboard" &&
-        activeRoute !== "aiUsage" &&
-        activeRoute !== "compatibility" &&
-        activeRoute !== "models" &&
-        activeRoute !== "printers" &&
-        activeRoute !== "siteScanning" &&
-        activeRoute !== "settings" ? (
-          <PlaceholderPage title={routeLabels[activeRoute]} />
+        {isRouteVisited("compatibility") ? (
+          <div hidden={activeRoute !== "compatibility"}>
+            <CompatibilityPage />
+          </div>
+        ) : null}
+        {isRouteVisited("models") ? (
+          <div hidden={activeRoute !== "models"}>
+            <ModelsPage />
+          </div>
+        ) : null}
+        {isRouteVisited("printers") ? (
+          <div hidden={activeRoute !== "printers"}>
+            <PrintersPage
+              autoStartScanRequestId={printerScanRequestId}
+              printers={printers}
+              onAutoStartScanConsumed={() => setPrinterScanRequestId(null)}
+            />
+          </div>
+        ) : null}
+        {isRouteVisited("siteScanning") ? (
+          <div hidden={activeRoute !== "siteScanning"}>
+            <SiteScanningPage />
+          </div>
+        ) : null}
+        {isRouteVisited("settings") ? (
+          <div hidden={activeRoute !== "settings"}>
+            <SettingsPage />
+          </div>
         ) : null}
       </Suspense>
     </AppShell>

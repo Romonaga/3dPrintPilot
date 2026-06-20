@@ -197,6 +197,37 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Scan Metrics" })).toBeInTheDocument();
   });
 
+  it("keeps visited view state mounted when navigating away and back", async () => {
+    mockApiFetch((input) => {
+      const url = String(input);
+      if (url === "/api/site-scanning/adapters") {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      if (url === "/api/models") {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      return authenticatedFetch(input);
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.queryByRole("heading", { name: "Upload Model" })).not.toBeInTheDocument();
+
+    await user.click(await screen.findByRole("button", { name: "Site Scans" }));
+    const sourceUrl = await screen.findByLabelText("Source URL");
+    await user.clear(sourceUrl);
+    await user.type(sourceUrl, "https://example.test/models");
+
+    await user.click(screen.getByRole("button", { name: "Models" }));
+
+    expect(await screen.findByRole("heading", { name: "Upload Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Scan Source" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Site Scans" }));
+
+    expect(await screen.findByDisplayValue("https://example.test/models")).toBeInTheDocument();
+  });
+
   it("lazy-loads the models page from navigation", async () => {
     mockApiFetch((input) => {
       if (String(input) === "/api/models") {
