@@ -13,27 +13,30 @@ export function CompatibilitySummary({ checks }: CompatibilitySummaryProps) {
           Upload Model
         </button>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Model</th>
-            <th>Printer</th>
-            <th>Result</th>
-          </tr>
-        </thead>
-        <tbody>
-          {checks.map((check) => (
-            <tr key={check.id}>
-              <td>{check.model}</td>
-              <td>{check.printer}</td>
-              <td>
-                <span className={`result-pill ${check.tone}`}>{check.result}</span>
-              </td>
+      {checks.length > 0 ? (
+        <table>
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Printer</th>
+              <th>Result</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {checks.map((check) => (
+              <tr key={check.id}>
+                <td>{check.model}</td>
+                <td>{check.printer}</td>
+                <td>
+                  <span className={`result-pill ${check.tone}`}>{check.result}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="empty-text">No compatibility checks yet.</p>
+      )}
     </section>
   );
 }
-

@@ -15,18 +15,22 @@ export function PrinterInventory({ onScanLan, printers }: PrinterInventoryProps)
         </button>
       </div>
       <div className="printer-list">
-        {printers.map((printer) => (
-          <article className="printer-row" key={printer.id}>
-            <div>
-              <h3>{printer.name}</h3>
-              <p>{printer.buildVolume}</p>
-            </div>
-            <div className="row-meta">
-              <span>{printer.state}</span>
-              <strong>{printer.confidence}%</strong>
-            </div>
-          </article>
-        ))}
+        {printers.length > 0 ? (
+          printers.map((printer) => (
+            <article className="printer-row" key={printer.id}>
+              <div>
+                <h3>{printer.name}</h3>
+                <p>{printer.buildVolume}</p>
+              </div>
+              <div className="row-meta">
+                <span>{printer.state}</span>
+                <strong>{printer.confidence}%</strong>
+              </div>
+            </article>
+          ))
+        ) : (
+          <p className="empty-text">No saved printers yet. Scan LAN to discover printers.</p>
+        )}
       </div>
     </section>
   );

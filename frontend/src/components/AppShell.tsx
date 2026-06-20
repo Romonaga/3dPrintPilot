@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Cpu, LogOut, Moon, Network, ShieldCheck, Sun, UserRound } from "lucide-react";
+import { LogOut, Moon, Sun, UserRound } from "lucide-react";
 import { type AppRouteId, type NavItem } from "../app/navigation";
 import { type AuthUser } from "../domains/auth/types";
 import { Sidebar } from "./Sidebar";
@@ -38,9 +38,6 @@ export function AppShell({
             <h1>3D Print Pilot</h1>
           </div>
           <div className="topbar-status">
-            <StatusBadge icon={Network} label="LAN Ready" tone="ok" />
-            <StatusBadge icon={Cpu} label="GPU Queue" tone="warn" />
-            <StatusBadge icon={ShieldCheck} label="Cost Verified" tone="muted" />
             <StatusBadge icon={UserRound} label={`${user.username} / ${user.role}`} tone="muted" />
             <button
               aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
