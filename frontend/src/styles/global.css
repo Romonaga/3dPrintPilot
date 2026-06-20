@@ -584,6 +584,42 @@ h3 {
   font-size: 13px;
 }
 
+.printer-context-menu {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  min-width: 180px;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 6px;
+  box-shadow: 0 14px 34px rgb(7 16 13 / 16%);
+}
+
+.printer-context-menu-item {
+  display: inline-flex;
+  min-height: 34px;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bad-text);
+  cursor: pointer;
+  padding: 0 9px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.printer-context-menu-item:hover,
+.printer-context-menu-item:focus-visible {
+  outline: none;
+  background: var(--bad-bg);
+}
+
 .printer-group-row {
   align-items: flex-start;
 }
