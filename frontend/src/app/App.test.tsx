@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -427,6 +427,60 @@ describe("App", () => {
     expect(screen.getAllByText("Bambu A1").length).toBeGreaterThan(0);
     expect(screen.getByText("Known")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+  });
+
+  it("removes a known printer from the printer page context menu", async () => {
+    const fetchMock = mockApiFetch((input, init) => {
+      const url = String(input);
+      if (url === "/api/printers" && (!init || init.method === undefined)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: 7,
+                name: "Bambu A1",
+                host: "192.168.1.44",
+                port: 80,
+                protocol: "http",
+                printer_type: "mdns:bambu",
+                state: "online",
+                identity_key: "mdns:_bambu._tcp.local.:bambu-a1._bambu._tcp.local.",
+                adapter_type: null,
+                capabilities: {},
+                credential_configured: false,
+                last_status: {},
+                last_status_at: null,
+                build_volume_x_mm: null,
+                build_volume_y_mm: null,
+                build_volume_z_mm: null
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/printers/7" && init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return authenticatedFetch(input);
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Printers" }));
+    const savedPrinter = await screen.findByRole("article", { name: "Saved printer Bambu A1" });
+
+    fireEvent.contextMenu(savedPrinter, { clientX: 140, clientY: 160 });
+
+    expect(await screen.findByRole("menu", { name: "Actions for Bambu A1" })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "Remove printer" }));
+
+    expect(await screen.findByText("No saved printers yet.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/printers/7",
+      expect.objectContaining({ method: "DELETE" })
+    );
+    expect(screen.queryByRole("menu", { name: "Actions for Bambu A1" })).not.toBeInTheDocument();
   });
 
   it("keeps LAN scan results after navigating away during a pending scan", async () => {

@@ -1,5 +1,5 @@
 import { Radar, Trash2 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
 import { discoveredPrinterKey, type PrintersState } from "../hooks/usePrinters";
 
@@ -9,12 +9,20 @@ type PrintersPageProps = {
   printers: PrintersState;
 };
 
+type PrinterContextMenuState = {
+  printerId: number;
+  printerName: string;
+  x: number;
+  y: number;
+};
+
 export default function PrintersPage({
   autoStartScanRequestId = null,
   onAutoStartScanConsumed,
   printers
 }: PrintersPageProps) {
   const consumedScanRequestId = useRef<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<PrinterContextMenuState | null>(null);
 
   useEffect(() => {
     if (autoStartScanRequestId === null || consumedScanRequestId.current === autoStartScanRequestId) {
@@ -24,6 +32,37 @@ export default function PrintersPage({
     onAutoStartScanConsumed?.();
     void printers.runScan();
   }, [autoStartScanRequestId, onAutoStartScanConsumed, printers]);
+
+  useEffect(() => {
+    if (contextMenu === null) {
+      return;
+    }
+
+    const closeContextMenu = () => setContextMenu(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    };
+
+    window.addEventListener("click", closeContextMenu);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("click", closeContextMenu);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
+
+  useEffect(() => {
+    if (contextMenu === null) {
+      return;
+    }
+
+    if (!printers.printers.some((printer) => printer.id === contextMenu.printerId)) {
+      setContextMenu(null);
+    }
+  }, [contextMenu, printers.printers]);
 
   return (
     <section className="printers-page" aria-label="Printers">
@@ -116,7 +155,20 @@ export default function PrintersPage({
         </div>
         <div className="printer-list">
           {printers.printers.map((printer) => (
-            <article className="printer-row" key={printer.id}>
+            <article
+              aria-label={`Saved printer ${printer.name}`}
+              className="printer-row"
+              key={printer.id}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setContextMenu({
+                  printerId: printer.id,
+                  printerName: printer.name,
+                  x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
+                  y: Math.max(8, Math.min(event.clientY, window.innerHeight - 96))
+                });
+              }}
+            >
               <div>
                 <h3>{printer.name}</h3>
                 <p>
@@ -141,6 +193,30 @@ export default function PrintersPage({
           {!printers.isLoading && printers.printers.length === 0 ? <p className="empty-text">No saved printers yet.</p> : null}
         </div>
       </section>
+
+      {contextMenu ? (
+        <div
+          aria-label={`Actions for ${contextMenu.printerName}`}
+          className="printer-context-menu"
+          onClick={(event) => event.stopPropagation()}
+          role="menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            className="printer-context-menu-item"
+            onClick={() => {
+              const printerId = contextMenu.printerId;
+              setContextMenu(null);
+              void printers.removePrinter(printerId);
+            }}
+            role="menuitem"
+            type="button"
+          >
+            <Trash2 size={14} aria-hidden="true" />
+            <span>Remove printer</span>
+          </button>
+        </div>
+      ) : null}
 
       {printers.scanResult ? (
         <section className="panel discovered-printers-panel" aria-labelledby="discovered-printers-title">
