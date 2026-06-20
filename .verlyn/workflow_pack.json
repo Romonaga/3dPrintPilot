@@ -4,12 +4,12 @@
   "repo_name": "3dprintpilot",
   "install_mode": "governance",
   "installed_at": "2026-06-18T17:17:08.937383+00:00",
-  "refreshed_at": "2026-06-19T13:33:41.955603+00:00",
+  "refreshed_at": "2026-06-20T12:30:49.764336+00:00",
   "governance_pack": {
     "name": "verlyn-standard",
     "version": "2026.06.19.1",
     "source": "verlyn_api",
-    "refreshed_at": "2026-06-19T13:33:41.955603+00:00",
+    "refreshed_at": "2026-06-20T12:30:49.764336+00:00",
     "repo_owned_paths": [
       "RULES.md"
     ],
