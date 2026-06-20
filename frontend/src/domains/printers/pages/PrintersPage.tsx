@@ -153,7 +153,10 @@ export default function PrintersPage({
           <div className="printer-list">
             {printers.scanResult.groups.map((group) => {
               const primaryEndpoint = group.endpoints[0];
-              const primaryEndpointKey = primaryEndpoint ? discoveredPrinterKey(primaryEndpoint) : null;
+              const confirmEndpoint = primaryEndpoint
+                ? { ...primaryEndpoint, identityKey: group.identityKey ?? primaryEndpoint.identityKey }
+                : null;
+              const confirmEndpointKey = confirmEndpoint ? discoveredPrinterKey(confirmEndpoint) : null;
               return (
                 <article className="printer-row printer-group-row" key={group.host}>
                   <div className="printer-group-main">
@@ -190,14 +193,16 @@ export default function PrintersPage({
                   <div className="row-meta">
                     <span>{group.inferredType}</span>
                     <strong>{group.confidence}%</strong>
-                    {primaryEndpoint ? (
+                    {group.matchedPrinterId ? (
+                      <span className="status-badge ok">Known</span>
+                    ) : confirmEndpoint ? (
                       <button
                         className="text-button icon-action"
                         type="button"
-                        onClick={() => void printers.addDiscoveredPrinter(primaryEndpoint)}
+                        onClick={() => void printers.addDiscoveredPrinter(confirmEndpoint)}
                         disabled={printers.isAdding}
                       >
-                        {printers.addingAction === primaryEndpointKey ? <Spinner size={14} /> : null}
+                        {printers.addingAction === confirmEndpointKey ? <Spinner size={14} /> : null}
                         <span>Confirm</span>
                       </button>
                     ) : null}
@@ -215,15 +220,19 @@ export default function PrintersPage({
                     <div className="row-meta">
                       <span>{printer.serviceType}</span>
                       <strong>{printer.confidence}%</strong>
-                      <button
-                        className="text-button icon-action"
-                        type="button"
-                        onClick={() => void printers.addDiscoveredPrinter(printer)}
-                        disabled={printers.isAdding}
-                      >
-                        {printers.addingAction === discoveredPrinterKey(printer) ? <Spinner size={14} /> : null}
-                        <span>Confirm</span>
-                      </button>
+                      {printer.matchedPrinterId ? (
+                        <span className="status-badge ok">Known</span>
+                      ) : (
+                        <button
+                          className="text-button icon-action"
+                          type="button"
+                          onClick={() => void printers.addDiscoveredPrinter(printer)}
+                          disabled={printers.isAdding}
+                        >
+                          {printers.addingAction === discoveredPrinterKey(printer) ? <Spinner size={14} /> : null}
+                          <span>Confirm</span>
+                        </button>
+                      )}
                     </div>
                   </article>
                 ))

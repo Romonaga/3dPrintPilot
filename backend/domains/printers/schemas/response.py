@@ -11,6 +11,7 @@ class PrinterResponse(BaseModel):
     protocol: str
     printer_type: str
     state: str
+    identity_key: str | None = None
     adapter_type: str | None = None
     capabilities: dict = Field(default_factory=dict)
     credential_configured: bool = False
@@ -31,6 +32,8 @@ class DiscoveredPrinterResponse(BaseModel):
     state: str
     evidence: list[str] = Field(default_factory=list)
     scan_result_id: int | None = None
+    identity_key: str | None = None
+    matched_printer_id: int | None = None
 
 
 class PrinterStatusResponse(BaseModel):
@@ -56,6 +59,8 @@ class PrinterEndpointGroupResponse(BaseModel):
     host: str
     name: str
     inferred_type: str
+    identity_key: str | None = None
+    matched_printer_id: int | None = None
     confidence: int
     ports: list[int]
     capabilities: list[str]

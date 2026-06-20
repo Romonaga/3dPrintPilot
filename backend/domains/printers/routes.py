@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_db_session
 from backend.domains.printers.adapters import fetch_read_only_status
 from backend.domains.printers.entities import PrinterScanResult
-from backend.domains.printers.schemas.request import ConfirmDiscoveredPrinterRequest, CreatePrinterRequest, PrinterScanRequest, UpdatePrinterRequest
+from backend.domains.printers.identity import is_stable_printer_identity, printer_identity_key
+from backend.domains.printers.schemas.request import (
+    ConfirmDiscoveredPrinterRequest,
+    CreatePrinterRequest,
+    PrinterScanRequest,
+    UpdatePrinterRequest,
+)
 from backend.domains.printers.schemas.response import (
     DiscoveredPrinterResponse,
     PrinterEndpointGroupResponse,
@@ -78,6 +84,7 @@ def confirm_discovered_printer(
         port=request.port,
         protocol=request.protocol,
         service_type=request.service_type,
+        identity_key=request.identity_key,
         scan_result_id=request.scan_result_id,
         build_volume_x_mm=request.build_volume_x_mm,
         build_volume_y_mm=request.build_volume_y_mm,
@@ -147,23 +154,42 @@ def _printer_response(printer) -> PrinterResponse:
         protocol=printer.protocol,
         printer_type=printer.printer_type,
         state=printer.state,
+        identity_key=getattr(printer, "identity_key", None),
         adapter_type=getattr(printer, "adapter_type", None),
         capabilities=getattr(printer, "capabilities", {}) or {},
         credential_configured=getattr(printer, "credential_secret_name", None) is not None,
         last_status=getattr(printer, "last_status", {}) or {},
-        last_status_at=printer.last_status_at.isoformat() if getattr(printer, "last_status_at", None) is not None else None,
+        last_status_at=(
+            printer.last_status_at.isoformat()
+            if getattr(printer, "last_status_at", None) is not None
+            else None
+        ),
         build_volume_x_mm=getattr(printer, "build_volume_x_mm", None),
         build_volume_y_mm=getattr(printer, "build_volume_y_mm", None),
         build_volume_z_mm=getattr(printer, "build_volume_z_mm", None),
     )
 
 
-def _scan_response(result: PrinterScanResult, scan_run_id: int | None = None, persisted_results=None) -> PrinterScanResponse:
-    scan_result_ids = {
-        (item.host, item.port, item.service_type): item.id
+def _scan_response(
+    result: PrinterScanResult,
+    scan_run_id: int | None = None,
+    persisted_results=None,
+) -> PrinterScanResponse:
+    scan_result_metadata = {
+        (item.host, item.port, item.service_type): {
+            "scan_result_id": item.id,
+            "identity_key": getattr(item, "identity_key", None),
+            "matched_printer_id": getattr(item, "matched_printer_id", None),
+        }
         for item in (persisted_results or [])
     }
-    printers = [_discovered_printer_response(printer, scan_result_ids.get((printer.host, printer.port, printer.service_type))) for printer in result.printers]
+    printers = [
+        _discovered_printer_response(
+            printer,
+            **scan_result_metadata.get((printer.host, printer.port, printer.service_type), {}),
+        )
+        for printer in result.printers
+    ]
     return PrinterScanResponse(
         summary=PrinterScanSummaryResponse(
             scan_run_id=scan_run_id,
@@ -175,11 +201,25 @@ def _scan_response(result: PrinterScanResult, scan_run_id: int | None = None, pe
             probe_count=result.summary.probe_count,
         ),
         printers=printers,
-        groups=_group_discovered_printers(result.printers),
+        groups=_group_discovered_printers(result.printers, scan_result_metadata),
     )
 
 
-def _discovered_printer_response(printer, scan_result_id: int | None = None) -> DiscoveredPrinterResponse:
+def _discovered_printer_response(
+    printer,
+    scan_result_id: int | None = None,
+    identity_key: str | None = None,
+    matched_printer_id: int | None = None,
+) -> DiscoveredPrinterResponse:
+    evidence = list(getattr(printer, "evidence", ()))
+    resolved_identity_key = getattr(printer, "identity_key", None) or identity_key or printer_identity_key(
+        name=printer.name,
+        host=printer.host,
+        port=printer.port,
+        protocol=printer.protocol,
+        service_type=printer.service_type,
+        evidence=evidence,
+    )
     return DiscoveredPrinterResponse(
         name=printer.name,
         host=printer.host,
@@ -188,32 +228,68 @@ def _discovered_printer_response(printer, scan_result_id: int | None = None) -> 
         service_type=printer.service_type,
         confidence=printer.confidence,
         state=printer.state,
-        evidence=list(getattr(printer, "evidence", ())),
+        evidence=evidence,
         scan_result_id=getattr(printer, "scan_result_id", None) or scan_result_id,
+        identity_key=resolved_identity_key,
+        matched_printer_id=getattr(printer, "matched_printer_id", None) or matched_printer_id,
     )
 
 
-def _group_discovered_printers(printers) -> list[PrinterEndpointGroupResponse]:
+def _group_discovered_printers(printers, scan_result_metadata=None) -> list[PrinterEndpointGroupResponse]:
+    scan_result_metadata = scan_result_metadata or {}
     grouped: dict[str, list] = {}
     for printer in printers:
         grouped.setdefault(printer.host, []).append(printer)
 
     groups = []
     for host, endpoints in grouped.items():
-        ordered = sorted(endpoints, key=lambda endpoint: (-endpoint.confidence, endpoint.port, endpoint.service_type))
+        ordered = sorted(
+            endpoints,
+            key=lambda endpoint: (-endpoint.confidence, endpoint.port, endpoint.service_type),
+        )
         capabilities = _group_capabilities(ordered)
+        endpoint_responses = [
+            _discovered_printer_response(
+                endpoint,
+                **scan_result_metadata.get((endpoint.host, endpoint.port, endpoint.service_type), {}),
+            )
+            for endpoint in ordered
+        ]
         groups.append(
             PrinterEndpointGroupResponse(
                 host=host,
                 name=_group_name(host, ordered),
                 inferred_type=_group_inferred_type(ordered),
+                identity_key=_group_identity_key(endpoint_responses),
+                matched_printer_id=_group_matched_printer_id(endpoint_responses),
                 confidence=max(endpoint.confidence for endpoint in ordered),
                 ports=sorted({endpoint.port for endpoint in ordered}),
                 capabilities=capabilities,
-                endpoints=[_discovered_printer_response(endpoint) for endpoint in ordered],
+                endpoints=endpoint_responses,
             )
         )
     return sorted(groups, key=lambda group: (-group.confidence, group.host))
+
+
+def _group_identity_key(endpoints: list[DiscoveredPrinterResponse]) -> str | None:
+    stable = next(
+        (
+            endpoint.identity_key
+            for endpoint in endpoints
+            if is_stable_printer_identity(endpoint.identity_key)
+        ),
+        None,
+    )
+    if stable is not None:
+        return stable
+    return endpoints[0].identity_key if endpoints else None
+
+
+def _group_matched_printer_id(endpoints: list[DiscoveredPrinterResponse]) -> int | None:
+    return next(
+        (endpoint.matched_printer_id for endpoint in endpoints if endpoint.matched_printer_id is not None),
+        None,
+    )
 
 
 def _group_name(host: str, endpoints) -> str:
@@ -259,7 +335,11 @@ def _endpoint_capabilities(endpoint) -> tuple[str, ...]:
     if "snapmaker" in service_type:
         return ("Snapmaker LAN API", "Klipper-compatible status", "Touchscreen-paired control candidate")
     if "creality" in service_type:
-        return ("Creality Klipper endpoint", "Fluidd/Moonraker candidate", "Optional camera endpoint candidate")
+        return (
+            "Creality Klipper endpoint",
+            "Fluidd/Moonraker candidate",
+            "Optional camera endpoint candidate",
+        )
     if "moonraker" in service_type or "klipper" in service_type:
         return ("Klipper/Moonraker API", "Live status WebSocket", "Build volume and temperature metadata")
     if "bambu_mqtt" in service_type:

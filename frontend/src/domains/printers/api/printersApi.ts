@@ -15,6 +15,7 @@ type ApiPrinter = {
   protocol: string;
   printer_type: string;
   state: string;
+  identity_key: string | null;
   adapter_type: string | null;
   capabilities: Record<string, unknown>;
   credential_configured: boolean;
@@ -35,6 +36,8 @@ type ApiDiscoveredPrinter = {
   state: string;
   evidence?: string[];
   scan_result_id?: number | null;
+  identity_key?: string | null;
+  matched_printer_id?: number | null;
 };
 
 type ApiPrinterScan = {
@@ -52,6 +55,8 @@ type ApiPrinterScan = {
     host: string;
     name: string;
     inferred_type: string;
+    identity_key?: string | null;
+    matched_printer_id?: number | null;
     confidence: number;
     ports: number[];
     capabilities: string[];
@@ -100,7 +105,8 @@ export async function confirmDiscoveredPrinter(input: DiscoveredPrinter): Promis
       protocol: input.protocol,
       service_type: input.serviceType,
       confidence: input.confidence,
-      scan_result_id: input.scanResultId
+      scan_result_id: input.scanResultId,
+      identity_key: input.identityKey
     })
   });
   if (!response.ok) {
@@ -168,12 +174,16 @@ export async function scanPrinters(settings: PrinterScanSettings): Promise<Print
       confidence: printer.confidence,
       state: printer.state,
       evidence: printer.evidence ?? [],
-      scanResultId: printer.scan_result_id ?? null
+      scanResultId: printer.scan_result_id ?? null,
+      identityKey: printer.identity_key ?? null,
+      matchedPrinterId: printer.matched_printer_id ?? null
     })),
     groups: (scan.groups ?? []).map((group) => ({
       host: group.host,
       name: group.name,
       inferredType: group.inferred_type,
+      identityKey: group.identity_key ?? null,
+      matchedPrinterId: group.matched_printer_id ?? null,
       confidence: group.confidence,
       ports: group.ports,
       capabilities: group.capabilities,
@@ -182,12 +192,14 @@ export async function scanPrinters(settings: PrinterScanSettings): Promise<Print
         host: endpoint.host,
         port: endpoint.port,
         protocol: endpoint.protocol,
-          serviceType: endpoint.service_type,
-          confidence: endpoint.confidence,
-          state: endpoint.state,
-          evidence: endpoint.evidence ?? [],
-          scanResultId: endpoint.scan_result_id ?? null
-        }))
+        serviceType: endpoint.service_type,
+        confidence: endpoint.confidence,
+        state: endpoint.state,
+        evidence: endpoint.evidence ?? [],
+        scanResultId: endpoint.scan_result_id ?? null,
+        identityKey: endpoint.identity_key ?? null,
+        matchedPrinterId: endpoint.matched_printer_id ?? null
+      }))
     }))
   };
 }
@@ -201,6 +213,7 @@ function fromApiPrinter(printer: ApiPrinter): Printer {
     protocol: printer.protocol,
     printerType: printer.printer_type,
     state: printer.state,
+    identityKey: printer.identity_key ?? null,
     adapterType: printer.adapter_type,
     capabilities: printer.capabilities,
     credentialConfigured: printer.credential_configured,

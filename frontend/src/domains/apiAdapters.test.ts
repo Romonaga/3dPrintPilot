@@ -85,10 +85,26 @@ describe("domain API adapters", () => {
           host: "192.168.1.3",
           name: "Moonraker",
           inferred_type: "Klipper",
+          identity_key: "mdns:_moonraker._tcp.local.:printer._moonraker._tcp.local.",
+          matched_printer_id: 9,
           confidence: 90,
           ports: [7125],
           capabilities: ["Klipper"],
-          endpoints: []
+          endpoints: [
+            {
+              name: "Moonraker",
+              host: "192.168.1.3",
+              port: 7125,
+              protocol: "http",
+              service_type: "mdns:moonraker",
+              confidence: 90,
+              state: "discovered",
+              evidence: [],
+              scan_result_id: 3,
+              identity_key: "mdns:_moonraker._tcp.local.:printer._moonraker._tcp.local.",
+              matched_printer_id: 9
+            }
+          ]
         }
       ]
     });
@@ -105,6 +121,9 @@ describe("domain API adapters", () => {
     const [, init] = vi.mocked(fetch).mock.calls[0];
     expect(init?.signal).toBeInstanceOf(AbortSignal);
     expect(result.groups[0].inferredType).toBe("Klipper");
+    expect(result.groups[0].identityKey).toBe("mdns:_moonraker._tcp.local.:printer._moonraker._tcp.local.");
+    expect(result.groups[0].matchedPrinterId).toBe(9);
+    expect(result.groups[0].endpoints[0].matchedPrinterId).toBe(9);
   });
 
   it("maps compatibility checks and rejects backend failures", async () => {

@@ -325,6 +325,110 @@ describe("App", () => {
     );
   });
 
+  it("shows known scan discoveries without repeat confirm actions", async () => {
+    mockApiFetch((input, init) => {
+      const url = String(input);
+      if (url === "/api/printers" && (!init || init.method === undefined)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: 7,
+                name: "Bambu A1",
+                host: "192.168.1.44",
+                port: 80,
+                protocol: "http",
+                printer_type: "mdns:bambu",
+                state: "online",
+                identity_key: "mdns:_bambu._tcp.local.:bambu-a1._bambu._tcp.local.",
+                adapter_type: null,
+                capabilities: {},
+                credential_configured: false,
+                last_status: {},
+                last_status_at: null,
+                build_volume_x_mm: null,
+                build_volume_y_mm: null,
+                build_volume_z_mm: null
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.includes("/api/printers/scan")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              summary: {
+                scan_run_id: 89,
+                status: "completed",
+                duration_ms: 180,
+                discovered_count: 1,
+                method: "combined",
+                scanned_host_count: 1,
+                probe_count: 4
+              },
+              printers: [
+                {
+                  name: "Bambu A1",
+                  host: "192.168.1.44",
+                  port: 80,
+                  protocol: "http",
+                  service_type: "mdns:bambu",
+                  confidence: 88,
+                  state: "discovered",
+                  evidence: ["mDNS service _bambu._tcp.local. advertised Bambu-A1._bambu._tcp.local."],
+                  scan_result_id: 12,
+                  identity_key: "mdns:_bambu._tcp.local.:bambu-a1._bambu._tcp.local.",
+                  matched_printer_id: 7
+                }
+              ],
+              groups: [
+                {
+                  host: "192.168.1.44",
+                  name: "Bambu A1",
+                  inferred_type: "Bambu Lab",
+                  identity_key: "mdns:_bambu._tcp.local.:bambu-a1._bambu._tcp.local.",
+                  matched_printer_id: 7,
+                  confidence: 88,
+                  ports: [80],
+                  capabilities: ["Bambu LAN identity"],
+                  endpoints: [
+                    {
+                      name: "Bambu A1",
+                      host: "192.168.1.44",
+                      port: 80,
+                      protocol: "http",
+                      service_type: "mdns:bambu",
+                      confidence: 88,
+                      state: "discovered",
+                      evidence: ["mDNS service _bambu._tcp.local. advertised Bambu-A1._bambu._tcp.local."],
+                      scan_result_id: 12,
+                      identity_key: "mdns:_bambu._tcp.local.:bambu-a1._bambu._tcp.local.",
+                      matched_printer_id: 7
+                    }
+                  ]
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Printers" }));
+    await user.click(await screen.findByRole("button", { name: "Scan LAN" }));
+
+    expect(await screen.findByRole("heading", { name: "Discovered Devices" })).toBeInTheDocument();
+    expect(screen.getAllByText("Bambu A1").length).toBeGreaterThan(0);
+    expect(screen.getByText("Known")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+  });
+
   it("keeps LAN scan results after navigating away during a pending scan", async () => {
     let resolveScan: (response: Response) => void = () => undefined;
     const pendingScan = new Promise<Response>((resolve) => {

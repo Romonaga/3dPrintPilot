@@ -57,8 +57,9 @@ export function usePrinters({ enabled = true }: UsePrintersOptions = {}) {
     setAddingAction(discoveredPrinterKey(printer));
     setError(null);
     try {
-      const created = await confirmDiscoveredPrinter(printer);
-      setPrinters((current) => [...current, created]);
+      const confirmed = await confirmDiscoveredPrinter(printer);
+      setPrinters((current) => upsertPrinter(current, confirmed));
+      setScanResult((current) => (current === null ? current : markScanResultKnown(current, confirmed)));
     } catch (addError) {
       setError(addError instanceof Error ? addError.message : "Add discovered printer failed");
     } finally {
@@ -109,5 +110,51 @@ export function usePrinters({ enabled = true }: UsePrintersOptions = {}) {
 export type PrintersState = ReturnType<typeof usePrinters>;
 
 export function discoveredPrinterKey(printer: DiscoveredPrinter) {
-  return `${printer.host}:${printer.port}:${printer.serviceType}`;
+  return printer.identityKey ?? `${printer.host}:${printer.port}:${printer.serviceType}`;
+}
+
+function upsertPrinter(printers: Printer[], confirmed: Printer) {
+  const existingIndex = printers.findIndex((printer) => printer.id === confirmed.id);
+  if (existingIndex === -1) {
+    return [...printers, confirmed];
+  }
+  return printers.map((printer) => (printer.id === confirmed.id ? confirmed : printer));
+}
+
+function markScanResultKnown(scanResult: PrinterScanResult, confirmed: Printer): PrinterScanResult {
+  const printers = scanResult.printers.map((printer) => markDiscoveryKnown(printer, confirmed));
+  const groups = scanResult.groups.map((group) => {
+    const endpoints = group.endpoints.map((endpoint) => markDiscoveryKnown(endpoint, confirmed));
+    const matchedPrinterId =
+      group.matchedPrinterId ??
+      endpoints.find((endpoint) => endpoint.matchedPrinterId === confirmed.id)?.matchedPrinterId ??
+      null;
+    return { ...group, matchedPrinterId, endpoints };
+  });
+  return { ...scanResult, printers, groups };
+}
+
+function markDiscoveryKnown(discovered: DiscoveredPrinter, confirmed: Printer): DiscoveredPrinter {
+  if (!discoveryMatchesPrinter(discovered, confirmed)) {
+    return discovered;
+  }
+  return {
+    ...discovered,
+    matchedPrinterId: confirmed.id,
+    identityKey: discovered.identityKey ?? confirmed.identityKey
+  };
+}
+
+function discoveryMatchesPrinter(discovered: DiscoveredPrinter, confirmed: Printer) {
+  if (discovered.matchedPrinterId === confirmed.id) {
+    return true;
+  }
+  if (discovered.identityKey && confirmed.identityKey && discovered.identityKey === confirmed.identityKey) {
+    return true;
+  }
+  return (
+    discovered.host === confirmed.host &&
+    discovered.port === confirmed.port &&
+    discovered.protocol === confirmed.protocol
+  );
 }

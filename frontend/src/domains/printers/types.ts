@@ -6,6 +6,7 @@ export type Printer = {
   protocol: string;
   printerType: string;
   state: string;
+  identityKey: string | null;
   adapterType: string | null;
   capabilities: Record<string, unknown>;
   credentialConfigured: boolean;
@@ -26,12 +27,16 @@ export type DiscoveredPrinter = {
   state: string;
   evidence: string[];
   scanResultId: number | null;
+  identityKey: string | null;
+  matchedPrinterId: number | null;
 };
 
 export type PrinterEndpointGroup = {
   host: string;
   name: string;
   inferredType: string;
+  identityKey: string | null;
+  matchedPrinterId: number | null;
   confidence: number;
   ports: number[];
   capabilities: string[];
