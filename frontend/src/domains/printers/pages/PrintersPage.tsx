@@ -1,15 +1,19 @@
 import { Radar, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Spinner } from "../../../components/Spinner";
-import { discoveredPrinterKey, usePrinters } from "../hooks/usePrinters";
+import { discoveredPrinterKey, type PrintersState } from "../hooks/usePrinters";
 
 type PrintersPageProps = {
   autoStartScanRequestId?: number | null;
   onAutoStartScanConsumed?: () => void;
+  printers: PrintersState;
 };
 
-export default function PrintersPage({ autoStartScanRequestId = null, onAutoStartScanConsumed }: PrintersPageProps) {
-  const printers = usePrinters();
+export default function PrintersPage({
+  autoStartScanRequestId = null,
+  onAutoStartScanConsumed,
+  printers
+}: PrintersPageProps) {
   const consumedScanRequestId = useRef<number | null>(null);
 
   useEffect(() => {

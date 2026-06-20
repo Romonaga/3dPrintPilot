@@ -16,12 +16,16 @@ const defaultScanSettings: PrinterScanSettings = {
   ports: "80,443,4408,5000,6000,7125,8000,8080,8081,8883"
 };
 
-export function usePrinters() {
+type UsePrintersOptions = {
+  enabled?: boolean;
+};
+
+export function usePrinters({ enabled = true }: UsePrintersOptions = {}) {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [scanResult, setScanResult] = useState<PrinterScanResult | null>(null);
   const [scanSettings, setScanSettings] = useState<PrinterScanSettings>(defaultScanSettings);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(enabled);
   const [isScanning, setIsScanning] = useState(false);
   const [addingAction, setAddingAction] = useState<string | null>(null);
 
@@ -73,8 +77,17 @@ export function usePrinters() {
   }
 
   useEffect(() => {
+    if (!enabled) {
+      setPrinters([]);
+      setScanResult(null);
+      setError(null);
+      setIsLoading(false);
+      setIsScanning(false);
+      setAddingAction(null);
+      return;
+    }
     void refreshPrinters();
-  }, []);
+  }, [enabled]);
 
   return {
     addDiscoveredPrinter,
@@ -92,6 +105,8 @@ export function usePrinters() {
     setScanSettings
   };
 }
+
+export type PrintersState = ReturnType<typeof usePrinters>;
 
 export function discoveredPrinterKey(printer: DiscoveredPrinter) {
   return `${printer.host}:${printer.port}:${printer.serviceType}`;

@@ -3,6 +3,7 @@ import { AppShell } from "../components/AppShell";
 import { LoadingView } from "../components/LoadingView";
 import { AuthPage } from "../domains/auth/pages/AuthPage";
 import { useAuthSession } from "../domains/auth/hooks/useAuthSession";
+import { usePrinters } from "../domains/printers/hooks/usePrinters";
 import { useThemeMode } from "../hooks/useThemeMode";
 import { navItems, type AppRouteId } from "./navigation";
 
@@ -24,6 +25,9 @@ export function App() {
   const [printerScanRequestId, setPrinterScanRequestId] = useState<number | null>(null);
   const auth = useAuthSession();
   const themeMode = useThemeMode();
+  const isAppSessionReady =
+    !auth.isLoading && !auth.bootstrapRequired && auth.user !== null && !auth.user.forcePasswordChange;
+  const printers = usePrinters({ enabled: isAppSessionReady });
   const handleRouteChange = (route: AppRouteId) => {
     setActiveRoute(route);
     if (route !== "printers") {
@@ -79,7 +83,11 @@ export function App() {
         {activeRoute === "compatibility" ? <CompatibilityPage /> : null}
         {activeRoute === "models" ? <ModelsPage /> : null}
         {activeRoute === "printers" ? (
-          <PrintersPage autoStartScanRequestId={printerScanRequestId} onAutoStartScanConsumed={() => setPrinterScanRequestId(null)} />
+          <PrintersPage
+            autoStartScanRequestId={printerScanRequestId}
+            printers={printers}
+            onAutoStartScanConsumed={() => setPrinterScanRequestId(null)}
+          />
         ) : null}
         {activeRoute === "siteScanning" ? <SiteScanningPage /> : null}
         {activeRoute === "settings" ? <SettingsPage /> : null}
