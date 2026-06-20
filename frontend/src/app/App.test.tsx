@@ -276,6 +276,72 @@ describe("App", () => {
     );
   });
 
+  it("keeps LAN scan results after navigating away during a pending scan", async () => {
+    let resolveScan: (response: Response) => void = () => undefined;
+    const pendingScan = new Promise<Response>((resolve) => {
+      resolveScan = resolve;
+    });
+    const fetchMock = mockApiFetch((input, init) => {
+      const url = String(input);
+      if (url.includes("/api/printers/scan")) {
+        return pendingScan;
+      }
+      if (url === "/api/printers" && (!init || init.method === undefined)) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      if (url === "/api/models") {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Printers" }));
+    await user.click(await screen.findByRole("button", { name: "Scan LAN" }));
+    expect(screen.getByRole("button", { name: "Scanning" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Models" }));
+    expect(await screen.findByRole("heading", { name: "Upload Model" })).toBeInTheDocument();
+
+    resolveScan(
+      new Response(
+        JSON.stringify({
+          summary: {
+            scan_run_id: 88,
+            status: "completed",
+            duration_ms: 180,
+            discovered_count: 1,
+            method: "combined",
+            scanned_host_count: 254,
+            probe_count: 2540
+          },
+          printers: [
+            {
+              name: "Bambu Lab MQTT/LAN mode",
+              host: "192.168.1.218",
+              port: 8883,
+              protocol: "tcp",
+              service_type: "tcp_probe:bambu_mqtt",
+              confidence: 82,
+              state: "discovered"
+            }
+          ]
+        }),
+        { status: 200 }
+      )
+    );
+
+    await user.click(screen.getByRole("button", { name: "Printers" }));
+
+    expect(await screen.findByRole("heading", { name: "Discovered Devices" })).toBeInTheDocument();
+    expect(screen.getByText("Bambu Lab MQTT/LAN mode")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/printers/scan",
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
   it("lazy-loads the settings page for encrypted provider secrets", async () => {
     mockApiFetch((input) => {
       const url = String(input);
