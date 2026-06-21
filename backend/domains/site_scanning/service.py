@@ -53,6 +53,7 @@ class SiteScanService:
         policy: CrawlPolicy | None = None,
         site_key: str = "auto",
         enabled_site_keys: frozenset[str] | None = None,
+        auth_headers_by_site: dict[str, dict[str, str]] | None = None,
     ) -> ScanResult:
         started = monotonic()
         active_policy = (policy or CrawlPolicy()).normalized()
@@ -63,6 +64,7 @@ class SiteScanService:
             raise ValueError(f"Unknown site scanning adapter: {selected_site_key}")
         if enabled_site_keys is not None and selected_site_key not in enabled_site_keys:
             raise ValueError(f"Site scanning adapter is disabled: {selected_site_key}")
+        auth_headers = (auth_headers_by_site or {}).get(selected_site_key)
 
         if normalized_start_url is None:
             return self._rejected_result(
@@ -128,7 +130,7 @@ class SiteScanService:
                 continue
 
             scanned_url_count += 1
-            discovery = adapter.discover(current_url, depth=depth, parent_url=parent_url)
+            discovery = adapter.discover(current_url, depth=depth, parent_url=parent_url, auth_headers=auth_headers)
             for candidate in discovery.candidates:
                 candidate_key = _candidate_dedupe_key(selected_site_key, candidate)
                 current_candidate = candidates_by_key.get(candidate_key)

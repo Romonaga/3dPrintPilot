@@ -29,6 +29,17 @@ class SiteAuthContext:
     password: str | None = None
 
 
+@dataclass(frozen=True)
+class SiteAuthReadiness:
+    site_key: str
+    auth_mode: str
+    auth_ready: bool
+    link_status: str
+    message: str
+    configured: bool
+    enabled: bool
+
+
 class SiteScanStore:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -259,6 +270,50 @@ class SiteAuthProfileStore:
         self._session.delete(profile)
         self._session.commit()
         return True
+
+    def readiness_for_site(self, declarations: list[SiteAdapterDeclaration], site_key: str) -> SiteAuthReadiness:
+        normalized_site_key = _require_known_site_key(declarations, site_key)
+        profile = self.get_profile(normalized_site_key)
+        if profile is None or profile.auth_mode == "none":
+            return SiteAuthReadiness(
+                site_key=normalized_site_key,
+                auth_mode="none",
+                auth_ready=False,
+                link_status="public_only",
+                message="Public scans can run without an account. Link an account for authenticated access.",
+                configured=False,
+                enabled=False,
+            )
+        if not profile.enabled:
+            return SiteAuthReadiness(
+                site_key=normalized_site_key,
+                auth_mode=profile.auth_mode,
+                auth_ready=False,
+                link_status="disabled",
+                message="Account link is saved but disabled.",
+                configured=profile.encrypted_value is not None,
+                enabled=False,
+            )
+        if profile.encrypted_value is None:
+            status = "needs_relink" if profile.auth_mode == "browser_session" else "not_linked"
+            return SiteAuthReadiness(
+                site_key=normalized_site_key,
+                auth_mode=profile.auth_mode,
+                auth_ready=False,
+                link_status=status,
+                message="Browser session is not stored yet. Complete browser login and save a Printables session value.",
+                configured=False,
+                enabled=True,
+            )
+        return SiteAuthReadiness(
+            site_key=normalized_site_key,
+            auth_mode=profile.auth_mode,
+            auth_ready=True,
+            link_status="linked",
+            message="Stored account link is available for unattended authenticated requests.",
+            configured=True,
+            enabled=True,
+        )
 
     def auth_context_for_site(self, site_key: str) -> SiteAuthContext:
         normalized_site_key = site_key.strip().lower()

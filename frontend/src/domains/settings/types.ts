@@ -29,6 +29,9 @@ export type SourceAuthProfileStatus = {
   headerName: string | null;
   configured: boolean;
   enabled: boolean;
+  authReady: boolean;
+  linkStatus: string;
+  linkStatusMessage: string;
   maskedValue: string | null;
   updatedAt: string | null;
 };
@@ -54,4 +57,28 @@ export type SaveSourceAuthProfileInput = {
   accountIdentifier?: string | null;
   headerName?: string | null;
   enabled?: boolean;
+};
+
+export type SourceAuthLinkInstructions = {
+  siteKey: string;
+  displayName: string;
+  authMode: string;
+  loginUrl: string | null;
+  accountIdentifier: string | null;
+  instructions: string[];
+  storageNotes: string;
+};
+
+export type SourceAuthReadinessStatus = {
+  siteKey: string;
+  displayName: string;
+  authMode: string;
+  authReady: boolean;
+  linkStatus: string;
+  message: string;
+  configured: boolean;
+  enabled: boolean;
+  maskedAccountIdentifier: string | null;
+  maskedValue: string | null;
+  updatedAt: string | null;
 };

@@ -33,5 +33,11 @@ class SiteScanAdapter(Protocol):
     allowed_hosts: frozenset[str]
     supports_downloads: bool
 
-    def discover(self, url: str, depth: int, parent_url: str | None) -> AdapterDiscoveryResult:
+    def discover(
+        self,
+        url: str,
+        depth: int,
+        parent_url: str | None,
+        auth_headers: dict[str, str] | None = None,
+    ) -> AdapterDiscoveryResult:
         """Return metadata candidates and child URLs allowed by this adapter."""

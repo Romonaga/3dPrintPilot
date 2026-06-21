@@ -1046,6 +1046,24 @@ dd {
   gap: 10px;
 }
 
+.source-link-instructions {
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted-strong);
+  display: grid;
+  font-size: 13px;
+  gap: 8px;
+  padding-left: 12px;
+}
+
+.source-link-instructions p,
+.source-link-instructions ol {
+  margin: 0;
+}
+
+.source-link-instructions ol {
+  padding-left: 18px;
+}
+
 .inline-link {
   display: inline-flex;
   align-items: center;

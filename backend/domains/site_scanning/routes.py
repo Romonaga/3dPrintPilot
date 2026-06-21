@@ -8,7 +8,9 @@ from backend.core.secrets import get_secret_cipher
 from backend.domains.site_scanning.entities import CrawlPolicy, ScanResult
 from backend.domains.site_scanning.schemas.request import SiteScanRequest, UpdateSiteAdapterRequest, UpsertSiteAuthProfileRequest
 from backend.domains.site_scanning.schemas.response import (
+    SiteAuthLinkResponse,
     SiteAuthProfileResponse,
+    SiteAuthReadinessResponse,
     SiteScanAdapterResponse,
     SiteScanCandidateResponse,
     SiteScanRejectionResponse,
@@ -18,6 +20,7 @@ from backend.domains.site_scanning.schemas.response import (
 from backend.domains.site_scanning.service import SiteScanService
 from backend.domains.site_scanning.store import (
     SiteAuthProfileStore,
+    SiteAuthReadiness,
     SiteScanStore,
     mask_account_identifier,
     mask_site_auth_secret,
@@ -120,6 +123,47 @@ def upsert_site_auth_profile(
     return _site_auth_profile_response(declaration, record)
 
 
+@router.get("/auth-profiles/{site_key}/link", response_model=SiteAuthLinkResponse)
+def start_site_auth_link(
+    site_key: str,
+    _user=Depends(require_roles("admin")),
+) -> SiteAuthLinkResponse:
+    declaration = _find_declaration(site_key)
+    if "browser_session" not in declaration.supported_auth_modes:
+        raise HTTPException(status_code=400, detail="Site does not support browser-assisted linking")
+    return SiteAuthLinkResponse(
+        site_key=declaration.site_key,
+        display_name=declaration.display_name,
+        auth_mode="browser_session",
+        login_url=declaration.login_url,
+        account_identifier=None,
+        instructions=[
+            "Open the site login page and complete sign-in with the provider account.",
+            "Copy only the site-scoped session cookie or Cookie header after sign-in.",
+            "Paste the Printables session value back into this app to store it encrypted.",
+        ],
+        storage_notes=(
+            "This flow never asks for a Google password and does not read the normal browser cookie store. "
+            "Only the Printables session value you explicitly paste is encrypted for later unattended use."
+        ),
+    )
+
+
+@router.post("/auth-profiles/{site_key}/test", response_model=SiteAuthReadinessResponse)
+def test_site_auth_profile(
+    site_key: str,
+    _user=Depends(require_roles("admin")),
+    store: SiteAuthProfileStore = Depends(get_site_auth_profile_store),
+) -> SiteAuthReadinessResponse:
+    declaration = _find_declaration(site_key)
+    try:
+        readiness = store.readiness_for_site(service.adapter_declarations(), site_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    record = store.get_profile(readiness.site_key)
+    return _site_auth_readiness_response(declaration, record, readiness)
+
+
 @router.delete("/auth-profiles/{site_key}", status_code=204)
 def delete_site_auth_profile(
     site_key: str,
@@ -136,7 +180,10 @@ def create_scan(
     request: SiteScanRequest,
     user=Depends(require_roles("user")),
     store: SiteScanStore = Depends(get_site_scan_store),
+    auth_store: SiteAuthProfileStore = Depends(get_site_auth_profile_store),
 ) -> SiteScanResponse:
+    declarations = service.adapter_declarations()
+    auth_headers_by_site = _auth_headers_by_site(auth_store, declarations)
     try:
         result = service.scan(
             start_url=request.url,
@@ -149,7 +196,8 @@ def create_scan(
                 allowed_hosts=frozenset(request.allowed_hosts),
                 per_host_concurrency=request.per_host_concurrency,
             ),
-            enabled_site_keys=store.enabled_site_keys(service.adapter_declarations()),
+            enabled_site_keys=store.enabled_site_keys(declarations),
+            auth_headers_by_site=auth_headers_by_site,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -158,6 +206,7 @@ def create_scan(
 
 
 def _site_auth_profile_response(declaration, record) -> SiteAuthProfileResponse:
+    readiness = _readiness_from_profile(declaration.site_key, record)
     return SiteAuthProfileResponse(
         site_key=declaration.site_key,
         display_name=declaration.display_name,
@@ -168,9 +217,90 @@ def _site_auth_profile_response(declaration, record) -> SiteAuthProfileResponse:
         header_name=record.header_name if record is not None else None,
         configured=record is not None and record.encrypted_value is not None,
         enabled=record.enabled if record is not None else False,
+        auth_ready=readiness.auth_ready,
+        link_status=readiness.link_status,
+        link_status_message=readiness.message,
         masked_value=mask_site_auth_secret(record),
         updated_at=record.updated_at.isoformat() if record is not None and record.updated_at is not None else None,
     )
+
+
+def _site_auth_readiness_response(declaration, record, readiness) -> SiteAuthReadinessResponse:
+    return SiteAuthReadinessResponse(
+        site_key=declaration.site_key,
+        display_name=declaration.display_name,
+        auth_mode=readiness.auth_mode,
+        auth_ready=readiness.auth_ready,
+        link_status=readiness.link_status,
+        message=readiness.message,
+        configured=readiness.configured,
+        enabled=readiness.enabled,
+        masked_account_identifier=mask_account_identifier(record.account_identifier if record is not None else None),
+        masked_value=mask_site_auth_secret(record),
+        updated_at=record.updated_at.isoformat() if record is not None and record.updated_at is not None else None,
+    )
+
+
+def _readiness_from_profile(site_key: str, record):
+    if record is None or record.auth_mode == "none":
+        return SiteAuthReadiness(
+            site_key=site_key,
+            auth_mode="none",
+            auth_ready=False,
+            link_status="public_only",
+            message="Public scans can run without an account. Link an account for authenticated access.",
+            configured=False,
+            enabled=False,
+        )
+    if not record.enabled:
+        return SiteAuthReadiness(
+            site_key=site_key,
+            auth_mode=record.auth_mode,
+            auth_ready=False,
+            link_status="disabled",
+            message="Account link is saved but disabled.",
+            configured=record.encrypted_value is not None,
+            enabled=False,
+        )
+    if record.encrypted_value is None:
+        return SiteAuthReadiness(
+            site_key=site_key,
+            auth_mode=record.auth_mode,
+            auth_ready=False,
+            link_status="needs_relink" if record.auth_mode == "browser_session" else "not_linked",
+            message="Browser session is not stored yet. Complete browser login and save a Printables session value.",
+            configured=False,
+            enabled=True,
+        )
+    return SiteAuthReadiness(
+        site_key=site_key,
+        auth_mode=record.auth_mode,
+        auth_ready=True,
+        link_status="linked",
+        message="Stored account link is available for unattended authenticated requests.",
+        configured=True,
+        enabled=True,
+    )
+
+
+def _find_declaration(site_key: str):
+    normalized_site_key = site_key.strip().lower()
+    declaration = next(
+        (declaration for declaration in service.adapter_declarations() if declaration.site_key == normalized_site_key),
+        None,
+    )
+    if declaration is None:
+        raise HTTPException(status_code=404, detail="Site adapter not found")
+    return declaration
+
+
+def _auth_headers_by_site(auth_store: SiteAuthProfileStore, declarations) -> dict[str, dict[str, str]]:
+    headers_by_site: dict[str, dict[str, str]] = {}
+    for declaration in declarations:
+        context = auth_store.auth_context_for_site(declaration.site_key)
+        if context.enabled and context.headers:
+            headers_by_site[declaration.site_key] = context.headers
+    return headers_by_site
 
 
 def _to_response(result: ScanResult, scan_run_id: int | None = None) -> SiteScanResponse:

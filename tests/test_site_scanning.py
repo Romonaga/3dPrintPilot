@@ -14,7 +14,13 @@ class BranchingAdapter:
     allowed_hosts = frozenset[str]()
     supports_downloads = False
 
-    def discover(self, url: str, depth: int, parent_url: str | None) -> AdapterDiscoveryResult:
+    def discover(
+        self,
+        url: str,
+        depth: int,
+        parent_url: str | None,
+        auth_headers: dict[str, str] | None = None,
+    ) -> AdapterDiscoveryResult:
         normalized_url = normalize_url(url)
         candidate = CrawlCandidate(
             source_url=url,

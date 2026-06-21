@@ -15,7 +15,13 @@ class MetadataOnlyAdapter:
     default_limits = {"max_depth": 0, "max_pages": 1, "max_runtime_seconds": 30, "per_host_concurrency": 1}
     robots_terms_notes = "Captures the submitted URL only; no crawling, downloads, auth bypass, or paywall access."
 
-    def discover(self, url: str, depth: int, parent_url: str | None) -> AdapterDiscoveryResult:
+    def discover(
+        self,
+        url: str,
+        depth: int,
+        parent_url: str | None,
+        auth_headers: dict[str, str] | None = None,
+    ) -> AdapterDiscoveryResult:
         normalized_url = normalize_url(url)
         parsed = urlparse(normalized_url)
         path_name = parsed.path.rstrip("/").split("/")[-1] or parsed.netloc
