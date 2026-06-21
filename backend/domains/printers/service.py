@@ -11,6 +11,7 @@ from urllib.parse import urljoin
 import httpx
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
 
+from backend.domains.printers.identity import moonraker_identity_key
 from backend.domains.printers.entities import (
     DiscoveredPrinter,
     PrinterScanResult,
@@ -371,14 +372,47 @@ def _detect_octoprint_or_prusalink(host: str, port: int, scheme: str, response: 
 
 def _detect_moonraker(host: str, port: int, scheme: str, response: httpx.Response) -> DiscoveredPrinter | None:
     text = response.text.lower()
+    payload = _response_json(response)
     if response.status_code == 200 and "snapmakercloud" in text:
-        return _http_printer("Snapmaker U1 Moonraker", host, port, scheme, "http_probe:snapmaker_moonraker", 94)
+        return _http_printer(
+            "Snapmaker U1 Moonraker",
+            host,
+            port,
+            scheme,
+            "http_probe:snapmaker_moonraker",
+            94,
+            identity_key=moonraker_identity_key(payload, "snapmaker_moonraker"),
+        )
     if response.status_code == 200 and any(marker in text for marker in ("k2 pro", "k2pro")):
-        return _http_printer("Creality K2 Pro Moonraker", host, port, scheme, "http_probe:creality_moonraker", 94)
+        return _http_printer(
+            "Creality K2 Pro Moonraker",
+            host,
+            port,
+            scheme,
+            "http_probe:creality_moonraker",
+            94,
+            identity_key=moonraker_identity_key(payload, "creality_moonraker"),
+        )
     if response.status_code == 200 and any(marker in text for marker in ("k2 plus", "k2plus")):
-        return _http_printer("Creality K2 Plus Moonraker", host, port, scheme, "http_probe:creality_moonraker", 94)
+        return _http_printer(
+            "Creality K2 Plus Moonraker",
+            host,
+            port,
+            scheme,
+            "http_probe:creality_moonraker",
+            94,
+            identity_key=moonraker_identity_key(payload, "creality_moonraker"),
+        )
     if response.status_code == 200 and ("moonraker" in text or "klippy" in text or "klipper" in text):
-        return _http_printer("Moonraker", host, port, scheme, "http_probe:moonraker", 92)
+        return _http_printer(
+            "Moonraker",
+            host,
+            port,
+            scheme,
+            "http_probe:moonraker",
+            92,
+            identity_key=moonraker_identity_key(payload, "moonraker"),
+        )
     return None
 
 
@@ -427,7 +461,15 @@ def _detect_generic_http(host: str, port: int, scheme: str, response: httpx.Resp
     return None
 
 
-def _http_printer(name: str, host: str, port: int, scheme: str, service_type: str, confidence: int) -> DiscoveredPrinter:
+def _http_printer(
+    name: str,
+    host: str,
+    port: int,
+    scheme: str,
+    service_type: str,
+    confidence: int,
+    identity_key: str | None = None,
+) -> DiscoveredPrinter:
     return DiscoveredPrinter(
         name=f"{name} at {host}:{port}",
         host=host,
@@ -436,7 +478,16 @@ def _http_printer(name: str, host: str, port: int, scheme: str, service_type: st
         service_type=service_type,
         confidence=confidence,
         evidence=(f"Read-only HTTP probe matched {service_type}",),
+        identity_key=identity_key,
     )
+
+
+def _response_json(response: httpx.Response) -> dict | None:
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _sort_discovered_printers(printers) -> tuple[DiscoveredPrinter, ...]:

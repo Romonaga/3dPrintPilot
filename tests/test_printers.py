@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from backend.app.main import create_app
 from backend.domains.printers.adapters import parse_moonraker_status, parse_octoprint_status
 from backend.domains.printers.entities import DiscoveredPrinter, PrinterScanResult, PrinterScanStatus, PrinterScanSummary
+from backend.domains.printers.identity import moonraker_identity_key
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
 from backend.domains.printers.routes import get_printer_store
 from backend.domains.printers.service import (
@@ -362,6 +363,39 @@ def test_scan_result_updates_known_printer_by_identity_after_ip_change():
     assert saved_result.matched_printer_id == known.id
 
 
+def test_moonraker_identity_key_prefers_stable_device_metadata():
+    identity_key = moonraker_identity_key(
+        {
+            "result": {
+                "software_version": "moonraker",
+                "hostname": "localhost",
+                "machine_id": "SNAP-U1-00A1",
+            }
+        },
+        "snapmaker_moonraker",
+    )
+
+    assert identity_key == "moonraker:snapmaker_moonraker:machine_id:snap-u1-00a1"
+
+
+def test_moonraker_identity_key_uses_hostname_when_device_id_is_missing():
+    identity_key = moonraker_identity_key(
+        {"result": {"software_version": "moonraker", "hostname": "Snapmaker-U1-A1B2"}},
+        "snapmaker_moonraker",
+    )
+
+    assert identity_key == "moonraker:snapmaker_moonraker:hostname:snapmaker-u1-a1b2"
+
+
+def test_moonraker_identity_key_rejects_unstable_hostname():
+    identity_key = moonraker_identity_key(
+        {"result": {"software_version": "moonraker", "hostname": "localhost"}},
+        "moonraker",
+    )
+
+    assert identity_key is None
+
+
 def test_http_probe_detects_octoprint_and_moonraker_markers():
     import httpx
 
@@ -443,6 +477,54 @@ def test_http_probe_prefers_specific_moonraker_model_after_generic_info(monkeypa
     assert printer is not None
     assert printer.name == "Creality K2 Plus Moonraker at 192.168.1.185:7125"
     assert printer.service_type == "http_probe:creality_moonraker"
+    assert printer.identity_key == "moonraker:creality_moonraker:hostname:k2plus-6976"
+
+
+def test_scan_result_updates_known_moonraker_printer_by_identity_after_ip_change():
+    identity_key = "moonraker:snapmaker_moonraker:hostname:snapmaker-u1-a1b2"
+    known = Printer(
+        id=9,
+        name="Snapmaker U1",
+        host="192.168.1.52",
+        port=7125,
+        protocol="http",
+        printer_type="http_probe:snapmaker_moonraker",
+        state="confirmed",
+        identity_key=identity_key,
+    )
+    result = PrinterScanResult(
+        summary=PrinterScanSummary(
+            status=PrinterScanStatus.COMPLETED,
+            duration_ms=100,
+            discovered_count=1,
+            method="http_probe",
+            scanned_host_count=12,
+            probe_count=120,
+        ),
+        printers=(
+            DiscoveredPrinter(
+                name="Snapmaker U1 Moonraker at 192.168.1.80:7125",
+                host="192.168.1.80",
+                port=7125,
+                protocol="http",
+                service_type="http_probe:snapmaker_moonraker",
+                confidence=94,
+                identity_key=identity_key,
+                evidence=("Read-only HTTP probe matched http_probe:snapmaker_moonraker",),
+            ),
+        ),
+    )
+    session = FakeSession(known_printer=known)
+
+    PrinterStore(session).save_scan_result(result)
+
+    saved_result = next(item for item in session.added if isinstance(item, NetworkScanResult))
+    assert known.host == "192.168.1.80"
+    assert known.port == 7125
+    assert known.protocol == "http"
+    assert known.state == "online"
+    assert saved_result.identity_key == identity_key
+    assert saved_result.matched_printer_id == known.id
 
 
 def test_http_probe_does_not_treat_bare_k2_as_creality():
