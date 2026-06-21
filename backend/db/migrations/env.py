@@ -13,7 +13,7 @@ from backend.domains.models.models import Model, ModelFile, ModelGeometry
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
 from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
-from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun
+from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun, SiteAuthProfile
 from backend.domains.users.models import User, UserSession
 
 _ = (
@@ -27,6 +27,7 @@ _ = (
     ModelSiteAdapter,
     ModelSiteScanResult,
     ModelSiteScanRun,
+    SiteAuthProfile,
     NetworkScanResult,
     NetworkScanRun,
     Printer,

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db_session
+from backend.core.secrets import get_secret_cipher
 from backend.domains.site_scanning.entities import CrawlPolicy, ScanResult
-from backend.domains.site_scanning.schemas.request import SiteScanRequest, UpdateSiteAdapterRequest
+from backend.domains.site_scanning.schemas.request import SiteScanRequest, UpdateSiteAdapterRequest, UpsertSiteAuthProfileRequest
 from backend.domains.site_scanning.schemas.response import (
+    SiteAuthProfileResponse,
     SiteScanAdapterResponse,
     SiteScanCandidateResponse,
     SiteScanRejectionResponse,
@@ -14,7 +16,7 @@ from backend.domains.site_scanning.schemas.response import (
     SiteScanSummaryResponse,
 )
 from backend.domains.site_scanning.service import SiteScanService
-from backend.domains.site_scanning.store import SiteScanStore
+from backend.domains.site_scanning.store import SiteAuthProfileStore, SiteScanStore, mask_site_auth_secret
 from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/site-scanning", tags=["site-scanning"])
@@ -23,6 +25,10 @@ service = SiteScanService()
 
 def get_site_scan_store(session: Session = Depends(get_db_session)) -> SiteScanStore:
     return SiteScanStore(session)
+
+
+def get_site_auth_profile_store(session: Session = Depends(get_db_session)) -> SiteAuthProfileStore:
+    return SiteAuthProfileStore(session, get_secret_cipher())
 
 
 @router.get("/adapters", response_model=list[SiteScanAdapterResponse])
@@ -65,6 +71,52 @@ def update_adapter(
     )
 
 
+@router.get("/auth-profiles", response_model=list[SiteAuthProfileResponse])
+def list_site_auth_profiles(
+    _user=Depends(require_roles("admin")),
+    store: SiteAuthProfileStore = Depends(get_site_auth_profile_store),
+) -> list[SiteAuthProfileResponse]:
+    return [
+        _site_auth_profile_response(declaration, record)
+        for declaration, record in store.list_profile_statuses(service.adapter_declarations())
+    ]
+
+
+@router.put("/auth-profiles/{site_key}", response_model=SiteAuthProfileResponse)
+def upsert_site_auth_profile(
+    site_key: str,
+    request: UpsertSiteAuthProfileRequest,
+    _user=Depends(require_roles("admin")),
+    store: SiteAuthProfileStore = Depends(get_site_auth_profile_store),
+) -> SiteAuthProfileResponse:
+    declarations = service.adapter_declarations()
+    try:
+        record = store.upsert_profile(
+            declarations,
+            site_key=site_key,
+            auth_mode=request.auth_mode,
+            secret_value=request.secret_value,
+            label=request.label,
+            header_name=request.header_name,
+            enabled=request.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    declaration = next(declaration for declaration in declarations if declaration.site_key == record.site_key)
+    return _site_auth_profile_response(declaration, record)
+
+
+@router.delete("/auth-profiles/{site_key}", status_code=204)
+def delete_site_auth_profile(
+    site_key: str,
+    _user=Depends(require_roles("admin")),
+    store: SiteAuthProfileStore = Depends(get_site_auth_profile_store),
+) -> Response:
+    if not store.delete_profile(site_key):
+        raise HTTPException(status_code=404, detail="Site auth profile not found")
+    return Response(status_code=204)
+
+
 @router.post("/scans", response_model=SiteScanResponse)
 def create_scan(
     request: SiteScanRequest,
@@ -89,6 +141,20 @@ def create_scan(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     scan_run = store.save_scan_result(result, requested_by_user_id=getattr(user, "id", None))
     return _to_response(result, scan_run_id=scan_run.id)
+
+
+def _site_auth_profile_response(declaration, record) -> SiteAuthProfileResponse:
+    return SiteAuthProfileResponse(
+        site_key=declaration.site_key,
+        display_name=declaration.display_name,
+        auth_mode=record.auth_mode if record is not None else "none",
+        label=record.label if record is not None else None,
+        header_name=record.header_name if record is not None else None,
+        configured=record is not None and record.encrypted_value is not None,
+        enabled=record.enabled if record is not None else False,
+        masked_value=mask_site_auth_secret(record),
+        updated_at=record.updated_at.isoformat() if record is not None and record.updated_at is not None else None,
+    )
 
 
 def _to_response(result: ScanResult, scan_run_id: int | None = None) -> SiteScanResponse:

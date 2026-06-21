@@ -13,6 +13,18 @@ class SiteScanAdapterResponse(BaseModel):
     robots_terms_notes: str | None
 
 
+class SiteAuthProfileResponse(BaseModel):
+    site_key: str
+    display_name: str
+    auth_mode: str
+    label: str | None
+    header_name: str | None
+    configured: bool
+    enabled: bool
+    masked_value: str | None
+    updated_at: str | None
+
+
 class SiteScanSummaryResponse(BaseModel):
     scan_run_id: int | None = None
     status: str

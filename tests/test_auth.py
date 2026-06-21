@@ -135,6 +135,13 @@ def test_protected_routes_require_sessions_and_roles_once_users_exist():
         ("POST", "/api/printers/12/print/resume", None),
         ("POST", "/api/printers/12/print/cancel", None),
         ("POST", "/api/site-scanning/scans", {"url": "https://example.com/models/cube"}),
+        ("GET", "/api/site-scanning/auth-profiles", None),
+        (
+            "PUT",
+            "/api/site-scanning/auth-profiles/printables",
+            {"auth_mode": "bearer_token", "secret_value": "test-token"},
+        ),
+        ("DELETE", "/api/site-scanning/auth-profiles/printables", None),
         ("POST", "/api/resources/samples", None),
         ("GET", "/api/settings/provider-secrets", None),
         (
