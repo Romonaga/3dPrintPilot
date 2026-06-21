@@ -46,3 +46,7 @@ class PrinterScanRequest(BaseModel):
     max_hosts: int = Field(default=254, ge=1, le=512)
     ports: list[int] = Field(default_factory=lambda: [80, 443, 4408, 5000, 6000, 7125, 8000, 8080, 8081, 8883], max_length=10)
     connect_timeout_seconds: float = Field(default=2.0, ge=0.1, le=5.0)
+
+
+class PrintFileRequest(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=512)

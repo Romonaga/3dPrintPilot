@@ -130,6 +130,10 @@ def test_protected_routes_require_sessions_and_roles_once_users_exist():
     ("method", "path", "payload"),
     [
         ("POST", "/api/printers/scan", {"scan_method": "http", "max_hosts": 1, "ports": [80]}),
+        ("POST", "/api/printers/12/print/start", {"filename": "cube.gcode"}),
+        ("POST", "/api/printers/12/print/pause", None),
+        ("POST", "/api/printers/12/print/resume", None),
+        ("POST", "/api/printers/12/print/cancel", None),
         ("POST", "/api/site-scanning/scans", {"url": "https://example.com/models/cube"}),
         ("POST", "/api/resources/samples", None),
         ("GET", "/api/settings/provider-secrets", None),
@@ -170,6 +174,8 @@ def test_sensitive_routes_block_anonymous_and_low_privilege_users(method: str, p
     "path",
     [
         "/api/printers",
+        "/api/printers/12/files",
+        "/api/printers/12/job-status",
         "/api/resources/status",
         "/api/site-scanning/adapters",
         "/api/models",

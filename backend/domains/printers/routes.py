@@ -1,21 +1,36 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db_session
-from backend.domains.printers.adapters import fetch_read_only_status
+from backend.domains.printers.adapters import (
+    InvalidPrintFileError,
+    UnsupportedPrinterControlError,
+    cancel_moonraker_print,
+    fetch_moonraker_job_status,
+    fetch_read_only_status,
+    list_moonraker_files,
+    pause_moonraker_print,
+    resume_moonraker_print,
+    start_moonraker_print,
+    upload_moonraker_file,
+)
 from backend.domains.printers.entities import PrinterScanResult
 from backend.domains.printers.identity import is_stable_printer_identity, printer_identity_key
 from backend.domains.printers.schemas.request import (
     ConfirmDiscoveredPrinterRequest,
     CreatePrinterRequest,
+    PrintFileRequest,
     PrinterScanRequest,
     UpdatePrinterRequest,
 )
 from backend.domains.printers.schemas.response import (
     DiscoveredPrinterResponse,
+    PrinterActionResponse,
     PrinterEndpointGroupResponse,
+    PrinterFileResponse,
+    PrinterJobStatusResponse,
     PrinterResponse,
     PrinterScanResponse,
     PrinterScanSummaryResponse,
@@ -110,9 +125,7 @@ def read_printer_status(
     _user=Depends(require_roles("viewer")),
     store: PrinterStore = Depends(get_printer_store),
 ) -> PrinterStatusResponse:
-    printer = next((candidate for candidate in store.list_printers() if candidate.id == printer_id), None)
-    if printer is None:
-        raise HTTPException(status_code=404, detail="Printer not found")
+    printer = _get_printer_or_404(store, printer_id)
     status = fetch_read_only_status(printer)
     return PrinterStatusResponse(
         printer_id=printer.id,
@@ -122,6 +135,114 @@ def read_printer_status(
         raw_status=status.raw_status,
         observed_at=status.observed_at.isoformat(),
     )
+
+
+@router.get("/{printer_id}/job-status", response_model=PrinterJobStatusResponse)
+def read_printer_job_status(
+    printer_id: int,
+    _user=Depends(require_roles("viewer")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterJobStatusResponse:
+    printer = _get_printer_or_404(store, printer_id)
+    try:
+        status = fetch_moonraker_job_status(printer)
+    except UnsupportedPrinterControlError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return PrinterJobStatusResponse(
+        printer_id=printer.id,
+        state=status.state,
+        filename=status.filename,
+        progress=status.progress,
+        message=status.message,
+        raw_status=status.raw_status,
+        observed_at=status.observed_at.isoformat(),
+    )
+
+
+@router.get("/{printer_id}/files", response_model=list[PrinterFileResponse])
+def list_printer_files(
+    printer_id: int,
+    _user=Depends(require_roles("viewer")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> list[PrinterFileResponse]:
+    printer = _get_printer_or_404(store, printer_id)
+    try:
+        files = list_moonraker_files(printer)
+    except UnsupportedPrinterControlError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return [
+        PrinterFileResponse(path=item.path, size=item.size, modified=item.modified, permissions=item.permissions)
+        for item in files
+    ]
+
+
+@router.post("/{printer_id}/files", response_model=PrinterActionResponse, status_code=201)
+async def upload_printer_file(
+    printer_id: int,
+    file: UploadFile = File(...),
+    _user=Depends(require_roles("user")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterActionResponse:
+    printer = _get_printer_or_404(store, printer_id)
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded print file is empty")
+    try:
+        result = upload_moonraker_file(
+            printer,
+            filename=file.filename or "",
+            content=content,
+            content_type=file.content_type,
+        )
+    except InvalidPrintFileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except UnsupportedPrinterControlError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _action_response(printer.id, result)
+
+
+@router.post("/{printer_id}/print/start", response_model=PrinterActionResponse)
+def start_printer_file(
+    printer_id: int,
+    request: PrintFileRequest,
+    _user=Depends(require_roles("user")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterActionResponse:
+    printer = _get_printer_or_404(store, printer_id)
+    try:
+        result = start_moonraker_print(printer, request.filename)
+    except InvalidPrintFileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except UnsupportedPrinterControlError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _action_response(printer.id, result)
+
+
+@router.post("/{printer_id}/print/pause", response_model=PrinterActionResponse)
+def pause_printer_print(
+    printer_id: int,
+    _user=Depends(require_roles("user")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterActionResponse:
+    return _run_print_action(store, printer_id, pause_moonraker_print)
+
+
+@router.post("/{printer_id}/print/resume", response_model=PrinterActionResponse)
+def resume_printer_print(
+    printer_id: int,
+    _user=Depends(require_roles("user")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterActionResponse:
+    return _run_print_action(store, printer_id, resume_moonraker_print)
+
+
+@router.post("/{printer_id}/print/cancel", response_model=PrinterActionResponse)
+def cancel_printer_print(
+    printer_id: int,
+    _user=Depends(require_roles("user")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterActionResponse:
+    return _run_print_action(store, printer_id, cancel_moonraker_print)
 
 
 @router.post("/scan", response_model=PrinterScanResponse)
@@ -143,6 +264,31 @@ def scan_printers(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     run = store.save_scan_result(result)
     return _scan_response(result, scan_run_id=run.id, persisted_results=run.results)
+
+
+def _get_printer_or_404(store: PrinterStore, printer_id: int):
+    printer = next((candidate for candidate in store.list_printers() if candidate.id == printer_id), None)
+    if printer is None:
+        raise HTTPException(status_code=404, detail="Printer not found")
+    return printer
+
+
+def _action_response(printer_id: int, result) -> PrinterActionResponse:
+    return PrinterActionResponse(
+        printer_id=printer_id,
+        action=result.action,
+        accepted=result.accepted,
+        raw_response=result.raw_response,
+    )
+
+
+def _run_print_action(store: PrinterStore, printer_id: int, action) -> PrinterActionResponse:
+    printer = _get_printer_or_404(store, printer_id)
+    try:
+        result = action(printer)
+    except UnsupportedPrinterControlError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _action_response(printer.id, result)
 
 
 def _printer_response(printer) -> PrinterResponse:
