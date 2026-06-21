@@ -46,9 +46,12 @@ private Verlyn maintenance scripts.
 
 ## Required Versus Optional CLI Inputs
 
-Normal checkout-bound work should not need context overrides. The required path
-is to let the installed CLI resolve auth, repository, project, and checkout
-state from the current directory and saved profile:
+Normal Verlyn commands are repo-scoped from the current checkout plus the saved
+CLI login profile. Run them from the governed repository root and let the
+installed CLI resolve the user, entity, project, repository, branch, and active
+change from Verlyn. The required path is to let the installed CLI resolve auth,
+repository, project, and checkout state from the current directory and saved
+profile:
 
 ```bash
 verlyn auth status
@@ -75,6 +78,21 @@ recovery:
 Do not add optional overrides to routine commands just to make a command pass.
 If context cannot be resolved without an override in normal repo work, treat
 that as a binding or auth problem to repair through Verlyn.
+
+Read Verlyn's structured JSON before guessing. Fields such as
+`recommended_next_action`, `next_action`, `recommended_next_command`,
+`review_context`, `task_rollup`, `workflow_gate`, `repair_status`, and
+`next_step` are product hints for what the agent should inspect or do next.
+Use them to choose the next public CLI command, then verify the command still
+fits the user request and repo governance.
+
+`verlyn auth login --json` can also return `governance_status` when the login
+command was run from a repository checkout. Treat that field as the product
+contract for local governance health. If it reports `install_recommended`,
+`update_available`, `repair_recommended`, `manifest_changed`, or another
+action-required status, follow its `recommended_next_command` and the user's
+interactive choice. Do not fetch or rewrite governance files through private
+paths; use `verlyn governance install` or `verlyn governance refresh`.
 
 ## Governance Pack Installation
 
