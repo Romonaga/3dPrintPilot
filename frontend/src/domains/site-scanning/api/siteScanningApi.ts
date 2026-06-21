@@ -4,8 +4,12 @@ import { apiFetch } from "../../../lib/apiFetch";
 type ApiAdapter = {
   site_key: string;
   display_name: string;
+  base_url: string | null;
+  login_url: string | null;
   enabled: boolean;
   supports_downloads: boolean;
+  supported_auth_modes: string[];
+  auth_storage_notes: string | null;
   allowed_hosts: string[];
   default_limits: Record<string, unknown>;
   robots_terms_notes: string | null;
@@ -148,8 +152,12 @@ function fromApiAdapter(adapter: ApiAdapter): SiteAdapter {
   return {
     siteKey: adapter.site_key,
     displayName: adapter.display_name,
+    baseUrl: adapter.base_url,
+    loginUrl: adapter.login_url,
     enabled: adapter.enabled,
     supportsDownloads: adapter.supports_downloads,
+    supportedAuthModes: adapter.supported_auth_modes,
+    authStorageNotes: adapter.auth_storage_notes,
     allowedHosts: adapter.allowed_hosts,
     defaultLimits: adapter.default_limits,
     robotsTermsNotes: adapter.robots_terms_notes

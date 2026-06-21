@@ -18,7 +18,14 @@ class PrintablesAdapter:
     site_key = "printables"
     display_name = "Printables public model pages"
     allowed_hosts = PRINTABLES_HOSTS
+    base_url = "https://www.printables.com/"
+    login_url = "https://www.printables.com/login"
     supports_downloads = False
+    supported_auth_modes = ("none", "username_password", "browser_session")
+    auth_storage_notes = (
+        "Email/password can be encrypted for a Printables account. Google login must use browser-assisted session "
+        "linking; do not enter or store a Google password here."
+    )
     default_limits = {"max_depth": 1, "max_pages": 50, "max_runtime_seconds": 300, "per_host_concurrency": 1}
     robots_terms_notes = (
         "Public metadata only. Does not sign in, bypass paywalls, evade anti-bot controls, or download model files."

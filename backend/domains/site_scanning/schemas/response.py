@@ -6,8 +6,12 @@ from pydantic import BaseModel
 class SiteScanAdapterResponse(BaseModel):
     site_key: str
     display_name: str
+    base_url: str | None
+    login_url: str | None
     enabled: bool
     supports_downloads: bool
+    supported_auth_modes: list[str]
+    auth_storage_notes: str | None
     allowed_hosts: list[str]
     default_limits: dict
     robots_terms_notes: str | None
@@ -18,6 +22,8 @@ class SiteAuthProfileResponse(BaseModel):
     display_name: str
     auth_mode: str
     label: str | None
+    account_identifier: str | None
+    masked_account_identifier: str | None
     header_name: str | None
     configured: bool
     enabled: bool

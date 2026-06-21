@@ -9,8 +9,12 @@ export type SiteScanLimits = {
 export type SiteAdapter = {
   siteKey: string;
   displayName: string;
+  baseUrl: string | null;
+  loginUrl: string | null;
   enabled: boolean;
   supportsDownloads: boolean;
+  supportedAuthModes: string[];
+  authStorageNotes: string | null;
   allowedHosts: string[];
   defaultLimits: Record<string, unknown>;
   robotsTermsNotes: string | null;

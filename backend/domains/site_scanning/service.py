@@ -36,7 +36,11 @@ class SiteScanService:
                     site_key=adapter.site_key,
                     display_name=adapter.display_name,
                     allowed_hosts=tuple(sorted(adapter.allowed_hosts)),
+                    base_url=getattr(adapter, "base_url", None),
+                    login_url=getattr(adapter, "login_url", None),
                     supports_downloads=adapter.supports_downloads,
+                    supported_auth_modes=tuple(getattr(adapter, "supported_auth_modes", ("none",))),
+                    auth_storage_notes=getattr(adapter, "auth_storage_notes", None),
                     default_limits=getattr(adapter, "default_limits", {}),
                     robots_terms_notes=getattr(adapter, "robots_terms_notes", None),
                 )

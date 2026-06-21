@@ -964,7 +964,20 @@ dd {
   gap: 12px;
 }
 
+.source-site-list {
+  display: grid;
+  gap: 12px;
+}
+
 .secret-row {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.source-site-row {
   display: grid;
   gap: 14px;
   border: 1px solid var(--border-subtle);
@@ -978,13 +991,26 @@ dd {
   min-width: 0;
 }
 
+.source-site-heading {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
 .secret-heading svg {
   flex: 0 0 auto;
   color: var(--muted-strong);
   margin-top: 2px;
 }
 
+.source-site-heading svg {
+  flex: 0 0 auto;
+  color: var(--muted-strong);
+  margin-top: 2px;
+}
+
 .secret-heading p,
+.source-site-heading p,
 .muted-copy {
   margin-bottom: 0;
   color: var(--muted);
@@ -1005,6 +1031,33 @@ dd {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: end;
   gap: 10px;
+}
+
+.source-site-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+
+.source-site-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.inline-link:hover {
+  color: var(--brand);
 }
 
 .form-error {
@@ -1135,6 +1188,10 @@ dd {
   .compatibility-form,
   .reconciliation-form,
   .secret-form {
+    grid-template-columns: 1fr;
+  }
+
+  .source-site-form {
     grid-template-columns: 1fr;
   }
 
