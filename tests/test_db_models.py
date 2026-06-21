@@ -6,7 +6,7 @@ from backend.domains.compatibility.models import CompatibilityCheck, Compatibili
 from backend.domains.models.models import Model, ModelFile, ModelGeometry
 from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
-from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun
+from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun, SiteAuthProfile
 from backend.domains.users.models import User, UserSession
 
 
@@ -27,6 +27,7 @@ def test_foundation_models_are_registered_by_domain():
     assert ModelSiteAdapter.__tablename__ in table_names
     assert ModelSiteScanRun.__tablename__ in table_names
     assert ModelSiteScanResult.__tablename__ in table_names
+    assert SiteAuthProfile.__tablename__ in table_names
 
 
 def test_ai_usage_event_has_estimated_and_final_cost_columns():
@@ -60,6 +61,18 @@ def test_site_scan_run_has_chartable_status_and_timing_columns():
     assert "duration_ms" in columns
     assert "started_at" in columns
     assert "finished_at" in columns
+
+
+def test_site_auth_profile_stores_encrypted_secret_metadata():
+    columns = SiteAuthProfile.__table__.columns
+
+    assert "site_key" in columns
+    assert "auth_mode" in columns
+    assert "encrypted_value" in columns
+    assert "encryption_key_id" in columns
+    assert "secret_fingerprint" in columns
+    assert "last_four" in columns
+    assert "header_name" in columns
 
 
 def test_compatibility_checks_are_persistable_with_items():

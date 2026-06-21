@@ -16,3 +16,11 @@ class SiteScanRequest(BaseModel):
 
 class UpdateSiteAdapterRequest(BaseModel):
     enabled: bool
+
+
+class UpsertSiteAuthProfileRequest(BaseModel):
+    auth_mode: str = Field(..., min_length=1, max_length=40)
+    secret_value: str | None = Field(default=None, max_length=8192)
+    label: str | None = Field(default=None, max_length=160)
+    header_name: str | None = Field(default=None, max_length=120)
+    enabled: bool = True

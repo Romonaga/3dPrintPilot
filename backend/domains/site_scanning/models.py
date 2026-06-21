@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db.base import Base
@@ -24,6 +24,29 @@ class ModelSiteAdapter(Base):
     robots_terms_notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class SiteAuthProfile(Base):
+    __tablename__ = "site_auth_profiles"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    site_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    auth_mode: Mapped[str] = mapped_column(String(40), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(160))
+    header_name: Mapped[str | None] = mapped_column(String(120))
+    encrypted_value: Mapped[str | None] = mapped_column(Text)
+    encryption_key_id: Mapped[str | None] = mapped_column(String(64))
+    secret_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    last_four: Mapped[str | None] = mapped_column(String(8))
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("site_key", name="uq_site_auth_profiles_site_key"),
+        Index("ix_site_auth_profiles_site_key", "site_key"),
+        Index("ix_site_auth_profiles_auth_mode", "auth_mode"),
+    )
 
 
 class ModelSiteScanRun(Base):

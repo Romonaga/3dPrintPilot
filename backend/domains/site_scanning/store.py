@@ -1,13 +1,28 @@
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.core.secrets import SecretCipher
 from backend.domains.site_scanning.adapters.base import SiteAdapterDeclaration
 from backend.domains.site_scanning.entities import ScanResult
-from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun
+from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun, SiteAuthProfile
+
+SITE_AUTH_MODES = frozenset({"none", "api_token", "bearer_token", "cookie_header"})
+SECRET_AUTH_MODES = frozenset({"api_token", "bearer_token", "cookie_header"})
+HEADER_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,119}$")
+
+
+@dataclass(frozen=True)
+class SiteAuthContext:
+    site_key: str
+    auth_mode: str
+    enabled: bool
+    headers: dict[str, str]
 
 
 class SiteScanStore:
@@ -145,3 +160,155 @@ class SiteScanStore:
         self._session.commit()
         self._session.refresh(run)
         return run
+
+
+class SiteAuthProfileStore:
+    def __init__(self, session: Session, cipher: SecretCipher) -> None:
+        self._session = session
+        self._cipher = cipher
+
+    def list_profile_statuses(self, declarations: list[SiteAdapterDeclaration]) -> list[tuple[SiteAdapterDeclaration, SiteAuthProfile | None]]:
+        configured = {
+            profile.site_key: profile
+            for profile in self._session.scalars(select(SiteAuthProfile)).all()
+        }
+        return [(declaration, configured.get(declaration.site_key)) for declaration in declarations]
+
+    def upsert_profile(
+        self,
+        declarations: list[SiteAdapterDeclaration],
+        *,
+        site_key: str,
+        auth_mode: str,
+        secret_value: str | None,
+        label: str | None = None,
+        header_name: str | None = None,
+        enabled: bool = True,
+    ) -> SiteAuthProfile:
+        normalized_site_key = _require_known_site_key(declarations, site_key)
+        clean_mode = _normalize_auth_mode(auth_mode)
+        clean_label = (label or "").strip()[:160] or None
+        clean_header = _normalize_header_name(clean_mode, header_name)
+        clean_secret = _normalize_secret_value(clean_mode, secret_value)
+        now = datetime.now(UTC)
+
+        existing = self.get_profile(normalized_site_key)
+        if existing is None:
+            existing = SiteAuthProfile(
+                site_key=normalized_site_key,
+                auth_mode=clean_mode,
+                label=clean_label,
+                header_name=clean_header,
+                enabled=enabled,
+                updated_at=now,
+            )
+            self._session.add(existing)
+        else:
+            existing.auth_mode = clean_mode
+            existing.label = clean_label
+            existing.header_name = clean_header
+            existing.enabled = enabled
+            existing.updated_at = now
+
+        if clean_secret is None:
+            existing.encrypted_value = None
+            existing.encryption_key_id = None
+            existing.secret_fingerprint = None
+            existing.last_four = None
+        else:
+            existing.encrypted_value = self._cipher.encrypt(clean_secret)
+            existing.encryption_key_id = self._cipher.key_id
+            existing.secret_fingerprint = self._cipher.fingerprint(clean_secret)
+            existing.last_four = clean_secret[-4:]
+
+        self._session.commit()
+        self._session.refresh(existing)
+        return existing
+
+    def get_profile(self, site_key: str) -> SiteAuthProfile | None:
+        statement = select(SiteAuthProfile).where(SiteAuthProfile.site_key == site_key.strip().lower())
+        return self._session.scalars(statement).one_or_none()
+
+    def delete_profile(self, site_key: str) -> bool:
+        profile = self.get_profile(site_key)
+        if profile is None:
+            return False
+        self._session.delete(profile)
+        self._session.commit()
+        return True
+
+    def auth_context_for_site(self, site_key: str) -> SiteAuthContext:
+        normalized_site_key = site_key.strip().lower()
+        profile = self.get_profile(normalized_site_key)
+        if profile is None or not profile.enabled or profile.auth_mode == "none":
+            return SiteAuthContext(site_key=normalized_site_key, auth_mode="none", enabled=False, headers={})
+        if profile.encrypted_value is None:
+            return SiteAuthContext(site_key=normalized_site_key, auth_mode=profile.auth_mode, enabled=False, headers={})
+
+        secret_value = self._cipher.decrypt(profile.encrypted_value)
+        if profile.auth_mode == "api_token" and profile.header_name:
+            return SiteAuthContext(
+                site_key=normalized_site_key,
+                auth_mode=profile.auth_mode,
+                enabled=True,
+                headers={profile.header_name: secret_value},
+            )
+        if profile.auth_mode == "bearer_token":
+            return SiteAuthContext(
+                site_key=normalized_site_key,
+                auth_mode=profile.auth_mode,
+                enabled=True,
+                headers={"Authorization": f"Bearer {secret_value}"},
+            )
+        if profile.auth_mode == "cookie_header":
+            return SiteAuthContext(
+                site_key=normalized_site_key,
+                auth_mode=profile.auth_mode,
+                enabled=True,
+                headers={"Cookie": secret_value},
+            )
+        return SiteAuthContext(site_key=normalized_site_key, auth_mode=profile.auth_mode, enabled=False, headers={})
+
+
+def mask_site_auth_secret(profile: SiteAuthProfile | None) -> str | None:
+    if profile is None or profile.last_four is None:
+        return None
+    return f"****{profile.last_four}"
+
+
+def _require_known_site_key(declarations: list[SiteAdapterDeclaration], site_key: str) -> str:
+    normalized_site_key = site_key.strip().lower()
+    if not any(declaration.site_key == normalized_site_key for declaration in declarations):
+        raise ValueError("Unknown site adapter")
+    return normalized_site_key
+
+
+def _normalize_auth_mode(auth_mode: str) -> str:
+    clean_mode = auth_mode.strip().lower()
+    if clean_mode not in SITE_AUTH_MODES:
+        raise ValueError("Unsupported site auth mode")
+    return clean_mode
+
+
+def _normalize_header_name(auth_mode: str, header_name: str | None) -> str | None:
+    clean_header = (header_name or "").strip()
+    if auth_mode != "api_token":
+        return None
+    if not clean_header:
+        raise ValueError("API token auth requires a header name")
+    if not HEADER_NAME_RE.match(clean_header):
+        raise ValueError("API token header name is invalid")
+    if clean_header.lower() in {"authorization", "cookie", "set-cookie"}:
+        raise ValueError("Use bearer_token or cookie_header auth mode for this header")
+    return clean_header
+
+
+def _normalize_secret_value(auth_mode: str, secret_value: str | None) -> str | None:
+    clean_secret = (secret_value or "").strip()
+    if auth_mode == "none":
+        return None
+    if auth_mode in SECRET_AUTH_MODES and not clean_secret:
+        raise ValueError("Site auth secret value cannot be empty")
+    if "\x00" in clean_secret:
+        raise ValueError("Site auth secret value contains invalid characters")
+    return clean_secret

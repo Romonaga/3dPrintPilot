@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db_session
@@ -16,7 +16,7 @@ from backend.domains.models.models import Model, ModelFile, ModelGeometry
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
 from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
-from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun
+from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun, SiteAuthProfile
 from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/operations", tags=["operations"])
@@ -52,7 +52,8 @@ def export_backup(
         "format": "3dprintpilot.operations.backup",
         "security": {
             "provider_secrets": "redacted; only provider, name, last_four, and timestamps are exported",
-            "restore": "restore by importing into matching schema after reconfiguring provider secrets manually",
+            "site_auth_profiles": "redacted; only site, auth mode, label, last_four, and timestamps are exported",
+            "restore": "restore by importing into matching schema after reconfiguring provider and site auth secrets manually",
         },
         "tables": {},
     }
@@ -73,6 +74,23 @@ def export_backup(
         }
         for secret in session.scalars(select(ProviderSecret).order_by(ProviderSecret.id)).all()
     ]
+    payload["tables"]["site_auth_profiles"] = []
+    if inspect(session.bind).has_table(SiteAuthProfile.__tablename__):
+        payload["tables"]["site_auth_profiles"] = [
+            {
+                "id": profile.id,
+                "site_key": profile.site_key,
+                "auth_mode": profile.auth_mode,
+                "label": profile.label,
+                "header_name": profile.header_name,
+                "configured": profile.encrypted_value is not None,
+                "last_four": profile.last_four,
+                "enabled": profile.enabled,
+                "created_at": _serialize(profile.created_at),
+                "updated_at": _serialize(profile.updated_at),
+            }
+            for profile in session.scalars(select(SiteAuthProfile).order_by(SiteAuthProfile.id)).all()
+        ]
     return JSONResponse(
         payload,
         headers={"Content-Disposition": 'attachment; filename="3dprintpilot-backup.json"'},
