@@ -1,6 +1,7 @@
 import { Radar, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
+import { PrinterControlPanel } from "../components/PrinterControlPanel";
 import { discoveredPrinterKey, type PrintersState } from "../hooks/usePrinters";
 
 type PrintersPageProps = {
@@ -157,7 +158,7 @@ export default function PrintersPage({
           {printers.printers.map((printer) => (
             <article
               aria-label={`Saved printer ${printer.name}`}
-              className="printer-row"
+              className="printer-row printer-known-row"
               key={printer.id}
               onContextMenu={(event) => {
                 event.preventDefault();
@@ -169,25 +170,28 @@ export default function PrintersPage({
                 });
               }}
             >
-              <div>
-                <h3>{printer.name}</h3>
-                <p>
-                  {printer.protocol}://{printer.host}:{printer.port}
-                </p>
-                <p>{formatBuildVolume(printer.buildVolumeXmm, printer.buildVolumeYmm, printer.buildVolumeZmm)}</p>
+              <div className="printer-row-main">
+                <div>
+                  <h3>{printer.name}</h3>
+                  <p>
+                    {printer.protocol}://{printer.host}:{printer.port}
+                  </p>
+                  <p>{formatBuildVolume(printer.buildVolumeXmm, printer.buildVolumeYmm, printer.buildVolumeZmm)}</p>
+                </div>
+                <div className="row-meta">
+                  <span>{printer.printerType}</span>
+                  <strong>{printer.state}</strong>
+                  <button
+                    aria-label={`Remove ${printer.name}`}
+                    className="icon-only-button"
+                    type="button"
+                    onClick={() => void printers.removePrinter(printer.id)}
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-              <div className="row-meta">
-                <span>{printer.printerType}</span>
-                <strong>{printer.state}</strong>
-                <button
-                  aria-label={`Remove ${printer.name}`}
-                  className="icon-only-button"
-                  type="button"
-                  onClick={() => void printers.removePrinter(printer.id)}
-                >
-                  <Trash2 size={16} aria-hidden="true" />
-                </button>
-              </div>
+              <PrinterControlPanel printer={printer} />
             </article>
           ))}
           {!printers.isLoading && printers.printers.length === 0 ? <p className="empty-text">No saved printers yet.</p> : null}
