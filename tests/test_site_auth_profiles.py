@@ -138,6 +138,44 @@ def test_site_auth_profile_store_allows_unlinked_browser_session_without_secret_
         assert context.headers == {}
 
 
+def test_site_auth_profile_store_reports_browser_session_readiness_states():
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    _create_sqlite_site_auth_profiles_table(engine)
+    SessionLocal = sessionmaker(bind=engine, future=True)
+    cipher = SecretCipher(Fernet.generate_key())
+
+    with SessionLocal() as session:
+        store = SiteAuthProfileStore(session, cipher)
+
+        public_readiness = store.readiness_for_site(DECLARATIONS, "printables")
+        assert public_readiness.link_status == "public_only"
+        assert public_readiness.auth_ready is False
+
+        store.upsert_profile(
+            DECLARATIONS,
+            site_key="printables",
+            auth_mode="browser_session",
+            account_identifier="gmail-user@example.test",
+            secret_value=None,
+            label="Google browser session",
+        )
+        unlinked_readiness = store.readiness_for_site(DECLARATIONS, "printables")
+        assert unlinked_readiness.link_status == "needs_relink"
+        assert unlinked_readiness.auth_ready is False
+
+        store.upsert_profile(
+            DECLARATIONS,
+            site_key="printables",
+            auth_mode="browser_session",
+            account_identifier="gmail-user@example.test",
+            secret_value="session=abc",
+            label="Google browser session",
+        )
+        linked_readiness = store.readiness_for_site(DECLARATIONS, "printables")
+        assert linked_readiness.link_status == "linked"
+        assert linked_readiness.auth_ready is True
+
+
 def test_site_auth_profile_store_rejects_unknown_sites_and_unsafe_modes():
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     _create_sqlite_site_auth_profiles_table(engine)

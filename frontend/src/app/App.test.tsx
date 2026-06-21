@@ -247,6 +247,8 @@ describe("App", () => {
   });
 
   it("shows model source account configuration without collecting Google passwords", async () => {
+    const openWindow = vi.fn();
+    vi.stubGlobal("open", openWindow);
     mockApiFetch((input) => {
       const url = String(input);
       if (url === "/api/resources/status") {
@@ -308,10 +310,49 @@ describe("App", () => {
                 header_name: null,
                 configured: false,
                 enabled: false,
+                auth_ready: false,
+                link_status: "public_only",
+                link_status_message: "Public scans can run without an account. Link an account for authenticated access.",
                 masked_value: null,
                 updated_at: null
               }
             ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/site-scanning/auth-profiles/printables/link") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              site_key: "printables",
+              display_name: "Printables public model pages",
+              auth_mode: "browser_session",
+              login_url: "https://www.printables.com/login",
+              account_identifier: null,
+              instructions: ["Open the site login page.", "Paste only the Printables session value."],
+              storage_notes: "No Google password is stored."
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/site-scanning/auth-profiles/printables/test") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              site_key: "printables",
+              display_name: "Printables public model pages",
+              auth_mode: "browser_session",
+              auth_ready: false,
+              link_status: "needs_relink",
+              message: "Browser session is not stored yet.",
+              configured: false,
+              enabled: true,
+              masked_account_identifier: null,
+              masked_value: null,
+              updated_at: null
+            }),
             { status: 200 }
           )
         );
@@ -326,10 +367,15 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Model Source Accounts" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Printables public model pages" })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Auth type"), "browser_session");
+    await user.click(screen.getByRole("button", { name: "Link with browser" }));
 
-    expect(screen.getByLabelText("Session cookie/header")).toBeInTheDocument();
+    expect(openWindow).toHaveBeenCalledWith("https://www.printables.com/login", "_blank", "noopener,noreferrer");
+    expect(await screen.findByText("No Google password is stored.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Printables session cookie/header")).toBeInTheDocument();
     expect(screen.queryByLabelText("Printables password")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Google password")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(await screen.findByText("Needs re-link")).toBeInTheDocument();
   });
 
   it("opens model uploads from the dashboard Upload Model action", async () => {

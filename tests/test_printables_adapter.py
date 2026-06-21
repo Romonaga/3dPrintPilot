@@ -24,7 +24,7 @@ PRINTABLES_DUPLICATE_LINK_HTML = """
 
 
 class FakePrintablesAdapter(PrintablesAdapter):
-    def discover(self, url: str, depth: int, parent_url: str | None):
+    def discover(self, url: str, depth: int, parent_url: str | None, auth_headers=None):
         from backend.domains.site_scanning.adapters.printables import _extract_print_candidates
         from backend.domains.site_scanning.adapters.base import AdapterDiscoveryResult
 
@@ -54,6 +54,28 @@ def test_printables_child_urls_are_limited_by_shared_depth_guard():
     assert all("exceeds limit" in rejection.reason for rejection in result.rejections)
 
 
+def test_scan_passes_site_auth_headers_to_printables_adapter():
+    class AuthAwarePrintablesAdapter(PrintablesAdapter):
+        observed_headers = None
+
+        def discover(self, url: str, depth: int, parent_url: str | None, auth_headers=None):
+            from backend.domains.site_scanning.adapters.base import AdapterDiscoveryResult
+
+            self.observed_headers = auth_headers
+            return AdapterDiscoveryResult(candidates=(), discovered_urls=())
+
+    adapter = AuthAwarePrintablesAdapter()
+    service = SiteScanService(adapters={"printables": adapter})
+
+    service.scan(
+        "https://www.printables.com/model/1-test",
+        policy=CrawlPolicy(max_depth=0, max_pages=1),
+        auth_headers_by_site={"printables": {"Cookie": "session=abc"}},
+    )
+
+    assert adapter.observed_headers == {"Cookie": "session=abc"}
+
+
 def test_printables_model_links_are_canonicalized_by_model_id():
     from backend.domains.site_scanning.adapters.printables import _extract_print_candidates
 
@@ -71,7 +93,7 @@ def test_printables_model_links_are_canonicalized_by_model_id():
 
 def test_scan_deduplicates_candidates_by_external_model_id():
     class DuplicateModelAdapter(PrintablesAdapter):
-        def discover(self, url: str, depth: int, parent_url: str | None):
+        def discover(self, url: str, depth: int, parent_url: str | None, auth_headers=None):
             from backend.domains.site_scanning.adapters.printables import _extract_print_candidates
             from backend.domains.site_scanning.adapters.base import AdapterDiscoveryResult
 

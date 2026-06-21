@@ -31,7 +31,13 @@ class PrintablesAdapter:
         "Public metadata only. Does not sign in, bypass paywalls, evade anti-bot controls, or download model files."
     )
 
-    def discover(self, url: str, depth: int, parent_url: str | None) -> AdapterDiscoveryResult:
+    def discover(
+        self,
+        url: str,
+        depth: int,
+        parent_url: str | None,
+        auth_headers: dict[str, str] | None = None,
+    ) -> AdapterDiscoveryResult:
         normalized_url = normalize_url(url)
         parsed = urlparse(normalized_url)
         if parsed.netloc not in PRINTABLES_HOSTS:
@@ -39,7 +45,7 @@ class PrintablesAdapter:
         if parsed.path.startswith("/world/"):
             return AdapterDiscoveryResult(candidates=(), discovered_urls=())
 
-        html_text = _fetch_public_page(normalized_url)
+        html_text = _fetch_public_page(normalized_url, auth_headers=auth_headers)
         candidates = _extract_print_candidates(html_text, normalized_url, depth, parent_url)
         if not candidates and _is_model_url(normalized_url):
             candidates = (_candidate_from_model_url(normalized_url, depth, parent_url),)
@@ -47,11 +53,12 @@ class PrintablesAdapter:
         return AdapterDiscoveryResult(candidates=candidates, discovered_urls=discovered_urls)
 
 
-def _fetch_public_page(url: str) -> str:
+def _fetch_public_page(url: str, auth_headers: dict[str, str] | None = None) -> str:
     headers = {
         "Accept": "text/html,application/xhtml+xml",
         "User-Agent": "3dPrintPilot/0.1 local compatibility checker",
     }
+    headers.update(auth_headers or {})
     with httpx.Client(headers=headers, follow_redirects=True, timeout=15) as client:
         response = client.get(url)
         response.raise_for_status()

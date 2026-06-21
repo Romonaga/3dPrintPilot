@@ -1,9 +1,11 @@
 import { apiFetch } from "../../../lib/apiFetch";
 import {
   type FeatureSettings,
+  type SourceAuthLinkInstructions,
   type ModelSourceSiteStatus,
   type ProviderSecretStatus,
   type SaveSourceAuthProfileInput,
+  type SourceAuthReadinessStatus,
   type SourceAuthProfileStatus
 } from "../types";
 
@@ -52,6 +54,33 @@ type ApiSourceAuthProfile = {
   header_name: string | null;
   configured: boolean;
   enabled: boolean;
+  auth_ready: boolean;
+  link_status: string;
+  link_status_message: string;
+  masked_value: string | null;
+  updated_at: string | null;
+};
+
+type ApiSourceAuthLink = {
+  site_key: string;
+  display_name: string;
+  auth_mode: string;
+  login_url: string | null;
+  account_identifier: string | null;
+  instructions: string[];
+  storage_notes: string;
+};
+
+type ApiSourceAuthReadiness = {
+  site_key: string;
+  display_name: string;
+  auth_mode: string;
+  auth_ready: boolean;
+  link_status: string;
+  message: string;
+  configured: boolean;
+  enabled: boolean;
+  masked_account_identifier: string | null;
   masked_value: string | null;
   updated_at: string | null;
 };
@@ -131,6 +160,22 @@ export async function saveSourceAuthProfile(
   return fromApiSourceAuthProfile((await response.json()) as ApiSourceAuthProfile);
 }
 
+export async function startSourceAuthLink(siteKey: string): Promise<SourceAuthLinkInstructions> {
+  const response = await apiFetch(`/api/site-scanning/auth-profiles/${siteKey}/link`);
+  if (!response.ok) {
+    throw new Error(`Model source auth link failed with HTTP ${response.status}`);
+  }
+  return fromApiSourceAuthLink((await response.json()) as ApiSourceAuthLink);
+}
+
+export async function testSourceAuthProfile(siteKey: string): Promise<SourceAuthReadinessStatus> {
+  const response = await apiFetch(`/api/site-scanning/auth-profiles/${siteKey}/test`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`Model source auth test failed with HTTP ${response.status}`);
+  }
+  return fromApiSourceAuthReadiness((await response.json()) as ApiSourceAuthReadiness);
+}
+
 export async function deleteSourceAuthProfile(siteKey: string) {
   const response = await apiFetch(`/api/site-scanning/auth-profiles/${siteKey}`, { method: "DELETE" });
   if (!response.ok) {
@@ -174,8 +219,39 @@ function fromApiSourceAuthProfile(profile: ApiSourceAuthProfile): SourceAuthProf
     headerName: profile.header_name,
     configured: profile.configured,
     enabled: profile.enabled,
+    authReady: profile.auth_ready,
+    linkStatus: profile.link_status,
+    linkStatusMessage: profile.link_status_message,
     maskedValue: profile.masked_value,
     updatedAt: profile.updated_at
+  };
+}
+
+function fromApiSourceAuthLink(link: ApiSourceAuthLink): SourceAuthLinkInstructions {
+  return {
+    siteKey: link.site_key,
+    displayName: link.display_name,
+    authMode: link.auth_mode,
+    loginUrl: link.login_url,
+    accountIdentifier: link.account_identifier,
+    instructions: link.instructions,
+    storageNotes: link.storage_notes
+  };
+}
+
+function fromApiSourceAuthReadiness(readiness: ApiSourceAuthReadiness): SourceAuthReadinessStatus {
+  return {
+    siteKey: readiness.site_key,
+    displayName: readiness.display_name,
+    authMode: readiness.auth_mode,
+    authReady: readiness.auth_ready,
+    linkStatus: readiness.link_status,
+    message: readiness.message,
+    configured: readiness.configured,
+    enabled: readiness.enabled,
+    maskedAccountIdentifier: readiness.masked_account_identifier,
+    maskedValue: readiness.masked_value,
+    updatedAt: readiness.updated_at
   };
 }
 
@@ -206,6 +282,9 @@ function fromApiModelSourceSite(
         header_name: null,
         configured: false,
         enabled: false,
+        auth_ready: false,
+        link_status: "public_only",
+        link_status_message: "Public scans can run without an account. Link an account for authenticated access.",
         masked_value: null,
         updated_at: null
       })

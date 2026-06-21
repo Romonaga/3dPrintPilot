@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from backend.app.main import create_app
 from backend.domains.compatibility.routes import get_compatibility_store
 from backend.domains.site_scanning.routes import get_site_auth_profile_store, get_site_scan_store
+from backend.domains.site_scanning.store import SiteAuthReadiness
 from tests.helpers import allow_anonymous_until_bootstrap
 
 
@@ -73,6 +74,20 @@ class FakeSiteAuthProfileStore:
         self.deleted = site_key == "printables"
         return self.deleted
 
+    def get_profile(self, site_key):
+        return self.profile if site_key == "printables" and not self.deleted else None
+
+    def readiness_for_site(self, declarations, site_key):
+        return SiteAuthReadiness(
+            site_key="printables",
+            auth_mode="bearer_token",
+            auth_ready=True,
+            link_status="linked",
+            message="Stored account link is available for unattended authenticated requests.",
+            configured=True,
+            enabled=True,
+        )
+
 
 class EmptyCompatibilityStore:
     def list_candidate_results(self, scan_run_id, max_candidates):
@@ -134,6 +149,8 @@ def test_site_auth_profile_api_masks_secret_values():
     printables_profile = next(item for item in list_response.json() if item["site_key"] == "printables")
     assert printables_profile["masked_value"] == "****1234"
     assert printables_profile["masked_account_identifier"] == "m***@example.test"
+    assert printables_profile["auth_ready"] is True
+    assert printables_profile["link_status"] == "linked"
 
     save_response = client.put(
         "/api/site-scanning/auth-profiles/printables",
@@ -150,6 +167,29 @@ def test_site_auth_profile_api_masks_secret_values():
 
     delete_response = client.delete("/api/site-scanning/auth-profiles/printables")
     assert delete_response.status_code == 204
+
+
+def test_site_auth_profile_browser_link_api_never_requests_google_passwords():
+    app = create_app()
+    app.dependency_overrides[get_site_auth_profile_store] = lambda: FakeSiteAuthProfileStore()
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    link_response = client.get("/api/site-scanning/auth-profiles/printables/link")
+    assert link_response.status_code == 200
+    link_body = link_response.json()
+    assert link_body["auth_mode"] == "browser_session"
+    assert link_body["login_url"] == "https://www.printables.com/login"
+    assert "secret_value" not in link_body
+    assert "oauth_token" not in link_body
+    assert "Printables session value" in link_body["storage_notes"]
+
+    test_response = client.post("/api/site-scanning/auth-profiles/printables/test")
+    assert test_response.status_code == 200
+    test_body = test_response.json()
+    assert test_body["auth_ready"] is True
+    assert test_body["link_status"] == "linked"
+    assert "encrypted-secret" not in test_response.text
 
 
 def test_site_scanning_adapter_api_exposes_printables_auth_capabilities():

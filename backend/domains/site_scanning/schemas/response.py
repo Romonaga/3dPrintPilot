@@ -27,6 +27,33 @@ class SiteAuthProfileResponse(BaseModel):
     header_name: str | None
     configured: bool
     enabled: bool
+    auth_ready: bool
+    link_status: str
+    link_status_message: str
+    masked_value: str | None
+    updated_at: str | None
+
+
+class SiteAuthLinkResponse(BaseModel):
+    site_key: str
+    display_name: str
+    auth_mode: str
+    login_url: str | None
+    account_identifier: str | None
+    instructions: list[str]
+    storage_notes: str
+
+
+class SiteAuthReadinessResponse(BaseModel):
+    site_key: str
+    display_name: str
+    auth_mode: str
+    auth_ready: bool
+    link_status: str
+    message: str
+    configured: bool
+    enabled: bool
+    masked_account_identifier: str | None
     masked_value: str | None
     updated_at: str | None
 

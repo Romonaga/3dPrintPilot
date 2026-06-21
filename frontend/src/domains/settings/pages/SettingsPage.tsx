@@ -1,4 +1,14 @@
-import { AlertTriangle, CheckCircle2, Download, ExternalLink, Globe2, KeyRound, RefreshCw, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  ExternalLink,
+  Globe2,
+  KeyRound,
+  Link2,
+  RefreshCw,
+  Trash2
+} from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
 import { StatusBadge } from "../../../components/StatusBadge";
@@ -67,8 +77,12 @@ export default function SettingsPage() {
             <SourceSiteAuthRow
               key={site.siteKey}
               isSaving={sourceAuth.isSaving === site.siteKey}
+              isTesting={sourceAuth.isTesting === site.siteKey}
+              linkInstructions={sourceAuth.linkInstructions[site.siteKey] ?? null}
               onDisconnect={() => sourceAuth.disconnectSiteAuth(site.siteKey)}
               onSave={(input) => sourceAuth.saveSiteAuth(site.siteKey, input)}
+              onStartBrowserLink={() => sourceAuth.startBrowserLink(site.siteKey)}
+              onTest={() => sourceAuth.testSiteAuth(site.siteKey)}
               site={site}
             />
           ))}
@@ -164,6 +178,12 @@ export default function SettingsPage() {
 type SourceSiteAuthRowProps = {
   site: ModelSourceSiteStatus;
   isSaving: boolean;
+  isTesting: boolean;
+  linkInstructions: {
+    instructions: string[];
+    loginUrl: string | null;
+    storageNotes: string;
+  } | null;
   onSave: (input: {
     authMode: string;
     secretValue?: string | null;
@@ -172,10 +192,21 @@ type SourceSiteAuthRowProps = {
     headerName?: string | null;
     enabled?: boolean;
   }) => Promise<void>;
+  onStartBrowserLink: () => Promise<void>;
+  onTest: () => Promise<void>;
   onDisconnect: () => Promise<void>;
 };
 
-function SourceSiteAuthRow({ site, isSaving, onSave, onDisconnect }: SourceSiteAuthRowProps) {
+function SourceSiteAuthRow({
+  site,
+  isSaving,
+  isTesting,
+  linkInstructions,
+  onSave,
+  onStartBrowserLink,
+  onTest,
+  onDisconnect
+}: SourceSiteAuthRowProps) {
   const initialMode = site.authProfile.authMode === "none" ? site.supportedAuthModes[0] ?? "none" : site.authProfile.authMode;
   const [authMode, setAuthMode] = useState(initialMode);
   const [accountIdentifier, setAccountIdentifier] = useState(site.authProfile.accountIdentifier ?? "");
@@ -215,9 +246,9 @@ function SourceSiteAuthRow({ site, isSaving, onSave, onDisconnect }: SourceSiteA
 
       <div className="secret-status">
         <StatusBadge
-          icon={site.authProfile.configured ? CheckCircle2 : AlertTriangle}
-          label={site.authProfile.configured ? "Linked" : authMode === "browser_session" ? "Browser flow" : "Not linked"}
-          tone={site.authProfile.configured ? "ok" : "warn"}
+          icon={site.authProfile.authReady ? CheckCircle2 : AlertTriangle}
+          label={sourceAuthStatusLabel(site.authProfile.linkStatus, authMode)}
+          tone={site.authProfile.authReady ? "ok" : "warn"}
         />
         <span>{site.authProfile.maskedAccountIdentifier ?? site.authProfile.maskedValue ?? "No credential stored"}</span>
         {site.loginUrl ? (
@@ -229,6 +260,17 @@ function SourceSiteAuthRow({ site, isSaving, onSave, onDisconnect }: SourceSiteA
       </div>
 
       {site.authStorageNotes ? <p className="muted-copy">{site.authStorageNotes}</p> : null}
+      {site.authProfile.linkStatusMessage ? <p className="muted-copy">{site.authProfile.linkStatusMessage}</p> : null}
+      {linkInstructions ? (
+        <div className="source-link-instructions">
+          <p>{linkInstructions.storageNotes}</p>
+          <ol>
+            {linkInstructions.instructions.map((instruction) => (
+              <li key={instruction}>{instruction}</li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
 
       <form className="source-site-form" onSubmit={handleSubmit}>
         <label className="field-label">
@@ -289,7 +331,7 @@ function SourceSiteAuthRow({ site, isSaving, onSave, onDisconnect }: SourceSiteA
         ) : null}
         {authMode === "browser_session" ? (
           <label className="field-label">
-            Session cookie/header
+            Printables session cookie/header
             <input
               autoComplete="off"
               onChange={(event) => setSecretValue(event.target.value)}
@@ -312,9 +354,24 @@ function SourceSiteAuthRow({ site, isSaving, onSave, onDisconnect }: SourceSiteA
           </label>
         ) : null}
         <div className="source-site-actions">
+          {authMode === "browser_session" ? (
+            <button className="text-button icon-action" disabled={isSaving} onClick={onStartBrowserLink} type="button">
+              {isSaving ? <Spinner size={15} /> : <Link2 size={15} aria-hidden="true" />}
+              <span>Link with browser</span>
+            </button>
+          ) : null}
           <button className="primary-action icon-action" type="submit" disabled={isSaving || !canSave}>
             {isSaving ? <Spinner size={15} /> : null}
-            <span>{isSaving ? "Saving" : "Save"}</span>
+            <span>{isSaving ? "Saving" : authMode === "browser_session" ? "Save session" : "Save"}</span>
+          </button>
+          <button
+            className="text-button icon-action"
+            disabled={isTesting || authMode === "none"}
+            onClick={onTest}
+            type="button"
+          >
+            {isTesting ? <Spinner size={15} /> : <RefreshCw size={15} aria-hidden="true" />}
+            <span>{isTesting ? "Testing" : "Test connection"}</span>
           </button>
           <button
             className="text-button icon-action"
@@ -341,6 +398,17 @@ function authModeLabel(mode: string) {
     browser_session: "Browser session"
   };
   return labels[mode] ?? mode;
+}
+
+function sourceAuthStatusLabel(status: string, authMode: string) {
+  const labels: Record<string, string> = {
+    linked: "Linked",
+    needs_relink: "Needs re-link",
+    public_only: authMode === "browser_session" ? "Needs session" : "Public only",
+    disabled: "Disabled",
+    not_linked: "Not linked"
+  };
+  return labels[status] ?? "Not linked";
 }
 
 type SecretRowProps = {

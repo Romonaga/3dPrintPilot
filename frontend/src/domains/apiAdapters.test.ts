@@ -17,7 +17,9 @@ import {
   getFeatureSettings,
   listModelSourceSites,
   saveProviderSecret,
-  saveSourceAuthProfile
+  saveSourceAuthProfile,
+  startSourceAuthLink,
+  testSourceAuthProfile
 } from "./settings/api/settingsApi";
 import { createSiteScan, updateSiteAdapter } from "./site-scanning/api/siteScanningApi";
 
@@ -325,6 +327,9 @@ describe("domain API adapters", () => {
         header_name: null,
         configured: false,
         enabled: true,
+        auth_ready: false,
+        link_status: "needs_relink",
+        link_status_message: "Browser session is not stored yet.",
         masked_value: null,
         updated_at: null
       }
@@ -335,6 +340,37 @@ describe("domain API adapters", () => {
     expect(sites[0].loginUrl).toBe("https://www.printables.com/login");
     expect(sites[0].supportedAuthModes).toContain("browser_session");
     expect(sites[0].authProfile.maskedAccountIdentifier).toBe("m***@example.test");
+    expect(sites[0].authProfile.linkStatus).toBe("needs_relink");
+
+    mockJson({
+      site_key: "printables",
+      display_name: "Printables",
+      auth_mode: "browser_session",
+      login_url: "https://www.printables.com/login",
+      account_identifier: null,
+      instructions: ["Open login", "Paste only the Printables session value"],
+      storage_notes: "No Google password is stored."
+    });
+    const link = await startSourceAuthLink("printables");
+    expect(link.loginUrl).toBe("https://www.printables.com/login");
+    expect(link.storageNotes).toBe("No Google password is stored.");
+
+    mockJson({
+      site_key: "printables",
+      display_name: "Printables",
+      auth_mode: "browser_session",
+      auth_ready: false,
+      link_status: "needs_relink",
+      message: "Browser session is not stored yet.",
+      configured: false,
+      enabled: true,
+      masked_account_identifier: "m***@example.test",
+      masked_value: null,
+      updated_at: null
+    });
+    const readiness = await testSourceAuthProfile("printables");
+    expect(readiness.authReady).toBe(false);
+    expect(readiness.linkStatus).toBe("needs_relink");
 
     mockJson({
       site_key: "printables",
@@ -346,6 +382,9 @@ describe("domain API adapters", () => {
       header_name: null,
       configured: true,
       enabled: true,
+      auth_ready: true,
+      link_status: "linked",
+      link_status_message: "Stored account link is available for unattended authenticated requests.",
       masked_value: "****1234",
       updated_at: "2026-06-21T17:00:00Z"
     });
@@ -355,7 +394,7 @@ describe("domain API adapters", () => {
       label: "Printables account",
       secretValue: "password-1234"
     });
-    const [, saveInit] = vi.mocked(fetch).mock.calls[2];
+    const [, saveInit] = vi.mocked(fetch).mock.calls[4];
     expect(JSON.parse(String(saveInit?.body))).toMatchObject({
       auth_mode: "username_password",
       account_identifier: "maker@example.test",
@@ -364,7 +403,7 @@ describe("domain API adapters", () => {
 
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 204 }));
     await deleteSourceAuthProfile("printables");
-    const [deleteUrl, deleteInit] = vi.mocked(fetch).mock.calls[3];
+    const [deleteUrl, deleteInit] = vi.mocked(fetch).mock.calls[5];
     expect(deleteUrl).toBe("/api/site-scanning/auth-profiles/printables");
     expect(deleteInit?.method).toBe("DELETE");
   });
