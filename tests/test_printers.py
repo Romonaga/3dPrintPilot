@@ -2,10 +2,24 @@ from __future__ import annotations
 
 from time import monotonic, sleep
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
-from backend.domains.printers.adapters import parse_moonraker_status, parse_octoprint_status
+from backend.domains.printers.adapters import (
+    InvalidPrintFileError,
+    MoonrakerActionResult,
+    MoonrakerFile,
+    capabilities_for_service_type,
+    cancel_moonraker_print,
+    list_moonraker_files,
+    parse_moonraker_status,
+    parse_octoprint_status,
+    pause_moonraker_print,
+    resume_moonraker_print,
+    start_moonraker_print,
+    upload_moonraker_file,
+)
 from backend.domains.printers.entities import DiscoveredPrinter, PrinterScanResult, PrinterScanStatus, PrinterScanSummary
 from backend.domains.printers.identity import moonraker_identity_key
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
@@ -46,9 +60,31 @@ class FakePrinter:
     build_volume_z_mm = 220
 
 
+class FakeMoonrakerPrinter(FakePrinter):
+    name = "Snapmaker U1"
+    host = "192.168.1.80"
+    port = 7125
+    protocol = "http"
+    printer_type = "http_probe:snapmaker_moonraker"
+    adapter_type = "moonraker"
+    capabilities = capabilities_for_service_type("http_probe:snapmaker_moonraker")
+
+
+class FakeLegacyMoonrakerPrinter(FakeMoonrakerPrinter):
+    capabilities = {
+        "adapter": "moonraker",
+        "read_only_status": True,
+        "safe_endpoints": ["/server/info", "/printer/info", "/printer/objects/list"],
+        "control_enabled": False,
+    }
+
+
 class FakePrinterStore:
+    def __init__(self, printer=None):
+        self.printer = printer or FakePrinter()
+
     def list_printers(self):
-        return [FakePrinter()]
+        return [self.printer]
 
     def create_printer(
         self,
@@ -191,6 +227,115 @@ def test_printer_api_confirms_discovered_candidate():
     body = response.json()
     assert body["state"] == "confirmed"
     assert body["adapter_type"] == "moonraker"
+
+
+def test_moonraker_file_and_print_routes_call_safe_adapter_functions(monkeypatch):
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakeMoonrakerPrinter())
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+    calls = []
+
+    def fake_job_status(printer):
+        from datetime import UTC, datetime
+
+        from backend.domains.printers.adapters import MoonrakerJobStatus
+
+        calls.append(("status", printer.id))
+        return MoonrakerJobStatus(
+            state="printing",
+            filename="cube.gcode",
+            progress=0.5,
+            message=None,
+            raw_status={"result": {"status": {}}},
+            observed_at=datetime.now(UTC),
+        )
+
+    def fake_files(printer):
+        calls.append(("files", printer.id))
+        return [MoonrakerFile(path="cube.gcode", size=100, modified=1.0, permissions="rw")]
+
+    def fake_upload(printer, filename, content, content_type=None):
+        calls.append(("upload", filename, content, content_type))
+        return MoonrakerActionResult(action="upload", accepted=True, raw_response={"ok": True})
+
+    def fake_start(printer, filename):
+        calls.append(("start", filename))
+        return MoonrakerActionResult(action="start", accepted=True, raw_response="ok")
+
+    def fake_pause(printer):
+        calls.append(("pause", printer.id))
+        return MoonrakerActionResult(action="pause", accepted=True, raw_response="ok")
+
+    monkeypatch.setattr("backend.domains.printers.routes.fetch_moonraker_job_status", fake_job_status)
+    monkeypatch.setattr("backend.domains.printers.routes.list_moonraker_files", fake_files)
+    monkeypatch.setattr("backend.domains.printers.routes.upload_moonraker_file", fake_upload)
+    monkeypatch.setattr("backend.domains.printers.routes.start_moonraker_print", fake_start)
+    monkeypatch.setattr("backend.domains.printers.routes.pause_moonraker_print", fake_pause)
+
+    status_response = client.get("/api/printers/12/job-status")
+    files_response = client.get("/api/printers/12/files")
+    upload_response = client.post(
+        "/api/printers/12/files",
+        files={"file": ("cube.gcode", b"G1 X1", "application/octet-stream")},
+    )
+    start_response = client.post("/api/printers/12/print/start", json={"filename": "cube.gcode"})
+    pause_response = client.post("/api/printers/12/print/pause")
+
+    assert status_response.status_code == 200
+    assert status_response.json()["filename"] == "cube.gcode"
+    assert files_response.status_code == 200
+    assert files_response.json()[0]["path"] == "cube.gcode"
+    assert upload_response.status_code == 201
+    assert start_response.json()["action"] == "start"
+    assert pause_response.json()["action"] == "pause"
+    assert ("upload", "cube.gcode", b"G1 X1", "application/octet-stream") in calls
+
+
+def test_moonraker_routes_reject_unsupported_printers():
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakePrinter())
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.get("/api/printers/12/files")
+
+    assert response.status_code == 409
+    assert "Moonraker file and job controls" in response.json()["detail"]
+
+
+def test_moonraker_routes_accept_legacy_read_only_capabilities(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def get(self, url, params=None):
+            _ = url, params
+            return FakeResponse([{"path": "legacy.gcode", "size": 100, "modified": 1.0, "permissions": "rw"}])
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakeLegacyMoonrakerPrinter())
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+    monkeypatch.setattr("backend.domains.printers.adapters.httpx.Client", FakeClient)
+
+    response = client.get("/api/printers/12/files")
+
+    assert response.status_code == 200
+    assert response.json()[0]["path"] == "legacy.gcode"
 
 
 def test_printer_scan_groups_services_by_host(monkeypatch):
@@ -757,6 +902,66 @@ def test_octoprint_and_moonraker_status_parsers_are_read_only():
     assert moonraker.adapter_type == "moonraker"
     assert moonraker.state == "ready"
     assert moonraker.capabilities["read_only_status"] is True
+
+
+def test_moonraker_adapter_maps_file_and_job_requests(monkeypatch):
+    requests = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def get(self, url, params=None):
+            requests.append(("GET", url, params))
+            return FakeResponse(
+                [
+                    {"path": "cube.gcode", "size": 100, "modified": 1.0, "permissions": "rw"},
+                ]
+            )
+
+        def post(self, url, files=None, data=None):
+            requests.append(("POST", url, files, data))
+            return FakeResponse("ok")
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    monkeypatch.setattr("backend.domains.printers.adapters.httpx.Client", FakeClient)
+    printer = FakeMoonrakerPrinter()
+
+    files = list_moonraker_files(printer)
+    upload = upload_moonraker_file(printer, "new.gcode.gz", b"G1 X1")
+    start = start_moonraker_print(printer, "cube.gcode")
+    pause = pause_moonraker_print(printer)
+    resume = resume_moonraker_print(printer)
+    cancel = cancel_moonraker_print(printer)
+
+    assert files[0].path == "cube.gcode"
+    assert upload.action == "upload"
+    assert start.action == "start"
+    assert pause.action == "pause"
+    assert resume.action == "resume"
+    assert cancel.action == "cancel"
+    assert ("GET", "http://192.168.1.80:7125/server/files/list", {"root": "gcodes"}) in requests
+    assert any(request[1].endswith("/printer/print/start?filename=cube.gcode") for request in requests)
+    assert any(request[1].endswith("/printer/print/pause") for request in requests)
+    assert any(request[1].endswith("/printer/print/resume") for request in requests)
+    assert any(request[1].endswith("/printer/print/cancel") for request in requests)
+
+
+def test_moonraker_upload_rejects_non_sliced_files():
+    with pytest.raises(InvalidPrintFileError):
+        upload_moonraker_file(FakeMoonrakerPrinter(), "model.stl", b"solid cube")
 
 
 def test_mqtt_probe_ignores_unacknowledged_bambu_mqtt_port(monkeypatch):

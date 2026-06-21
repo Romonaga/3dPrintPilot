@@ -45,6 +45,30 @@ class PrinterStatusResponse(BaseModel):
     observed_at: str
 
 
+class PrinterJobStatusResponse(BaseModel):
+    printer_id: int
+    state: str
+    filename: str | None = None
+    progress: float | None = None
+    message: str | None = None
+    raw_status: dict = Field(default_factory=dict)
+    observed_at: str
+
+
+class PrinterFileResponse(BaseModel):
+    path: str
+    size: int | None = None
+    modified: float | None = None
+    permissions: str | None = None
+
+
+class PrinterActionResponse(BaseModel):
+    printer_id: int
+    action: str
+    accepted: bool
+    raw_response: dict | str | list | None = None
+
+
 class PrinterScanSummaryResponse(BaseModel):
     scan_run_id: int | None = None
     status: str
