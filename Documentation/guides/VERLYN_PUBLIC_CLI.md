@@ -7,14 +7,17 @@ provider tools as substitutes for these commands.
 
 ## Context Resolution
 
-Most commands resolve the current user, server, project, and repository from
-saved CLI login state plus the current checkout. In normal daily work, after you
-are logged in and working inside a known repo, you should not need to pass
-`--profile`, `--server`, `--repo-slug`, or `--target`.
+Most commands are repo-scoped: run them from the governed repository checkout
+and let the installed CLI resolve the current user, entity, project,
+repository, branch, and active change from saved CLI login state plus the
+current checkout. In normal daily work, after you are logged in and working
+inside a known repo, you should not need to pass `--profile`, `--server`,
+`--repo-slug`, or `--target`.
 
 Required daily workflow commands should resolve context from login state and
-the current checkout. Optional context arguments are overrides; use them only
-when you are bootstrapping, diagnosing, or performing explicit recovery:
+the current checkout. Optional context arguments are overrides for special
+cases; use them only when you are bootstrapping, diagnosing, automating outside
+a checkout, or performing explicit recovery:
 
 | Argument | Meaning | Normal use |
 |---|---|---|
@@ -28,6 +31,20 @@ when you are bootstrapping, diagnosing, or performing explicit recovery:
 If a command cannot resolve the repo without an override, treat that as a
 target/login/binding issue to repair, not as a reason to hard-code overrides in
 normal workflow.
+
+JSON output is part of the product contract for agents and automation. Inspect
+fields such as `recommended_next_action`, `next_action`,
+`recommended_next_command`, `review_context`, `task_rollup`, `workflow_gate`,
+`repair_status`, and `next_step` before choosing the next command. These fields
+are guidance, not permission to bypass governance or ignore the user's request.
+
+When `verlyn auth login` runs from a repository checkout, the CLI sends a
+lightweight local governance summary with the login request. The login response
+can include `governance_status` with the installed version, latest version,
+missing required files, change notes, and a `recommended_next_command`. This
+status response never includes governance file contents. In interactive mode,
+the CLI may prompt before installing or refreshing governance files; in
+`--json` mode it reports the status and does not prompt.
 
 For managed checkout commands, the CLI uses the local target path only to
 validate that the checkout maps to an authorized Verlyn repository. Server

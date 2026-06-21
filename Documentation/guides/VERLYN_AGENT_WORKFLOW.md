@@ -49,6 +49,14 @@ route state, visible working changes, latest run context, and the recommended
 next action. `verlyn workflow assert-edit-route --json` fails closed when the
 current checkout is not authorized for editing.
 
+Treat the JSON returned by Verlyn as workflow context, not as decoration.
+Before guessing the next step, inspect fields such as
+`recommended_next_action`, `next_action`, `recommended_next_command`,
+`review_context`, `task_rollup`, `workflow_gate`, `repair_status`, and
+`next_step`. These are product hints for the next public CLI command or repair
+path. Apply judgment against the user request and repo governance before
+acting.
+
 `verlyn changes list` defaults to the current user's working changes. For a
 diagnostic view across all visible owners and statuses, use:
 
@@ -78,6 +86,13 @@ Normal login:
 verlyn auth login --server <verlyn-api-url> --username <user>
 verlyn auth status
 ```
+
+When login runs from a repository checkout, inspect any returned
+`governance_status` field. It is a lightweight Verlyn product hint about
+installed governance version, missing required files, and the next public CLI
+command to run. In JSON mode, report or act on the returned
+`recommended_next_command`; in interactive mode, let the CLI prompt the user
+before installing or refreshing governance files.
 
 For first checkout of a repo already attached to a Verlyn project:
 
@@ -149,13 +164,18 @@ do not replace the required starter tickets as the normal path.
 Do not create ad hoc local workflow files as durable truth.
 
 For command intent and optional argument meanings, read
-`Documentation/guides/VERLYN_PUBLIC_CLI.md`. In normal logged-in repo work,
-avoid adding `--profile`, `--server`, `--repo-slug`, or `--target` unless you
-are intentionally bootstrapping or overriding context.
+`Documentation/guides/VERLYN_PUBLIC_CLI.md`. Normal Verlyn commands are
+repo-scoped from the current governed checkout plus the saved CLI login
+profile. In normal logged-in repo work, avoid adding `--profile`, `--server`,
+`--repo-slug`, or `--target` unless you are intentionally bootstrapping,
+diagnosing, automating outside a checkout, or overriding context for explicit
+recovery.
 
 Optional overrides such as `--profile`, `--server`, `--repo-slug`, `--target`,
 `--source-ref`, and `--commit-sha` are diagnostics, bootstrap, or recovery
-controls. They are not required in the normal checkout-bound workflow.
+controls. They are not required in the normal checkout-bound workflow, and
+using them routinely usually means auth, repo binding, or checkout state needs
+repair.
 
 ## Governance Pack And Skills
 

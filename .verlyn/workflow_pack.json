@@ -1,15 +1,16 @@
 {
   "product": "Verlyn",
-  "workflow_pack_version": "2026.06.19.1",
+  "workflow_pack_version": "2026.06.21.2",
   "repo_name": "3dprintpilot",
   "install_mode": "governance",
   "installed_at": "2026-06-18T17:17:08.937383+00:00",
-  "refreshed_at": "2026-06-20T12:30:49.764336+00:00",
+  "refreshed_at": "2026-06-21T16:11:00.403486+00:00",
   "governance_pack": {
     "name": "verlyn-standard",
-    "version": "2026.06.19.1",
+    "version": "2026.06.21.2",
+    "manifest_hash": "4b97c4f64f8cd2659c9e9a8ababebb6cf63968836013f59a7d2c056ab3d7c905",
     "source": "verlyn_api",
-    "refreshed_at": "2026-06-20T12:30:49.764336+00:00",
+    "refreshed_at": "2026-06-21T16:11:00.403486+00:00",
     "repo_owned_paths": [
       "RULES.md"
     ],
@@ -44,7 +45,7 @@
       },
       ".verlyn/runtime_context.json": {
         "owner": "verlyn",
-        "sha256": "5b0cdf57cb9cef2b83065037ef07d0ac0d5014ee2d015757db78d92ac1e4391e",
+        "sha256": "38490e778f3c36f57096453509dbc3a024db1f0b207785d475b1c1785ca31544",
         "required": true,
         "category": "governance",
         "purpose": "assistant_runtime_context"
@@ -58,14 +59,14 @@
       },
       ".verlyn/agent-skills/verlyn-public-cli.md": {
         "owner": "verlyn",
-        "sha256": "1132e939837505436d309b25c8d16e440d8e1b2d3a931d821e3839c7fc8c7551",
+        "sha256": "4b07c0428d27489fe1e1ccfb3006da6b98e531c2a3a9ba3afeea46abb817ba38",
         "required": false,
         "category": "governance",
         "purpose": "agent_skill_reference"
       },
       ".verlyn/.codex/skills/verlyn-public-cli/SKILL.md": {
         "owner": "verlyn",
-        "sha256": "9db32f7c72a3a4b74bb2be8447c32bb47c105de3880c91f4659fbe0817d17292",
+        "sha256": "13091103864006adedabacbd7713d61755d589ec07cb0380b29f182266ed6881",
         "required": false,
         "category": "governance",
         "purpose": "codex_skill"
@@ -121,14 +122,14 @@
       },
       "Documentation/guides/VERLYN_AGENT_WORKFLOW.md": {
         "owner": "verlyn",
-        "sha256": "448fffc15e600d339075e9ac965375716d2dc3b34ecc98e4c188748a61aa8595",
+        "sha256": "2693c027db3f5024202f668db95978176d5acab6e9e6cc20dc7d674a1aa78700",
         "required": false,
         "category": "documentation",
         "purpose": "workflow"
       },
       "Documentation/guides/VERLYN_PUBLIC_CLI.md": {
         "owner": "verlyn",
-        "sha256": "0ff9dacac180296e4fbc391a64d4c4ef507d06b0d3055f893cd0cc75771cc8f4",
+        "sha256": "4248d0ee732247247518c29990e3c50d41743a07bfb806134ffeaab016246fec",
         "required": true,
         "category": "documentation",
         "purpose": "cli_reference"
@@ -162,5 +163,6 @@
         "purpose": "product_ownership"
       }
     }
-  }
+  },
+  "manifest_hash": "4b97c4f64f8cd2659c9e9a8ababebb6cf63968836013f59a7d2c056ab3d7c905"
 }
