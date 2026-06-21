@@ -2,6 +2,9 @@ import {
   type CreatePrinterInput,
   type DiscoveredPrinter,
   type Printer,
+  type PrinterActionResult,
+  type PrinterFile,
+  type PrinterJobStatus,
   type PrinterScanResult,
   type PrinterScanSettings
 } from "../types";
@@ -64,6 +67,30 @@ type ApiPrinterScan = {
   }>;
 };
 
+type ApiPrinterJobStatus = {
+  printer_id: number;
+  state: string;
+  filename: string | null;
+  progress: number | null;
+  message: string | null;
+  raw_status: Record<string, unknown>;
+  observed_at: string;
+};
+
+type ApiPrinterFile = {
+  path: string;
+  size: number | null;
+  modified: number | null;
+  permissions: string | null;
+};
+
+type ApiPrinterActionResult = {
+  printer_id: number;
+  action: string;
+  accepted: boolean;
+  raw_response: unknown;
+};
+
 export async function listPrinters(): Promise<Printer[]> {
   const response = await apiFetch("/api/printers");
   if (!response.ok) {
@@ -71,6 +98,60 @@ export async function listPrinters(): Promise<Printer[]> {
   }
   const printers = (await response.json()) as ApiPrinter[];
   return printers.map(fromApiPrinter);
+}
+
+export async function getPrinterJobStatus(printerId: number): Promise<PrinterJobStatus> {
+  const response = await apiFetch(`/api/printers/${printerId}/job-status`);
+  if (!response.ok) {
+    throw new Error(`Printer job status failed with HTTP ${response.status}`);
+  }
+  return fromApiPrinterJobStatus(await response.json());
+}
+
+export async function listPrinterFiles(printerId: number): Promise<PrinterFile[]> {
+  const response = await apiFetch(`/api/printers/${printerId}/files`);
+  if (!response.ok) {
+    throw new Error(`Printer file list failed with HTTP ${response.status}`);
+  }
+  const files = (await response.json()) as ApiPrinterFile[];
+  return files.map(fromApiPrinterFile);
+}
+
+export async function uploadPrinterFile(printerId: number, file: File): Promise<PrinterActionResult> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await apiFetch(`/api/printers/${printerId}/files`, {
+    method: "POST",
+    body
+  }, { timeoutMs: 180_000 });
+  if (!response.ok) {
+    throw new Error(`Printer file upload failed with HTTP ${response.status}`);
+  }
+  return fromApiPrinterActionResult(await response.json());
+}
+
+export async function startPrinterFile(printerId: number, filename: string): Promise<PrinterActionResult> {
+  const response = await apiFetch(`/api/printers/${printerId}/print/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename })
+  });
+  if (!response.ok) {
+    throw new Error(`Printer start failed with HTTP ${response.status}`);
+  }
+  return fromApiPrinterActionResult(await response.json());
+}
+
+export async function pausePrinterPrint(printerId: number): Promise<PrinterActionResult> {
+  return postPrinterAction(printerId, "pause");
+}
+
+export async function resumePrinterPrint(printerId: number): Promise<PrinterActionResult> {
+  return postPrinterAction(printerId, "resume");
+}
+
+export async function cancelPrinterPrint(printerId: number): Promise<PrinterActionResult> {
+  return postPrinterAction(printerId, "cancel");
 }
 
 export async function createPrinter(input: CreatePrinterInput): Promise<Printer> {
@@ -222,5 +303,43 @@ function fromApiPrinter(printer: ApiPrinter): Printer {
     buildVolumeXmm: printer.build_volume_x_mm,
     buildVolumeYmm: printer.build_volume_y_mm,
     buildVolumeZmm: printer.build_volume_z_mm
+  };
+}
+
+async function postPrinterAction(printerId: number, action: "pause" | "resume" | "cancel"): Promise<PrinterActionResult> {
+  const response = await apiFetch(`/api/printers/${printerId}/print/${action}`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`Printer ${action} failed with HTTP ${response.status}`);
+  }
+  return fromApiPrinterActionResult(await response.json());
+}
+
+function fromApiPrinterJobStatus(status: ApiPrinterJobStatus): PrinterJobStatus {
+  return {
+    printerId: status.printer_id,
+    state: status.state,
+    filename: status.filename,
+    progress: status.progress,
+    message: status.message,
+    rawStatus: status.raw_status,
+    observedAt: status.observed_at
+  };
+}
+
+function fromApiPrinterFile(file: ApiPrinterFile): PrinterFile {
+  return {
+    path: file.path,
+    size: file.size,
+    modified: file.modified,
+    permissions: file.permissions
+  };
+}
+
+function fromApiPrinterActionResult(result: ApiPrinterActionResult): PrinterActionResult {
+  return {
+    printerId: result.printer_id,
+    action: result.action,
+    accepted: result.accepted,
+    rawResponse: result.raw_response
   };
 }

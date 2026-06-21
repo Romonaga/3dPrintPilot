@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { reconcileOpenAiCosts, getAiAccountingStatus } from "./ai-usage/api/aiUsageApi";
 import { runCompatibilityChecks } from "./compatibility/api/compatibilityApi";
 import { downloadOperationsBackup } from "./operations/api";
-import { scanPrinters } from "./printers/api/printersApi";
+import {
+  cancelPrinterPrint,
+  getPrinterJobStatus,
+  listPrinterFiles,
+  pausePrinterPrint,
+  resumePrinterPrint,
+  scanPrinters,
+  startPrinterFile,
+  uploadPrinterFile
+} from "./printers/api/printersApi";
 import { getFeatureSettings, saveProviderSecret } from "./settings/api/settingsApi";
 import { createSiteScan, updateSiteAdapter } from "./site-scanning/api/siteScanningApi";
 
@@ -124,6 +133,46 @@ describe("domain API adapters", () => {
     expect(result.groups[0].identityKey).toBe("mdns:_moonraker._tcp.local.:printer._moonraker._tcp.local.");
     expect(result.groups[0].matchedPrinterId).toBe(9);
     expect(result.groups[0].endpoints[0].matchedPrinterId).toBe(9);
+  });
+
+  it("maps Moonraker file and job control endpoints", async () => {
+    mockJson({
+      printer_id: 4,
+      state: "printing",
+      filename: "benchy.gcode",
+      progress: 0.42,
+      message: "Printing",
+      raw_status: { print_stats: { state: "printing" } },
+      observed_at: "2026-06-21T16:00:00Z"
+    });
+    await expect(getPrinterJobStatus(4)).resolves.toMatchObject({ printerId: 4, progress: 0.42 });
+
+    mockJson([{ path: "benchy.gcode", size: 2048, modified: 1782067200, permissions: "rw" }]);
+    await expect(listPrinterFiles(4)).resolves.toEqual([
+      { path: "benchy.gcode", size: 2048, modified: 1782067200, permissions: "rw" }
+    ]);
+
+    mockJson({ printer_id: 4, action: "upload", accepted: true, raw_response: { result: "ok" } }, 201);
+    const upload = await uploadPrinterFile(4, new File(["gcode"], "benchy.gcode", { type: "text/plain" }));
+    expect(upload.accepted).toBe(true);
+    const [, uploadInit] = vi.mocked(fetch).mock.calls[2];
+    expect(uploadInit?.method).toBe("POST");
+    expect(uploadInit?.body).toBeInstanceOf(FormData);
+    expect(uploadInit?.headers).toBeInstanceOf(Headers);
+    expect((uploadInit?.headers as Headers).has("Content-Type")).toBe(false);
+
+    mockJson({ printer_id: 4, action: "start", accepted: true, raw_response: { result: "ok" } });
+    await expect(startPrinterFile(4, "benchy.gcode")).resolves.toMatchObject({ action: "start" });
+    const [startUrl, startInit] = vi.mocked(fetch).mock.calls[3];
+    expect(startUrl).toBe("/api/printers/4/print/start");
+    expect(JSON.parse(String(startInit?.body))).toEqual({ filename: "benchy.gcode" });
+
+    mockJson({ printer_id: 4, action: "pause", accepted: true, raw_response: {} });
+    await expect(pausePrinterPrint(4)).resolves.toMatchObject({ action: "pause" });
+    mockJson({ printer_id: 4, action: "resume", accepted: true, raw_response: {} });
+    await expect(resumePrinterPrint(4)).resolves.toMatchObject({ action: "resume" });
+    mockJson({ printer_id: 4, action: "cancel", accepted: true, raw_response: {} });
+    await expect(cancelPrinterPrint(4)).resolves.toMatchObject({ action: "cancel" });
   });
 
   it("maps compatibility checks and rejects backend failures", async () => {

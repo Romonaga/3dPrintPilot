@@ -17,6 +17,30 @@ export type Printer = {
   buildVolumeZmm: number | null;
 };
 
+export type PrinterJobStatus = {
+  printerId: number;
+  state: string;
+  filename: string | null;
+  progress: number | null;
+  message: string | null;
+  rawStatus: Record<string, unknown>;
+  observedAt: string;
+};
+
+export type PrinterFile = {
+  path: string;
+  size: number | null;
+  modified: number | null;
+  permissions: string | null;
+};
+
+export type PrinterActionResult = {
+  printerId: number;
+  action: string;
+  accepted: boolean;
+  rawResponse: unknown;
+};
+
 export type DiscoveredPrinter = {
   name: string;
   host: string;
