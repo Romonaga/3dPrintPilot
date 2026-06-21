@@ -91,6 +91,8 @@ def test_operations_backup_export_redacts_provider_secret_payloads():
     assert "site_auth_profiles" in body["tables"]
     assert "encrypted_value" not in str(body["tables"]["site_auth_profiles"])
     assert "secret_fingerprint" not in str(body["tables"]["site_auth_profiles"])
+    assert "model_file_payloads" in body["tables"]
+    assert "compressed_bytes" not in str(body["tables"]["model_file_payloads"])
 
 
 def test_site_auth_profile_api_masks_secret_values():

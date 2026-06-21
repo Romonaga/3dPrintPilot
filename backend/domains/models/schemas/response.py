@@ -19,6 +19,17 @@ class ModelGeometryResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ModelFilePayloadResponse(BaseModel):
+    source_project_url: str
+    source_file_url: str
+    compression: str
+    original_size_bytes: int
+    compressed_size_bytes: int
+    original_sha256: str
+    compressed_sha256: str
+    created_at: str
+
+
 class ModelFileResponse(BaseModel):
     id: int
     filename: str
@@ -30,6 +41,7 @@ class ModelFileResponse(BaseModel):
     analysis_job_id: int | None
     analysis_warnings: list[str] = Field(default_factory=list)
     geometry: ModelGeometryResponse | None = None
+    payload: ModelFilePayloadResponse | None = None
     created_at: str
 
 

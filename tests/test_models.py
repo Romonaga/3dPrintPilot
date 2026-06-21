@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from gzip import decompress as gzip_decompress
+from hashlib import sha256
 from io import BytesIO
 from types import SimpleNamespace
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -10,7 +12,7 @@ from fastapi.testclient import TestClient
 from backend.app.main import create_app
 from backend.domains.models.entities import GeometryParseError
 from backend.domains.models.routes import get_model_store
-from backend.domains.models.service import MAX_UPLOAD_BYTES, analyze_model_bytes
+from backend.domains.models.service import MAX_UPLOAD_BYTES, analyze_model_bytes, compress_model_payload
 from tests.helpers import allow_anonymous_until_bootstrap
 
 
@@ -40,6 +42,7 @@ class FakeModelStore:
         self.saved.append(kwargs)
         now = datetime.now(UTC)
         analysis = kwargs["analysis"]
+        payload = kwargs.get("payload")
         geometry = SimpleNamespace(
             units=analysis.units,
             size_x_mm=analysis.size_x_mm,
@@ -66,12 +69,67 @@ class FakeModelStore:
             analysis_job_id=42,
             analysis_warnings=list(analysis.warnings),
             geometry=geometry,
+            payload=payload,
             created_at=now,
         )
         return SimpleNamespace(
             id=3,
             title=kwargs["title"],
             source_url=kwargs["source_url"],
+            status="analyzed",
+            created_at=now,
+            updated_at=now,
+            files=[model_file],
+        )
+
+    def save_downloaded_model(self, **kwargs):
+        self.saved.append(kwargs)
+        now = datetime.now(UTC)
+        analysis = kwargs["analysis"]
+        compressed_payload = kwargs["payload"]
+        payload = SimpleNamespace(
+            source_project_url=kwargs["source_project_url"],
+            source_file_url=kwargs["source_file_url"],
+            compression=compressed_payload.compression,
+            original_size_bytes=compressed_payload.original_size_bytes,
+            compressed_size_bytes=compressed_payload.compressed_size_bytes,
+            original_sha256=compressed_payload.original_sha256,
+            compressed_sha256=compressed_payload.compressed_sha256,
+            created_at=now,
+        )
+        geometry = SimpleNamespace(
+            units=analysis.units,
+            size_x_mm=analysis.size_x_mm,
+            size_y_mm=analysis.size_y_mm,
+            size_z_mm=analysis.size_z_mm,
+            min_x_mm=analysis.min_x_mm,
+            min_y_mm=analysis.min_y_mm,
+            min_z_mm=analysis.min_z_mm,
+            max_x_mm=analysis.max_x_mm,
+            max_y_mm=analysis.max_y_mm,
+            max_z_mm=analysis.max_z_mm,
+            volume_mm3=analysis.volume_mm3,
+            triangle_count=analysis.triangle_count,
+            warnings=list(analysis.warnings),
+        )
+        model_file = SimpleNamespace(
+            id=8,
+            filename=kwargs["filename"],
+            content_type=kwargs["content_type"],
+            file_format=analysis.file_format,
+            size_bytes=compressed_payload.original_size_bytes,
+            storage_status="stored_compressed",
+            analysis_status="completed",
+            analysis_job_id=43,
+            analysis_warnings=list(analysis.warnings),
+            geometry=geometry,
+            payload=payload,
+            created_at=now,
+        )
+        return SimpleNamespace(
+            id=4,
+            title=kwargs["title"],
+            source_url=kwargs["source_project_url"],
             status="analyzed",
             created_at=now,
             updated_at=now,
@@ -132,6 +190,54 @@ def test_model_upload_endpoint_persists_geometry_and_source_metadata():
     assert store.saved[0]["created_by_user_id"] is None
 
 
+def test_model_import_downloaded_file_stores_compressed_payload_metadata_without_returning_bytes():
+    store = FakeModelStore()
+    app = create_app()
+    app.dependency_overrides[get_model_store] = lambda: store
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/models/imports/downloaded-file",
+        data={
+            "title": "Downloaded Triangle",
+            "source_project_url": "https://models.example/projects/triangle",
+            "source_file_url": "https://cdn.models.example/files/triangle.stl",
+        },
+        files={"file": ("../unsafe-name.stl", ASCII_STL, "model/stl")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    payload = body["files"][0]["payload"]
+    assert body["source_url"] == "https://models.example/projects/triangle"
+    assert body["files"][0]["storage_status"] == "stored_compressed"
+    assert payload["source_project_url"] == "https://models.example/projects/triangle"
+    assert payload["source_file_url"] == "https://cdn.models.example/files/triangle.stl"
+    assert payload["compression"] == "gzip"
+    assert payload["original_size_bytes"] == len(ASCII_STL)
+    assert payload["original_sha256"] == sha256(ASCII_STL).hexdigest()
+    assert "compressed_bytes" not in response.text
+    stored_payload = store.saved[0]["payload"]
+    assert gzip_decompress(stored_payload.compressed_bytes) == ASCII_STL
+    assert store.saved[0]["filename"] == "unsafe-name.stl"
+
+
+def test_model_import_downloaded_file_requires_absolute_source_urls():
+    app = create_app()
+    app.dependency_overrides[get_model_store] = lambda: FakeModelStore()
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/models/imports/downloaded-file",
+        data={"source_project_url": "/local/project", "source_file_url": "https://cdn.models.example/files/triangle.stl"},
+        files={"file": ("triangle.stl", ASCII_STL, "model/stl")},
+    )
+
+    assert response.status_code == 400
+
+
 def test_model_upload_rejects_oversized_files_before_parsing():
     app = create_app()
     app.dependency_overrides[get_model_store] = lambda: FakeModelStore()
@@ -144,6 +250,17 @@ def test_model_upload_rejects_oversized_files_before_parsing():
     )
 
     assert response.status_code == 413
+
+
+def test_compressed_payload_round_trips_with_hash_metadata():
+    payload = compress_model_payload(ASCII_STL)
+
+    assert payload.compression == "gzip"
+    assert gzip_decompress(payload.compressed_bytes) == ASCII_STL
+    assert payload.original_size_bytes == len(ASCII_STL)
+    assert payload.compressed_size_bytes == len(payload.compressed_bytes)
+    assert payload.original_sha256 == sha256(ASCII_STL).hexdigest()
+    assert payload.compressed_sha256 == sha256(payload.compressed_bytes).hexdigest()
 
 
 def _sample_3mf() -> bytes:
