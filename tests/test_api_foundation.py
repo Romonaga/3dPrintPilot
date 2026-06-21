@@ -16,6 +16,30 @@ class FakeSiteScanStore:
     def enabled_site_keys(self, declarations):
         return frozenset(declaration.site_key for declaration in declarations)
 
+    def list_adapter_records(self, declarations):
+        return [
+            type(
+                "FakeAdapterRecord",
+                (),
+                {
+                    "site_key": declaration.site_key,
+                    "display_name": declaration.display_name,
+                    "base_url": declaration.base_url,
+                    "login_url": declaration.login_url,
+                    "enabled": declaration.enabled,
+                    "supports_downloads": declaration.supports_downloads,
+                    "auth_capabilities": {
+                        "supported_auth_modes": list(declaration.supported_auth_modes),
+                        "auth_storage_notes": declaration.auth_storage_notes,
+                    },
+                    "allowed_hosts": {"hosts": list(declaration.allowed_hosts)},
+                    "default_limits": declaration.default_limits,
+                    "robots_terms_notes": declaration.robots_terms_notes,
+                },
+            )()
+            for declaration in declarations
+        ]
+
     def save_scan_result(self, result, requested_by_user_id=None):
         return FakeSiteScanRun()
 
@@ -24,6 +48,7 @@ class FakeSiteAuthProfile:
     site_key = "printables"
     auth_mode = "bearer_token"
     label = "Personal account"
+    account_identifier = "maker@example.test"
     header_name = None
     encrypted_value = "encrypted-secret"
     last_four = "1234"
@@ -91,6 +116,7 @@ def test_operations_backup_export_redacts_provider_secret_payloads():
     assert "site_auth_profiles" in body["tables"]
     assert "encrypted_value" not in str(body["tables"]["site_auth_profiles"])
     assert "secret_fingerprint" not in str(body["tables"]["site_auth_profiles"])
+    assert "account_identifier" not in str(body["tables"]["site_auth_profiles"])
     assert "model_file_payloads" in body["tables"]
     assert "compressed_bytes" not in str(body["tables"]["model_file_payloads"])
 
@@ -107,10 +133,16 @@ def test_site_auth_profile_api_masks_secret_values():
     assert "do-not-return-this-token" not in list_response.text
     printables_profile = next(item for item in list_response.json() if item["site_key"] == "printables")
     assert printables_profile["masked_value"] == "****1234"
+    assert printables_profile["masked_account_identifier"] == "m***@example.test"
 
     save_response = client.put(
         "/api/site-scanning/auth-profiles/printables",
-        json={"auth_mode": "bearer_token", "secret_value": "do-not-return-this-token-1234", "label": "Personal account"},
+        json={
+            "auth_mode": "bearer_token",
+            "secret_value": "do-not-return-this-token-1234",
+            "label": "Personal account",
+            "account_identifier": "maker@example.test",
+        },
     )
     assert save_response.status_code == 200
     assert save_response.json()["configured"] is True
@@ -118,6 +150,22 @@ def test_site_auth_profile_api_masks_secret_values():
 
     delete_response = client.delete("/api/site-scanning/auth-profiles/printables")
     assert delete_response.status_code == 204
+
+
+def test_site_scanning_adapter_api_exposes_printables_auth_capabilities():
+    app = create_app()
+    app.dependency_overrides[get_site_scan_store] = lambda: FakeSiteScanStore()
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.get("/api/site-scanning/adapters")
+
+    assert response.status_code == 200
+    printables = next(adapter for adapter in response.json() if adapter["site_key"] == "printables")
+    assert printables["base_url"] == "https://www.printables.com/"
+    assert printables["login_url"] == "https://www.printables.com/login"
+    assert "username_password" in printables["supported_auth_modes"]
+    assert "browser_session" in printables["supported_auth_modes"]
 
 
 def test_site_scanning_api_returns_metrics_for_metadata_only_scan():

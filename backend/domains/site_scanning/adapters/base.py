@@ -11,8 +11,12 @@ class SiteAdapterDeclaration:
     site_key: str
     display_name: str
     allowed_hosts: tuple[str, ...]
+    base_url: str | None = None
+    login_url: str | None = None
     enabled: bool = True
     supports_downloads: bool = False
+    supported_auth_modes: tuple[str, ...] = ("none",)
+    auth_storage_notes: str | None = None
     default_limits: dict = field(default_factory=dict)
     robots_terms_notes: str | None = None
 

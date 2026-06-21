@@ -12,7 +12,13 @@ import {
   startPrinterFile,
   uploadPrinterFile
 } from "./printers/api/printersApi";
-import { getFeatureSettings, saveProviderSecret } from "./settings/api/settingsApi";
+import {
+  deleteSourceAuthProfile,
+  getFeatureSettings,
+  listModelSourceSites,
+  saveProviderSecret,
+  saveSourceAuthProfile
+} from "./settings/api/settingsApi";
 import { createSiteScan, updateSiteAdapter } from "./site-scanning/api/siteScanningApi";
 
 beforeEach(() => {
@@ -233,8 +239,12 @@ describe("domain API adapters", () => {
     mockJson({
       site_key: "printables",
       display_name: "Printables",
+      base_url: "https://www.printables.com/",
+      login_url: "https://www.printables.com/login",
       enabled: false,
       supports_downloads: false,
+      supported_auth_modes: ["none", "username_password", "browser_session"],
+      auth_storage_notes: "Do not store Google passwords.",
       allowed_hosts: ["printables.com"],
       default_limits: {},
       robots_terms_notes: "metadata only"
@@ -286,6 +296,77 @@ describe("domain API adapters", () => {
       perHostConcurrency: 1
     });
     expect(scan.candidates[0].attribution).toBe("example.test");
+  });
+
+  it("maps model source auth status and writes selected auth modes", async () => {
+    mockJson([
+      {
+        site_key: "printables",
+        display_name: "Printables",
+        base_url: "https://www.printables.com/",
+        login_url: "https://www.printables.com/login",
+        enabled: true,
+        supports_downloads: false,
+        supported_auth_modes: ["none", "username_password", "browser_session"],
+        auth_storage_notes: "Do not store Google passwords.",
+        allowed_hosts: ["printables.com", "www.printables.com"],
+        default_limits: {},
+        robots_terms_notes: "metadata only"
+      }
+    ]);
+    mockJson([
+      {
+        site_key: "printables",
+        display_name: "Printables",
+        auth_mode: "browser_session",
+        label: "Google account",
+        account_identifier: "maker@example.test",
+        masked_account_identifier: "m***@example.test",
+        header_name: null,
+        configured: false,
+        enabled: true,
+        masked_value: null,
+        updated_at: null
+      }
+    ]);
+
+    const sites = await listModelSourceSites();
+
+    expect(sites[0].loginUrl).toBe("https://www.printables.com/login");
+    expect(sites[0].supportedAuthModes).toContain("browser_session");
+    expect(sites[0].authProfile.maskedAccountIdentifier).toBe("m***@example.test");
+
+    mockJson({
+      site_key: "printables",
+      display_name: "Printables",
+      auth_mode: "username_password",
+      label: "Printables account",
+      account_identifier: "maker@example.test",
+      masked_account_identifier: "m***@example.test",
+      header_name: null,
+      configured: true,
+      enabled: true,
+      masked_value: "****1234",
+      updated_at: "2026-06-21T17:00:00Z"
+    });
+    await saveSourceAuthProfile("printables", {
+      authMode: "username_password",
+      accountIdentifier: "maker@example.test",
+      label: "Printables account",
+      secretValue: "password-1234"
+    });
+    const [, saveInit] = vi.mocked(fetch).mock.calls[2];
+    expect(JSON.parse(String(saveInit?.body))).toMatchObject({
+      auth_mode: "username_password",
+      account_identifier: "maker@example.test",
+      secret_value: "password-1234"
+    });
+
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await deleteSourceAuthProfile("printables");
+    const [deleteUrl, deleteInit] = vi.mocked(fetch).mock.calls[3];
+    expect(deleteUrl).toBe("/api/site-scanning/auth-profiles/printables");
+    expect(deleteInit?.method).toBe("DELETE");
   });
 
   it("downloads operations backup with a stable filename", async () => {

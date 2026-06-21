@@ -83,6 +83,7 @@ def export_backup(
                 "site_key": profile.site_key,
                 "auth_mode": profile.auth_mode,
                 "label": profile.label,
+                "masked_account_identifier": _mask_account_identifier(profile.account_identifier),
                 "header_name": profile.header_name,
                 "configured": profile.encrypted_value is not None,
                 "last_four": profile.last_four,
@@ -129,3 +130,14 @@ def _serialize(value):
     if isinstance(value, Decimal):
         return str(value)
     return value
+
+
+def _mask_account_identifier(value: str | None) -> str | None:
+    if not value:
+        return None
+    if "@" not in value:
+        return value[:1] + "***" if len(value) > 1 else "*"
+    local, domain = value.split("@", 1)
+    if not local:
+        return f"***@{domain}"
+    return f"{local[:1]}***@{domain}"

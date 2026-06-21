@@ -12,8 +12,9 @@ from backend.domains.site_scanning.adapters.base import SiteAdapterDeclaration
 from backend.domains.site_scanning.entities import ScanResult
 from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun, SiteAuthProfile
 
-SITE_AUTH_MODES = frozenset({"none", "api_token", "bearer_token", "cookie_header"})
-SECRET_AUTH_MODES = frozenset({"api_token", "bearer_token", "cookie_header"})
+SITE_AUTH_MODES = frozenset({"none", "api_token", "bearer_token", "cookie_header", "username_password", "browser_session"})
+REQUIRED_SECRET_AUTH_MODES = frozenset({"api_token", "bearer_token", "cookie_header", "username_password"})
+OPTIONAL_SECRET_AUTH_MODES = frozenset({"browser_session"})
 HEADER_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,119}$")
 
 
@@ -23,6 +24,9 @@ class SiteAuthContext:
     auth_mode: str
     enabled: bool
     headers: dict[str, str]
+    account_identifier: str | None = None
+    username: str | None = None
+    password: str | None = None
 
 
 class SiteScanStore:
@@ -40,6 +44,9 @@ class SiteScanStore:
                 display_name=declaration.display_name,
                 enabled=declaration.enabled,
                 supports_downloads=declaration.supports_downloads,
+                base_url=declaration.base_url,
+                login_url=declaration.login_url,
+                auth_capabilities=_auth_capabilities_from_declaration(declaration),
                 allowed_hosts={"hosts": list(declaration.allowed_hosts)},
                 default_limits=declaration.default_limits,
                 robots_terms_notes=declaration.robots_terms_notes,
@@ -47,6 +54,18 @@ class SiteScanStore:
             self._session.add(record)
             configured[declaration.site_key] = record
             changed = True
+        for declaration in declarations:
+            record = configured[declaration.site_key]
+            next_capabilities = _auth_capabilities_from_declaration(declaration)
+            if (
+                record.base_url != declaration.base_url
+                or record.login_url != declaration.login_url
+                or record.auth_capabilities != next_capabilities
+            ):
+                record.base_url = declaration.base_url
+                record.login_url = declaration.login_url
+                record.auth_capabilities = next_capabilities
+                changed = True
         if changed:
             self._session.commit()
         return [configured[declaration.site_key] for declaration in declarations]
@@ -182,12 +201,14 @@ class SiteAuthProfileStore:
         auth_mode: str,
         secret_value: str | None,
         label: str | None = None,
+        account_identifier: str | None = None,
         header_name: str | None = None,
         enabled: bool = True,
     ) -> SiteAuthProfile:
         normalized_site_key = _require_known_site_key(declarations, site_key)
         clean_mode = _normalize_auth_mode(auth_mode)
         clean_label = (label or "").strip()[:160] or None
+        clean_account_identifier = _normalize_account_identifier(clean_mode, account_identifier)
         clean_header = _normalize_header_name(clean_mode, header_name)
         clean_secret = _normalize_secret_value(clean_mode, secret_value)
         now = datetime.now(UTC)
@@ -198,6 +219,7 @@ class SiteAuthProfileStore:
                 site_key=normalized_site_key,
                 auth_mode=clean_mode,
                 label=clean_label,
+                account_identifier=clean_account_identifier,
                 header_name=clean_header,
                 enabled=enabled,
                 updated_at=now,
@@ -206,6 +228,7 @@ class SiteAuthProfileStore:
         else:
             existing.auth_mode = clean_mode
             existing.label = clean_label
+            existing.account_identifier = clean_account_identifier
             existing.header_name = clean_header
             existing.enabled = enabled
             existing.updated_at = now
@@ -252,6 +275,7 @@ class SiteAuthProfileStore:
                 auth_mode=profile.auth_mode,
                 enabled=True,
                 headers={profile.header_name: secret_value},
+                account_identifier=profile.account_identifier,
             )
         if profile.auth_mode == "bearer_token":
             return SiteAuthContext(
@@ -259,13 +283,25 @@ class SiteAuthProfileStore:
                 auth_mode=profile.auth_mode,
                 enabled=True,
                 headers={"Authorization": f"Bearer {secret_value}"},
+                account_identifier=profile.account_identifier,
             )
-        if profile.auth_mode == "cookie_header":
+        if profile.auth_mode in {"cookie_header", "browser_session"}:
             return SiteAuthContext(
                 site_key=normalized_site_key,
                 auth_mode=profile.auth_mode,
                 enabled=True,
                 headers={"Cookie": secret_value},
+                account_identifier=profile.account_identifier,
+            )
+        if profile.auth_mode == "username_password":
+            return SiteAuthContext(
+                site_key=normalized_site_key,
+                auth_mode=profile.auth_mode,
+                enabled=True,
+                headers={},
+                account_identifier=profile.account_identifier,
+                username=profile.account_identifier,
+                password=secret_value,
             )
         return SiteAuthContext(site_key=normalized_site_key, auth_mode=profile.auth_mode, enabled=False, headers={})
 
@@ -274,6 +310,24 @@ def mask_site_auth_secret(profile: SiteAuthProfile | None) -> str | None:
     if profile is None or profile.last_four is None:
         return None
     return f"****{profile.last_four}"
+
+
+def mask_account_identifier(value: str | None) -> str | None:
+    if not value:
+        return None
+    if "@" not in value:
+        return value[:1] + "***" if len(value) > 1 else "*"
+    local, domain = value.split("@", 1)
+    if not local:
+        return f"***@{domain}"
+    return f"{local[:1]}***@{domain}"
+
+
+def _auth_capabilities_from_declaration(declaration: SiteAdapterDeclaration) -> dict:
+    return {
+        "supported_auth_modes": list(declaration.supported_auth_modes),
+        "auth_storage_notes": declaration.auth_storage_notes,
+    }
 
 
 def _require_known_site_key(declarations: list[SiteAdapterDeclaration], site_key: str) -> str:
@@ -303,12 +357,25 @@ def _normalize_header_name(auth_mode: str, header_name: str | None) -> str | Non
     return clean_header
 
 
+def _normalize_account_identifier(auth_mode: str, account_identifier: str | None) -> str | None:
+    clean_identifier = (account_identifier or "").strip()[:255]
+    if auth_mode not in {"username_password", "browser_session"}:
+        return None
+    if not clean_identifier:
+        raise ValueError("Account-linked auth requires an account identifier")
+    if "\x00" in clean_identifier:
+        raise ValueError("Account identifier contains invalid characters")
+    return clean_identifier
+
+
 def _normalize_secret_value(auth_mode: str, secret_value: str | None) -> str | None:
     clean_secret = (secret_value or "").strip()
     if auth_mode == "none":
         return None
-    if auth_mode in SECRET_AUTH_MODES and not clean_secret:
+    if auth_mode in REQUIRED_SECRET_AUTH_MODES and not clean_secret:
         raise ValueError("Site auth secret value cannot be empty")
+    if auth_mode in OPTIONAL_SECRET_AUTH_MODES and not clean_secret:
+        return None
     if "\x00" in clean_secret:
         raise ValueError("Site auth secret value contains invalid characters")
     return clean_secret

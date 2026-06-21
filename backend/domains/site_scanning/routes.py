@@ -16,7 +16,12 @@ from backend.domains.site_scanning.schemas.response import (
     SiteScanSummaryResponse,
 )
 from backend.domains.site_scanning.service import SiteScanService
-from backend.domains.site_scanning.store import SiteAuthProfileStore, SiteScanStore, mask_site_auth_secret
+from backend.domains.site_scanning.store import (
+    SiteAuthProfileStore,
+    SiteScanStore,
+    mask_account_identifier,
+    mask_site_auth_secret,
+)
 from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/site-scanning", tags=["site-scanning"])
@@ -40,8 +45,12 @@ def list_adapters(
         SiteScanAdapterResponse(
             site_key=record.site_key,
             display_name=record.display_name,
+            base_url=record.base_url,
+            login_url=record.login_url,
             enabled=record.enabled,
             supports_downloads=record.supports_downloads,
+            supported_auth_modes=list((record.auth_capabilities or {}).get("supported_auth_modes") or ["none"]),
+            auth_storage_notes=(record.auth_capabilities or {}).get("auth_storage_notes"),
             allowed_hosts=list((record.allowed_hosts or {}).get("hosts") or []),
             default_limits=record.default_limits or {},
             robots_terms_notes=record.robots_terms_notes,
@@ -63,8 +72,12 @@ def update_adapter(
     return SiteScanAdapterResponse(
         site_key=record.site_key,
         display_name=record.display_name,
+        base_url=record.base_url,
+        login_url=record.login_url,
         enabled=record.enabled,
         supports_downloads=record.supports_downloads,
+        supported_auth_modes=list((record.auth_capabilities or {}).get("supported_auth_modes") or ["none"]),
+        auth_storage_notes=(record.auth_capabilities or {}).get("auth_storage_notes"),
         allowed_hosts=list((record.allowed_hosts or {}).get("hosts") or []),
         default_limits=record.default_limits or {},
         robots_terms_notes=record.robots_terms_notes,
@@ -97,6 +110,7 @@ def upsert_site_auth_profile(
             auth_mode=request.auth_mode,
             secret_value=request.secret_value,
             label=request.label,
+            account_identifier=request.account_identifier,
             header_name=request.header_name,
             enabled=request.enabled,
         )
@@ -149,6 +163,8 @@ def _site_auth_profile_response(declaration, record) -> SiteAuthProfileResponse:
         display_name=declaration.display_name,
         auth_mode=record.auth_mode if record is not None else "none",
         label=record.label if record is not None else None,
+        account_identifier=record.account_identifier if record is not None else None,
+        masked_account_identifier=mask_account_identifier(record.account_identifier if record is not None else None),
         header_name=record.header_name if record is not None else None,
         configured=record is not None and record.encrypted_value is not None,
         enabled=record.enabled if record is not None else False,

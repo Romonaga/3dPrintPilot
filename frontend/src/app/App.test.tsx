@@ -246,6 +246,92 @@ describe("App", () => {
     expect(screen.getByText("1,024")).toBeInTheDocument();
   });
 
+  it("shows model source account configuration without collecting Google passwords", async () => {
+    mockApiFetch((input) => {
+      const url = String(input);
+      if (url === "/api/resources/status") {
+        return authenticatedFetch(input);
+      }
+      if (url === "/api/settings/features") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              openai_fallback_enabled: false,
+              openai_fallback_model: "gpt-5.4",
+              ai_quality_threshold: 0.72,
+              openai_monthly_budget_usd: "5.00",
+              openai_single_request_budget_usd: "0.25",
+              cost_reconciliation_required: true,
+              local_ai_provider: "ollama",
+              local_ai_default_model: "qwen"
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/settings/provider-secrets") {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      if (url === "/api/site-scanning/adapters") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                site_key: "printables",
+                display_name: "Printables public model pages",
+                base_url: "https://www.printables.com/",
+                login_url: "https://www.printables.com/login",
+                enabled: true,
+                supports_downloads: false,
+                supported_auth_modes: ["none", "username_password", "browser_session"],
+                auth_storage_notes: "Google login must use browser-assisted session linking.",
+                allowed_hosts: ["printables.com", "www.printables.com"],
+                default_limits: {},
+                robots_terms_notes: "metadata only"
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/site-scanning/auth-profiles") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                site_key: "printables",
+                display_name: "Printables public model pages",
+                auth_mode: "none",
+                label: null,
+                account_identifier: null,
+                masked_account_identifier: null,
+                header_name: null,
+                configured: false,
+                enabled: false,
+                masked_value: null,
+                updated_at: null
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      return authenticatedFetch(input);
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Settings" }));
+
+    expect(await screen.findByRole("heading", { name: "Model Source Accounts" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Printables public model pages" })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Auth type"), "browser_session");
+
+    expect(screen.getByLabelText("Session cookie/header")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Printables password")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Google password")).not.toBeInTheDocument();
+  });
+
   it("opens model uploads from the dashboard Upload Model action", async () => {
     mockApiFetch((input) => {
       if (String(input) === "/api/models") {

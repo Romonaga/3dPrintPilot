@@ -64,6 +64,14 @@ def test_site_scan_run_has_chartable_status_and_timing_columns():
     assert "finished_at" in columns
 
 
+def test_model_site_adapter_stores_source_site_auth_metadata():
+    columns = ModelSiteAdapter.__table__.columns
+
+    assert "base_url" in columns
+    assert "login_url" in columns
+    assert "auth_capabilities" in columns
+
+
 def test_site_auth_profile_stores_encrypted_secret_metadata():
     columns = SiteAuthProfile.__table__.columns
 
@@ -73,6 +81,7 @@ def test_site_auth_profile_stores_encrypted_secret_metadata():
     assert "encryption_key_id" in columns
     assert "secret_fingerprint" in columns
     assert "last_four" in columns
+    assert "account_identifier" in columns
     assert "header_name" in columns
 
 
