@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_db_session
 from backend.domains.ai.models import AiCostReconciliationRun, AiUsageEvent
 from backend.domains.compatibility.models import CompatibilityCheck, CompatibilityCheckItem
-from backend.domains.models.models import Model, ModelFile, ModelGeometry
+from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
 from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
@@ -53,6 +53,7 @@ def export_backup(
         "security": {
             "provider_secrets": "redacted; only provider, name, last_four, and timestamps are exported",
             "site_auth_profiles": "redacted; only site, auth mode, label, last_four, and timestamps are exported",
+            "model_file_payloads": "redacted; compressed file bytes are not exported, only source, compression, size, and hash metadata",
             "restore": "restore by importing into matching schema after reconfiguring provider and site auth secrets manually",
         },
         "tables": {},
@@ -90,6 +91,24 @@ def export_backup(
                 "updated_at": _serialize(profile.updated_at),
             }
             for profile in session.scalars(select(SiteAuthProfile).order_by(SiteAuthProfile.id)).all()
+        ]
+    payload["tables"]["model_file_payloads"] = []
+    if inspect(session.bind).has_table(ModelFilePayload.__tablename__):
+        payload["tables"]["model_file_payloads"] = [
+            {
+                "id": model_payload.id,
+                "model_file_id": model_payload.model_file_id,
+                "source_project_url": model_payload.source_project_url,
+                "source_file_url": model_payload.source_file_url,
+                "compression": model_payload.compression,
+                "original_size_bytes": model_payload.original_size_bytes,
+                "compressed_size_bytes": model_payload.compressed_size_bytes,
+                "original_sha256": model_payload.original_sha256,
+                "compressed_sha256": model_payload.compressed_sha256,
+                "created_at": _serialize(model_payload.created_at),
+                "updated_at": _serialize(model_payload.updated_at),
+            }
+            for model_payload in session.scalars(select(ModelFilePayload).order_by(ModelFilePayload.id)).all()
         ]
     return JSONResponse(
         payload,

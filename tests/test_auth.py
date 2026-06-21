@@ -177,6 +177,36 @@ def test_sensitive_routes_block_anonymous_and_low_privilege_users(method: str, p
     assert low_privilege.status_code == 403
 
 
+def test_model_import_downloaded_file_blocks_anonymous_and_viewer_users():
+    client, SessionLocal = _auth_client()
+
+    client.post("/api/auth/bootstrap", json={"username": "owner", "password": "correct-password"})
+    with SessionLocal() as session:
+        viewer = User(username="viewer", password_hash=hash_password("correct-password"), role="viewer", is_active=True)
+        session.add(viewer)
+        session.commit()
+    viewer_token = client.post("/api/auth/login", json={"username": "viewer", "password": "correct-password"}).json()[
+        "token"
+    ]
+
+    request_kwargs = {
+        "data": {
+            "source_project_url": "https://models.example/projects/cube",
+            "source_file_url": "https://cdn.models.example/files/cube.stl",
+        },
+        "files": {"file": ("cube.stl", b"solid cube\nendsolid cube\n", "model/stl")},
+    }
+    anonymous = client.post("/api/models/imports/downloaded-file", **request_kwargs)
+    low_privilege = client.post(
+        "/api/models/imports/downloaded-file",
+        headers={"Authorization": f"Bearer {viewer_token}"},
+        **request_kwargs,
+    )
+
+    assert anonymous.status_code == 401
+    assert low_privilege.status_code == 403
+
+
 @pytest.mark.parametrize(
     "path",
     [

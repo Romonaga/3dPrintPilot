@@ -3,14 +3,17 @@ from __future__ import annotations
 import math
 import struct
 import zipfile
+from gzip import compress as gzip_compress
+from hashlib import sha256
 from io import BytesIO
 from pathlib import PurePath
 from xml.etree import ElementTree
 
-from backend.domains.models.entities import GeometryAnalysis, GeometryParseError
+from backend.domains.models.entities import CompressedModelPayload, GeometryAnalysis, GeometryParseError
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_3MF_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MODEL_PAYLOAD_COMPRESSION = "gzip"
 SUPPORTED_EXTENSIONS = {".stl": "stl", ".3mf": "3mf"}
 THREE_MF_UNIT_SCALE_TO_MM = {
     None: 1.0,
@@ -50,6 +53,18 @@ def analyze_model_bytes(data: bytes, *, filename: str | None = None, content_typ
     if file_format == "3mf":
         return _analyze_3mf(data)
     raise GeometryParseError("Unsupported model file type. Upload STL or 3MF.")
+
+
+def compress_model_payload(data: bytes) -> CompressedModelPayload:
+    compressed = gzip_compress(data, compresslevel=9, mtime=0)
+    return CompressedModelPayload(
+        compression=MODEL_PAYLOAD_COMPRESSION,
+        compressed_bytes=compressed,
+        original_size_bytes=len(data),
+        compressed_size_bytes=len(compressed),
+        original_sha256=sha256(data).hexdigest(),
+        compressed_sha256=sha256(compressed).hexdigest(),
+    )
 
 
 def _analyze_stl(data: bytes) -> GeometryAnalysis:

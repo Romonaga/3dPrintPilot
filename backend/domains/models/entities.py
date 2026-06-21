@@ -23,3 +23,13 @@ class GeometryAnalysis:
 
 class GeometryParseError(ValueError):
     """Raised when a model file cannot be safely parsed."""
+
+
+@dataclass(frozen=True)
+class CompressedModelPayload:
+    compression: str
+    compressed_bytes: bytes
+    original_size_bytes: int
+    compressed_size_bytes: int
+    original_sha256: str
+    compressed_sha256: str

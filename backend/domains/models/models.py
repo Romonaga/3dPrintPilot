@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Index, Integer, JSON, LargeBinary, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db.base import Base
@@ -54,10 +54,39 @@ class ModelFile(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    payload: Mapped[ModelFilePayload | None] = relationship(
+        back_populates="model_file",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
     __table_args__ = (
         Index("ix_model_files_model_id", "model_id"),
         Index("ix_model_files_analysis_status_created_at", "analysis_status", "created_at"),
+    )
+
+
+class ModelFilePayload(Base):
+    __tablename__ = "model_file_payloads"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    model_file_id: Mapped[int] = mapped_column(ForeignKey("model_files.id", ondelete="CASCADE"), nullable=False)
+    source_project_url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_file_url: Mapped[str] = mapped_column(Text, nullable=False)
+    compression: Mapped[str] = mapped_column(String(20), nullable=False)
+    compressed_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    original_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    compressed_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    original_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    compressed_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    model_file: Mapped[ModelFile] = relationship(back_populates="payload")
+
+    __table_args__ = (
+        UniqueConstraint("model_file_id", name="uq_model_file_payloads_model_file_id"),
+        Index("ix_model_file_payloads_original_sha256", "original_sha256"),
     )
 
 
