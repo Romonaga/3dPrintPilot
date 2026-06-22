@@ -5,9 +5,16 @@ from sqlalchemy.orm import Session
 
 from backend.core.database import get_db_session
 from backend.core.secrets import get_secret_cipher
+from backend.domains.site_scanning.browser_link import BrowserLinkStatus, SiteAuthBrowserLinkService
 from backend.domains.site_scanning.entities import CrawlPolicy, ScanResult
-from backend.domains.site_scanning.schemas.request import SiteScanRequest, UpdateSiteAdapterRequest, UpsertSiteAuthProfileRequest
+from backend.domains.site_scanning.schemas.request import (
+    SiteScanRequest,
+    StartSiteAuthBrowserLinkRequest,
+    UpdateSiteAdapterRequest,
+    UpsertSiteAuthProfileRequest,
+)
 from backend.domains.site_scanning.schemas.response import (
+    SiteAuthBrowserLinkResponse,
     SiteAuthLinkResponse,
     SiteAuthProfileResponse,
     SiteAuthReadinessResponse,
@@ -29,6 +36,7 @@ from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/site-scanning", tags=["site-scanning"])
 service = SiteScanService()
+browser_link_service = SiteAuthBrowserLinkService()
 
 
 def get_site_scan_store(session: Session = Depends(get_db_session)) -> SiteScanStore:
@@ -37,6 +45,10 @@ def get_site_scan_store(session: Session = Depends(get_db_session)) -> SiteScanS
 
 def get_site_auth_profile_store(session: Session = Depends(get_db_session)) -> SiteAuthProfileStore:
     return SiteAuthProfileStore(session, get_secret_cipher())
+
+
+def get_site_auth_browser_link_service() -> SiteAuthBrowserLinkService:
+    return browser_link_service
 
 
 @router.get("/adapters", response_model=list[SiteScanAdapterResponse])
@@ -149,6 +161,85 @@ def start_site_auth_link(
     )
 
 
+@router.post("/auth-profiles/{site_key}/browser-link", response_model=SiteAuthBrowserLinkResponse)
+def start_site_auth_browser_link(
+    site_key: str,
+    request: StartSiteAuthBrowserLinkRequest,
+    _user=Depends(require_roles("admin")),
+    store: SiteAuthProfileStore = Depends(get_site_auth_profile_store),
+    link_service: SiteAuthBrowserLinkService = Depends(get_site_auth_browser_link_service),
+) -> SiteAuthBrowserLinkResponse:
+    declaration = _find_declaration(site_key)
+    if "browser_session" not in declaration.supported_auth_modes:
+        raise HTTPException(status_code=400, detail="Site does not support browser-assisted linking")
+    if not declaration.login_url:
+        raise HTTPException(status_code=400, detail="Site does not provide a login URL")
+    if not request.account_identifier:
+        raise HTTPException(status_code=400, detail="Account email is required for browser session linking")
+
+    declarations = service.adapter_declarations()
+    try:
+        record = store.upsert_profile(
+            declarations,
+            site_key=declaration.site_key,
+            auth_mode="browser_session",
+            secret_value=None,
+            label=request.label,
+            account_identifier=request.account_identifier,
+            enabled=True,
+        )
+        started = link_service.start(
+            site_key=declaration.site_key,
+            login_url=declaration.login_url,
+            allowed_hosts=tuple(declaration.allowed_hosts),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _browser_link_response(declaration, started, _site_auth_profile_response(declaration, record))
+
+
+@router.post("/auth-profiles/{site_key}/browser-link/{session_id}/capture", response_model=SiteAuthBrowserLinkResponse)
+def capture_site_auth_browser_link(
+    site_key: str,
+    session_id: str,
+    _user=Depends(require_roles("admin")),
+    store: SiteAuthProfileStore = Depends(get_site_auth_profile_store),
+    link_service: SiteAuthBrowserLinkService = Depends(get_site_auth_browser_link_service),
+) -> SiteAuthBrowserLinkResponse:
+    declaration = _find_declaration(site_key)
+    try:
+        status = link_service.request_capture(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Browser link session not found") from exc
+    record = _persist_captured_browser_session(declaration, store, status)
+    return _browser_link_response(
+        declaration,
+        status,
+        _site_auth_profile_response(declaration, record) if record is not None else None,
+    )
+
+
+@router.get("/auth-profiles/{site_key}/browser-link/{session_id}", response_model=SiteAuthBrowserLinkResponse)
+def get_site_auth_browser_link_status(
+    site_key: str,
+    session_id: str,
+    _user=Depends(require_roles("admin")),
+    store: SiteAuthProfileStore = Depends(get_site_auth_profile_store),
+    link_service: SiteAuthBrowserLinkService = Depends(get_site_auth_browser_link_service),
+) -> SiteAuthBrowserLinkResponse:
+    declaration = _find_declaration(site_key)
+    try:
+        status = link_service.status(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Browser link session not found") from exc
+    record = _persist_captured_browser_session(declaration, store, status)
+    return _browser_link_response(
+        declaration,
+        status,
+        _site_auth_profile_response(declaration, record) if record is not None else None,
+    )
+
+
 @router.post("/auth-profiles/{site_key}/test", response_model=SiteAuthReadinessResponse)
 def test_site_auth_profile(
     site_key: str,
@@ -238,6 +329,41 @@ def _site_auth_readiness_response(declaration, record, readiness) -> SiteAuthRea
         masked_account_identifier=mask_account_identifier(record.account_identifier if record is not None else None),
         masked_value=mask_site_auth_secret(record),
         updated_at=record.updated_at.isoformat() if record is not None and record.updated_at is not None else None,
+    )
+
+
+def _persist_captured_browser_session(declaration, store: SiteAuthProfileStore, status: BrowserLinkStatus):
+    if status.status != "linked" or not status.cookie_header:
+        return None
+    existing = store.get_profile(declaration.site_key)
+    if existing is None:
+        raise HTTPException(status_code=400, detail="Browser link profile was not initialized")
+    try:
+        return store.upsert_profile(
+            service.adapter_declarations(),
+            site_key=declaration.site_key,
+            auth_mode="browser_session",
+            secret_value=status.cookie_header,
+            label=existing.label,
+            account_identifier=existing.account_identifier,
+            enabled=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _browser_link_response(declaration, status, auth_profile: SiteAuthProfileResponse | None) -> SiteAuthBrowserLinkResponse:
+    return SiteAuthBrowserLinkResponse(
+        site_key=declaration.site_key,
+        display_name=declaration.display_name,
+        auth_mode="browser_session",
+        session_id=status.session_id,
+        status=status.status,
+        message=status.message,
+        login_url=status.login_url,
+        expires_at=status.expires_at.isoformat(),
+        cookie_count=status.cookie_count,
+        auth_profile=auth_profile,
     )
 
 

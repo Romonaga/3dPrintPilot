@@ -13,11 +13,14 @@ import {
   uploadPrinterFile
 } from "./printers/api/printersApi";
 import {
+  captureSourceAuthBrowserLink,
   deleteSourceAuthProfile,
+  getSourceAuthBrowserLinkStatus,
   getFeatureSettings,
   listModelSourceSites,
   saveProviderSecret,
   saveSourceAuthProfile,
+  startSourceAuthBrowserLink,
   startSourceAuthLink,
   testSourceAuthProfile
 } from "./settings/api/settingsApi";
@@ -359,6 +362,70 @@ describe("domain API adapters", () => {
       site_key: "printables",
       display_name: "Printables",
       auth_mode: "browser_session",
+      session_id: "session-1",
+      status: "running",
+      message: "Login browser launched.",
+      login_url: "https://www.printables.com/login",
+      expires_at: "2026-06-22T17:00:00Z",
+      cookie_count: 0,
+      auth_profile: null
+    });
+    const browserLink = await startSourceAuthBrowserLink("printables", {
+      label: "Google account",
+      accountIdentifier: "maker@example.test"
+    });
+    expect(browserLink.sessionId).toBe("session-1");
+    expect(browserLink.status).toBe("running");
+
+    mockJson({
+      site_key: "printables",
+      display_name: "Printables",
+      auth_mode: "browser_session",
+      session_id: "session-1",
+      status: "linked",
+      message: "Signed-in site session captured.",
+      login_url: "https://www.printables.com/login",
+      expires_at: "2026-06-22T17:00:00Z",
+      cookie_count: 2,
+      auth_profile: {
+        site_key: "printables",
+        display_name: "Printables",
+        auth_mode: "browser_session",
+        label: "Google account",
+        account_identifier: "maker@example.test",
+        masked_account_identifier: "m***@example.test",
+        header_name: null,
+        configured: true,
+        enabled: true,
+        auth_ready: true,
+        link_status: "linked",
+        link_status_message: "Stored account link is available for unattended authenticated requests.",
+        masked_value: "****abcd",
+        updated_at: "2026-06-22T17:00:00Z"
+      }
+    });
+    const capturedLink = await captureSourceAuthBrowserLink("printables", "session-1");
+    expect(capturedLink.cookieCount).toBe(2);
+    expect(capturedLink.authProfile?.authReady).toBe(true);
+
+    mockJson({
+      site_key: "printables",
+      display_name: "Printables",
+      auth_mode: "browser_session",
+      session_id: "session-1",
+      status: "linked",
+      message: "Signed-in site session captured.",
+      login_url: "https://www.printables.com/login",
+      expires_at: "2026-06-22T17:00:00Z",
+      cookie_count: 2,
+      auth_profile: null
+    });
+    expect((await getSourceAuthBrowserLinkStatus("printables", "session-1")).status).toBe("linked");
+
+    mockJson({
+      site_key: "printables",
+      display_name: "Printables",
+      auth_mode: "browser_session",
       auth_ready: false,
       link_status: "needs_relink",
       message: "Browser session is not stored yet.",
@@ -394,7 +461,9 @@ describe("domain API adapters", () => {
       label: "Printables account",
       secretValue: "password-1234"
     });
-    const [, saveInit] = vi.mocked(fetch).mock.calls[4];
+    const [, saveInit] =
+      vi.mocked(fetch).mock.calls.find(([url, init]) => url === "/api/site-scanning/auth-profiles/printables" && init?.method === "PUT") ??
+      [];
     expect(JSON.parse(String(saveInit?.body))).toMatchObject({
       auth_mode: "username_password",
       account_identifier: "maker@example.test",
@@ -403,7 +472,9 @@ describe("domain API adapters", () => {
 
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 204 }));
     await deleteSourceAuthProfile("printables");
-    const [deleteUrl, deleteInit] = vi.mocked(fetch).mock.calls[5];
+    const [deleteUrl, deleteInit] =
+      vi.mocked(fetch).mock.calls.find(([url, init]) => url === "/api/site-scanning/auth-profiles/printables" && init?.method === "DELETE") ??
+      [];
     expect(deleteUrl).toBe("/api/site-scanning/auth-profiles/printables");
     expect(deleteInit?.method).toBe("DELETE");
   });

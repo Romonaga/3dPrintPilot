@@ -78,10 +78,14 @@ export default function SettingsPage() {
               key={site.siteKey}
               isSaving={sourceAuth.isSaving === site.siteKey}
               isTesting={sourceAuth.isTesting === site.siteKey}
+              browserLink={sourceAuth.browserLinks[site.siteKey] ?? null}
               linkInstructions={sourceAuth.linkInstructions[site.siteKey] ?? null}
+              onCaptureBrowserLink={() => sourceAuth.captureAssistedBrowserLink(site.siteKey)}
               onDisconnect={() => sourceAuth.disconnectSiteAuth(site.siteKey)}
+              onRefreshBrowserLink={() => sourceAuth.refreshAssistedBrowserLink(site.siteKey)}
               onSave={(input) => sourceAuth.saveSiteAuth(site.siteKey, input)}
-              onStartBrowserLink={() => sourceAuth.startBrowserLink(site.siteKey)}
+              onStartBrowserLink={(input) => sourceAuth.startAssistedBrowserLink(site.siteKey, input)}
+              onStartManualLink={() => sourceAuth.startBrowserLink(site.siteKey)}
               onTest={() => sourceAuth.testSiteAuth(site.siteKey)}
               site={site}
             />
@@ -184,6 +188,12 @@ type SourceSiteAuthRowProps = {
     loginUrl: string | null;
     storageNotes: string;
   } | null;
+  browserLink: {
+    status: string;
+    message: string;
+    sessionId: string;
+    cookieCount: number;
+  } | null;
   onSave: (input: {
     authMode: string;
     secretValue?: string | null;
@@ -192,7 +202,10 @@ type SourceSiteAuthRowProps = {
     headerName?: string | null;
     enabled?: boolean;
   }) => Promise<void>;
-  onStartBrowserLink: () => Promise<void>;
+  onStartBrowserLink: (input: { label?: string | null; accountIdentifier?: string | null }) => Promise<void>;
+  onStartManualLink: () => Promise<void>;
+  onCaptureBrowserLink: () => Promise<void>;
+  onRefreshBrowserLink: () => Promise<void>;
   onTest: () => Promise<void>;
   onDisconnect: () => Promise<void>;
 };
@@ -201,9 +214,13 @@ function SourceSiteAuthRow({
   site,
   isSaving,
   isTesting,
+  browserLink,
   linkInstructions,
   onSave,
   onStartBrowserLink,
+  onStartManualLink,
+  onCaptureBrowserLink,
+  onRefreshBrowserLink,
   onTest,
   onDisconnect
 }: SourceSiteAuthRowProps) {
@@ -213,13 +230,18 @@ function SourceSiteAuthRow({
   const [label, setLabel] = useState(site.authProfile.label ?? "");
   const [headerName, setHeaderName] = useState(site.authProfile.headerName ?? "");
   const [secretValue, setSecretValue] = useState("");
+  const [showManualSessionField, setShowManualSessionField] = useState(false);
   const requiresAccountIdentifier = authMode === "username_password" || authMode === "browser_session";
   const requiresSecret = ["api_token", "bearer_token", "cookie_header", "username_password"].includes(authMode);
+  const canSaveManualBrowserSession =
+    authMode === "browser_session" && showManualSessionField && accountIdentifier.trim().length > 0 && secretValue.trim().length > 0;
   const canSave =
     authMode === "none" ||
-    ((!requiresAccountIdentifier || accountIdentifier.trim().length > 0) &&
-      (!requiresSecret || secretValue.trim().length > 0) &&
-      (authMode !== "api_token" || headerName.trim().length > 0));
+    (authMode === "browser_session"
+      ? canSaveManualBrowserSession
+      : (!requiresAccountIdentifier || accountIdentifier.trim().length > 0) &&
+        (!requiresSecret || secretValue.trim().length > 0) &&
+        (authMode !== "api_token" || headerName.trim().length > 0));
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -329,7 +351,7 @@ function SourceSiteAuthRow({
             />
           </label>
         ) : null}
-        {authMode === "browser_session" ? (
+        {authMode === "browser_session" && showManualSessionField ? (
           <label className="field-label">
             Printables session cookie/header
             <input
@@ -355,15 +377,55 @@ function SourceSiteAuthRow({
         ) : null}
         <div className="source-site-actions">
           {authMode === "browser_session" ? (
-            <button className="text-button icon-action" disabled={isSaving} onClick={onStartBrowserLink} type="button">
+            <button
+              className="text-button icon-action"
+              disabled={isSaving || accountIdentifier.trim().length === 0}
+              onClick={() =>
+                onStartBrowserLink({
+                  accountIdentifier: accountIdentifier.trim() || null,
+                  label: label.trim() || null
+                })
+              }
+              type="button"
+            >
               {isSaving ? <Spinner size={15} /> : <Link2 size={15} aria-hidden="true" />}
               <span>Link with browser</span>
             </button>
           ) : null}
-          <button className="primary-action icon-action" type="submit" disabled={isSaving || !canSave}>
-            {isSaving ? <Spinner size={15} /> : null}
-            <span>{isSaving ? "Saving" : authMode === "browser_session" ? "Save session" : "Save"}</span>
-          </button>
+          {authMode === "browser_session" && browserLink ? (
+            <>
+              <button className="primary-action icon-action" disabled={isSaving} onClick={onCaptureBrowserLink} type="button">
+                {isSaving ? <Spinner size={15} /> : <KeyRound size={15} aria-hidden="true" />}
+                <span>Capture signed-in session</span>
+              </button>
+              <button className="text-button icon-action" disabled={isTesting} onClick={onRefreshBrowserLink} type="button">
+                {isTesting ? <Spinner size={15} /> : <RefreshCw size={15} aria-hidden="true" />}
+                <span>Refresh link status</span>
+              </button>
+            </>
+          ) : null}
+          {authMode === "browser_session" ? (
+            <button
+              className="text-button icon-action"
+              disabled={isSaving}
+              onClick={() => {
+                setShowManualSessionField((current) => !current);
+                if (!showManualSessionField) {
+                  void onStartManualLink();
+                }
+              }}
+              type="button"
+            >
+              <KeyRound size={15} aria-hidden="true" />
+              <span>{showManualSessionField ? "Hide manual fallback" : "Manual fallback"}</span>
+            </button>
+          ) : null}
+          {authMode !== "browser_session" || showManualSessionField ? (
+            <button className="primary-action icon-action" type="submit" disabled={isSaving || !canSave}>
+              {isSaving ? <Spinner size={15} /> : null}
+              <span>{isSaving ? "Saving" : authMode === "browser_session" ? "Save session" : "Save"}</span>
+            </button>
+          ) : null}
           <button
             className="text-button icon-action"
             disabled={isTesting || authMode === "none"}
@@ -384,6 +446,12 @@ function SourceSiteAuthRow({
           </button>
         </div>
       </form>
+      {browserLink ? (
+        <p className="muted-copy" role="status">
+          {browserLink.message}
+          {browserLink.cookieCount > 0 ? ` Captured ${browserLink.cookieCount} site cookies.` : ""}
+        </p>
+      ) : null}
     </article>
   );
 }
