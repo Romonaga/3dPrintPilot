@@ -36,7 +36,7 @@ from backend.domains.printers.schemas.response import (
     PrinterScanSummaryResponse,
     PrinterStatusResponse,
 )
-from backend.domains.printers.service import scan_lan_for_printers
+from backend.domains.printers.service import merge_known_printer_discoveries, scan_lan_for_printers
 from backend.domains.printers.store import PrinterStore
 from backend.domains.users.dependencies import require_roles
 
@@ -263,6 +263,11 @@ def scan_printers(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    result = merge_known_printer_discoveries(
+        result,
+        store.list_printers(),
+        timeout_seconds=request.connect_timeout_seconds,
+    )
     run = store.save_scan_result(result)
     return _scan_response(result, scan_run_id=run.id, persisted_results=run.results)
 
