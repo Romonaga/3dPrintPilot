@@ -47,6 +47,9 @@ function authenticatedFetch(input: RequestInfo | URL): Promise<Response> {
   if (url === "/api/resources/status") {
     return Promise.resolve(new Response(JSON.stringify(sampleResourceStatus()), { status: 200 }));
   }
+  if (url === "/api/site-scanning/adapters") {
+    return Promise.resolve(new Response(JSON.stringify(sampleSiteAdapters()), { status: 200 }));
+  }
   return Promise.resolve(new Response("{}", { status: 404 }));
 }
 
@@ -64,6 +67,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "Printers" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Find Models" })).toBeInTheDocument();
     expect(screen.getAllByText("3D Print Pilot").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Scan LAN" })).toHaveLength(2);
     expect(await screen.findByText("No saved printers yet. Scan LAN to discover printers.")).toBeInTheDocument();
@@ -73,6 +77,61 @@ describe("App", () => {
     expect(screen.queryByText("Voron 2.4")).not.toBeInTheDocument();
     expect(screen.queryByText("Prusa MK4")).not.toBeInTheDocument();
     expect(screen.queryByText("Bambu X1C")).not.toBeInTheDocument();
+  });
+
+  it("discovers and imports supported Printables files from the dashboard", async () => {
+    const fetchMock = mockApiFetch((input, init) => {
+      const url = String(input);
+      if (url === "/api/site-scanning/adapters") {
+        return Promise.resolve(new Response(JSON.stringify(sampleSiteAdapters()), { status: 200 }));
+      }
+      if (url === "/api/models/imports/source-files/discover" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify(sampleSourceProjectFiles()), { status: 200 }));
+      }
+      if (url === "/api/models/imports/source-files" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify([sampleImportedModel()]), { status: 200 }));
+      }
+      return authenticatedFetch(input);
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Find Models" })).toBeInTheDocument();
+    expect(await screen.findByText("Managed downloads available")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Printables Project URL"), "https://www.printables.com/model/123-managed-triangle");
+    await user.click(screen.getByRole("button", { name: "Discover Files" }));
+
+    expect(await screen.findByText("Managed Triangle Project")).toBeInTheDocument();
+    expect(screen.getByLabelText(/triangle\.stl/i)).toBeChecked();
+    expect(screen.getByLabelText(/assembly-notes\.pdf/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Import Selected (1)" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Import Selected (1)" }));
+
+    expect(await screen.findByText("Managed Triangle")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/models/imports/source-files/discover",
+      expect.objectContaining({
+        body: JSON.stringify({
+          site_key: "printables",
+          source_project_url: "https://www.printables.com/model/123-managed-triangle"
+        }),
+        method: "POST"
+      })
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/models/imports/source-files",
+      expect.objectContaining({
+        body: JSON.stringify({
+          site_key: "printables",
+          source_project_url: "https://www.printables.com/model/123-managed-triangle",
+          file_ids: ["file-stl"],
+          title: null
+        }),
+        method: "POST"
+      })
+    );
   });
 
   it("shows machine state and meaningful print progress on dashboard printer cards", async () => {
@@ -1148,6 +1207,94 @@ function sampleModels() {
       ]
     }
   ];
+}
+
+function sampleSiteAdapters() {
+  return [
+    {
+      site_key: "printables",
+      display_name: "Printables",
+      support_level: "managed",
+      capabilities: ["project_lookup", "managed_downloads"],
+      setup_required: false,
+      base_url: "https://www.printables.com/",
+      login_url: "https://www.printables.com/login",
+      enabled: true,
+      supports_downloads: true,
+      supported_auth_modes: ["none", "browser_session"],
+      auth_storage_notes: "Browser session linking is supported for account downloads.",
+      allowed_hosts: ["printables.com", "www.printables.com"],
+      default_limits: {},
+      robots_terms_notes: "Use managed runner limits."
+    }
+  ];
+}
+
+function sampleSourceProjectFiles() {
+  return {
+    site_key: "printables",
+    source_project_url: "https://www.printables.com/model/123-managed-triangle",
+    external_project_id: "123",
+    project_title: "Managed Triangle Project",
+    files: [
+      {
+        file_id: "file-stl",
+        filename: "triangle.stl",
+        file_format: "stl",
+        size_bytes: 2048,
+        source_file_url: "https://www.printables.com/model/123/files/triangle.stl",
+        supported_model_file: true,
+        created_at: null,
+        notes: null
+      },
+      {
+        file_id: "file-pdf",
+        filename: "assembly-notes.pdf",
+        file_format: "pdf",
+        size_bytes: 4096,
+        source_file_url: "https://www.printables.com/model/123/files/assembly-notes.pdf",
+        supported_model_file: false,
+        created_at: null,
+        notes: "Unsupported documentation file."
+      }
+    ]
+  };
+}
+
+function sampleImportedModel() {
+  return {
+    id: 22,
+    title: "Managed Triangle",
+    source_url: "https://www.printables.com/model/123-managed-triangle",
+    status: "stored",
+    created_at: "2026-06-22T19:00:00Z",
+    updated_at: "2026-06-22T19:00:00Z",
+    files: [
+      {
+        id: 23,
+        filename: "triangle.stl",
+        content_type: "model/stl",
+        file_format: "stl",
+        size_bytes: 2048,
+        storage_status: "stored",
+        analysis_status: "queued",
+        analysis_job_id: null,
+        analysis_warnings: [],
+        geometry: null,
+        payload: {
+          source_project_url: "https://www.printables.com/model/123-managed-triangle",
+          source_file_url: "https://www.printables.com/model/123/files/triangle.stl",
+          compression: "gzip",
+          original_size_bytes: 2048,
+          compressed_size_bytes: 1024,
+          original_sha256: "original",
+          compressed_sha256: "compressed",
+          created_at: "2026-06-22T19:00:00Z"
+        },
+        created_at: "2026-06-22T19:00:00Z"
+      }
+    ]
+  };
 }
 
 function sampleAiAccountingStatus() {
