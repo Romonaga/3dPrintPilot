@@ -35,6 +35,8 @@ from backend.domains.printers.service import (
     _probe_http_port,
     _resolve_probe_network,
     _scan_http_printers,
+    merge_known_printer_discoveries,
+    probe_known_printer_endpoint,
     scan_lan_for_printers,
 )
 from backend.domains.printers.store import PrinterStore
@@ -546,6 +548,175 @@ def test_scan_refresh_preserves_manual_build_volume_when_scan_does_not_prove_it(
     assert known.build_volume_y_mm == 320
     assert known.build_volume_z_mm == 320
     assert known.capabilities["toolhead_count"] == 4
+
+
+def test_known_printer_endpoint_is_added_when_generic_scan_misses_it(monkeypatch):
+    known = Printer(
+        id=10,
+        name="Snapmaker U1",
+        host="192.168.1.80",
+        port=7125,
+        protocol="http",
+        printer_type="http_probe:snapmaker_moonraker",
+        state="confirmed",
+        identity_key="moonraker:snapmaker:machine_id:u1",
+        capabilities={"adapter": "moonraker", "toolhead_count": 4, "color_count": 4},
+        build_volume_x_mm=320,
+        build_volume_y_mm=320,
+        build_volume_z_mm=320,
+    )
+    result = PrinterScanResult(
+        summary=PrinterScanSummary(
+            status=PrinterScanStatus.COMPLETED,
+            duration_ms=100,
+            discovered_count=0,
+            method="combined",
+            scanned_host_count=254,
+            probe_count=2540,
+        ),
+        printers=(),
+    )
+
+    def fake_probe(printer, timeout_seconds=1.0):
+        assert printer is known
+        assert timeout_seconds == 0.5
+        return DiscoveredPrinter(
+            name="Snapmaker U1",
+            host="192.168.1.80",
+            port=7125,
+            protocol="http",
+            service_type="http_probe:snapmaker_moonraker",
+            confidence=76,
+            state="known",
+            evidence=("Configured printer endpoint http://192.168.1.80:7125 is reachable",),
+            identity_key=known.identity_key,
+            matched_printer_id=known.id,
+            capabilities=known.capabilities,
+            build_volume_x_mm=known.build_volume_x_mm,
+            build_volume_y_mm=known.build_volume_y_mm,
+            build_volume_z_mm=known.build_volume_z_mm,
+        )
+
+    monkeypatch.setattr("backend.domains.printers.service.probe_known_printer_endpoint", fake_probe)
+
+    merged = merge_known_printer_discoveries(result, [known], timeout_seconds=0.5)
+
+    assert merged.summary.discovered_count == 1
+    assert merged.summary.probe_count == 2541
+    assert merged.printers[0].matched_printer_id == known.id
+    assert merged.printers[0].capabilities["toolhead_count"] == 4
+    assert merged.printers[0].build_volume_x_mm == 320
+
+
+def test_known_printer_endpoint_is_not_duplicated_when_scan_finds_it(monkeypatch):
+    known = Printer(
+        id=10,
+        name="Snapmaker U1",
+        host="192.168.1.80",
+        port=7125,
+        protocol="http",
+        printer_type="http_probe:snapmaker_moonraker",
+        state="confirmed",
+        identity_key="moonraker:snapmaker:machine_id:u1",
+    )
+    result = PrinterScanResult(
+        summary=PrinterScanSummary(
+            status=PrinterScanStatus.COMPLETED,
+            duration_ms=100,
+            discovered_count=1,
+            method="combined",
+            scanned_host_count=254,
+            probe_count=2540,
+        ),
+        printers=(
+            DiscoveredPrinter(
+                name="Snapmaker U1 Moonraker",
+                host=known.host,
+                port=known.port,
+                protocol=known.protocol,
+                service_type="http_probe:snapmaker_moonraker",
+                confidence=94,
+                identity_key=known.identity_key,
+            ),
+        ),
+    )
+
+    def fail_probe(printer, timeout_seconds=1.0):
+        raise AssertionError("known endpoint probe should not run for already discovered printer")
+
+    monkeypatch.setattr("backend.domains.printers.service.probe_known_printer_endpoint", fail_probe)
+
+    merged = merge_known_printer_discoveries(result, [known], timeout_seconds=0.5)
+
+    assert merged is result
+    assert len(merged.printers) == 1
+
+
+def test_known_printer_endpoint_fallback_carries_stored_metadata(monkeypatch):
+    known = Printer(
+        id=10,
+        name="Snapmaker U1",
+        host="192.168.1.80",
+        port=7125,
+        protocol="http",
+        printer_type="http_probe:snapmaker_moonraker",
+        state="confirmed",
+        identity_key="moonraker:snapmaker:machine_id:u1",
+        capabilities={"adapter": "moonraker", "toolhead_count": 4, "color_count": 4},
+        build_volume_x_mm=320,
+        build_volume_y_mm=320,
+        build_volume_z_mm=320,
+    )
+    monkeypatch.setattr("backend.domains.printers.service._probe_http_port", lambda *args, **kwargs: None)
+    monkeypatch.setattr("backend.domains.printers.service._tcp_port_open", lambda *args, **kwargs: True)
+
+    discovered = probe_known_printer_endpoint(known, timeout_seconds=0.5)
+
+    assert discovered is not None
+    assert discovered.name == "Snapmaker U1"
+    assert discovered.service_type == "http_probe:snapmaker_moonraker"
+    assert discovered.state == "known"
+    assert discovered.confidence == 76
+    assert discovered.matched_printer_id == known.id
+    assert discovered.identity_key == known.identity_key
+    assert discovered.capabilities["toolhead_count"] == 4
+    assert discovered.capabilities["color_count"] == 4
+    assert discovered.build_volume_x_mm == 320
+    assert "Configured printer host is reachable at http://192.168.1.80:7125" in discovered.evidence
+
+
+def test_known_printer_endpoint_fallback_checks_standard_ports_on_known_host(monkeypatch):
+    known = Printer(
+        id=10,
+        name="Snapmaker U1",
+        host="192.168.1.80",
+        port=7125,
+        protocol="http",
+        printer_type="http_probe:snapmaker_moonraker",
+        state="confirmed",
+        identity_key="moonraker:snapmaker:machine_id:u1",
+        capabilities={"adapter": "moonraker", "toolhead_count": 4},
+    )
+    checked_ports = []
+
+    def fake_tcp_open(host, port, timeout_seconds):
+        checked_ports.append(port)
+        return port == 80
+
+    monkeypatch.setattr("backend.domains.printers.service._probe_http_port", lambda *args, **kwargs: None)
+    monkeypatch.setattr("backend.domains.printers.service._probe_bambu_mqtt_port", lambda *args, **kwargs: None)
+    monkeypatch.setattr("backend.domains.printers.service._tcp_port_open", fake_tcp_open)
+
+    discovered = probe_known_printer_endpoint(known, timeout_seconds=1.5)
+
+    assert discovered is not None
+    assert discovered.host == "192.168.1.80"
+    assert discovered.port == 80
+    assert discovered.protocol == "http"
+    assert discovered.matched_printer_id == known.id
+    assert discovered.capabilities["toolhead_count"] == 4
+    assert 7125 in checked_ports
+    assert 80 in checked_ports
 
 
 def test_confirm_discovered_printer_returns_known_match_instead_of_duplicate():

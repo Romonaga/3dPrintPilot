@@ -140,6 +140,148 @@ def scan_lan_for_printers(
     )
 
 
+def merge_known_printer_discoveries(
+    result: PrinterScanResult,
+    known_printers,
+    timeout_seconds: float = 1.0,
+) -> PrinterScanResult:
+    printers = list(result.printers)
+    probe_count = 0
+    for known_printer in known_printers:
+        if _known_printer_already_discovered(known_printer, printers):
+            continue
+        probe_count += 1
+        discovered = probe_known_printer_endpoint(known_printer, timeout_seconds=timeout_seconds)
+        if discovered is not None:
+            printers.append(discovered)
+    if probe_count == 0:
+        return result
+    sorted_printers = _sort_discovered_printers(printers)
+    return replace(
+        result,
+        summary=replace(
+            result.summary,
+            discovered_count=len(sorted_printers),
+            probe_count=result.summary.probe_count + probe_count,
+        ),
+        printers=sorted_printers,
+    )
+
+
+def probe_known_printer_endpoint(known_printer, timeout_seconds: float = 1.0) -> DiscoveredPrinter | None:
+    host = getattr(known_printer, "host", None)
+    port = getattr(known_printer, "port", None)
+    protocol = (getattr(known_printer, "protocol", None) or "http").lower()
+    if not host or not port:
+        return None
+
+    first_reachable_endpoint = None
+    for endpoint_protocol, endpoint_port, endpoint_timeout in _known_printer_probe_endpoints(
+        protocol,
+        int(port),
+        timeout_seconds,
+    ):
+        detected = _probe_known_endpoint(host, endpoint_port, endpoint_protocol, endpoint_timeout)
+        if detected is not None:
+            return _merge_known_printer_metadata(detected, known_printer)
+        if first_reachable_endpoint is None and _tcp_port_open(host, endpoint_port, endpoint_timeout):
+            first_reachable_endpoint = (endpoint_protocol, endpoint_port)
+
+    if first_reachable_endpoint is None:
+        return None
+    fallback_protocol, fallback_port = first_reachable_endpoint
+
+    return DiscoveredPrinter(
+        name=getattr(known_printer, "name", None) or f"Known printer at {host}:{fallback_port}",
+        host=host,
+        port=fallback_port,
+        protocol=fallback_protocol,
+        service_type=_known_printer_service_type(known_printer),
+        confidence=76,
+        state="known",
+        evidence=(f"Configured printer host is reachable at {fallback_protocol}://{host}:{fallback_port}",),
+        identity_key=getattr(known_printer, "identity_key", None),
+        matched_printer_id=getattr(known_printer, "id", None),
+        capabilities=getattr(known_printer, "capabilities", None) or {},
+        build_volume_x_mm=getattr(known_printer, "build_volume_x_mm", None),
+        build_volume_y_mm=getattr(known_printer, "build_volume_y_mm", None),
+        build_volume_z_mm=getattr(known_printer, "build_volume_z_mm", None),
+    )
+
+
+def _known_printer_probe_endpoints(
+    protocol: str,
+    port: int,
+    timeout_seconds: float,
+) -> tuple[tuple[str, int, float], ...]:
+    fallback_timeout = min(timeout_seconds, 0.5)
+    endpoints = [(protocol, port, timeout_seconds)]
+    for candidate_port in PREFERRED_HTTP_PROBE_PORTS:
+        candidate_protocol = "mqtts" if candidate_port == 8883 else "https" if candidate_port == 443 else "http"
+        candidate = (candidate_protocol, candidate_port, fallback_timeout)
+        if candidate_port != port and candidate not in endpoints:
+            endpoints.append(candidate)
+    return tuple(endpoints)
+
+
+def _probe_known_endpoint(
+    host: str,
+    port: int,
+    protocol: str,
+    timeout_seconds: float,
+) -> DiscoveredPrinter | None:
+    if protocol in {"http", "https"}:
+        return _probe_http_port(host, port, timeout_seconds)
+    if protocol == "mqtts" or port == 8883:
+        return _probe_bambu_mqtt_port(host, port, timeout_seconds)
+    return None
+
+
+def _known_printer_already_discovered(known_printer, discovered_printers: list[DiscoveredPrinter]) -> bool:
+    known_identity = getattr(known_printer, "identity_key", None)
+    known_host = getattr(known_printer, "host", None)
+    known_port = getattr(known_printer, "port", None)
+    known_protocol = getattr(known_printer, "protocol", None)
+    for discovered in discovered_printers:
+        if known_identity and discovered.identity_key and known_identity == discovered.identity_key:
+            return True
+        if (
+            known_host == discovered.host
+            and known_port == discovered.port
+            and known_protocol == discovered.protocol
+        ):
+            return True
+    return False
+
+
+def _merge_known_printer_metadata(discovered: DiscoveredPrinter, known_printer) -> DiscoveredPrinter:
+    known_capabilities = getattr(known_printer, "capabilities", None) or {}
+    discovered_capabilities = discovered.capabilities or {}
+    return replace(
+        discovered,
+        identity_key=discovered.identity_key or getattr(known_printer, "identity_key", None),
+        matched_printer_id=getattr(known_printer, "id", None),
+        capabilities={**known_capabilities, **discovered_capabilities},
+        build_volume_x_mm=discovered.build_volume_x_mm or getattr(known_printer, "build_volume_x_mm", None),
+        build_volume_y_mm=discovered.build_volume_y_mm or getattr(known_printer, "build_volume_y_mm", None),
+        build_volume_z_mm=discovered.build_volume_z_mm or getattr(known_printer, "build_volume_z_mm", None),
+        evidence=tuple(
+            list(discovered.evidence)
+            + [f"Matched configured printer endpoint {known_printer.host}:{known_printer.port}"]
+        ),
+    )
+
+
+def _known_printer_service_type(known_printer) -> str:
+    printer_type = (getattr(known_printer, "printer_type", None) or "").strip()
+    if printer_type:
+        return printer_type
+    adapter_type = (getattr(known_printer, "adapter_type", None) or "").strip()
+    if adapter_type:
+        return f"known:{adapter_type}"
+    return "known:printer"
+
+
 def _scan_mdns(timeout_seconds: float = 3.0) -> PrinterScanResult:
     started = monotonic()
     listener = _PrinterServiceListener()
