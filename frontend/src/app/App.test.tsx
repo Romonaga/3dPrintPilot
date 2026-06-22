@@ -358,9 +358,7 @@ describe("App", () => {
     expect(screen.getByText("1,024")).toBeInTheDocument();
   });
 
-  it("shows model source account configuration without collecting Google passwords", async () => {
-    const openWindow = vi.fn();
-    vi.stubGlobal("open", openWindow);
+  it("links model source accounts with browser capture without collecting Google passwords", async () => {
     mockApiFetch((input) => {
       const url = String(input);
       if (url === "/api/resources/status") {
@@ -449,6 +447,74 @@ describe("App", () => {
           )
         );
       }
+      if (url === "/api/site-scanning/auth-profiles/printables/browser-link") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              site_key: "printables",
+              display_name: "Printables public model pages",
+              auth_mode: "browser_session",
+              session_id: "session-1",
+              status: "running",
+              message: "Login browser launched. Complete site sign-in, then capture the signed-in session.",
+              login_url: "https://www.printables.com/login",
+              expires_at: "2026-06-22T17:00:00Z",
+              cookie_count: 0,
+              auth_profile: {
+                site_key: "printables",
+                display_name: "Printables public model pages",
+                auth_mode: "browser_session",
+                label: "Personal account",
+                account_identifier: "maker@example.test",
+                masked_account_identifier: "m***@example.test",
+                header_name: null,
+                configured: false,
+                enabled: true,
+                auth_ready: false,
+                link_status: "needs_relink",
+                link_status_message: "Browser session is not stored yet.",
+                masked_value: null,
+                updated_at: null
+              }
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/site-scanning/auth-profiles/printables/browser-link/session-1/capture") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              site_key: "printables",
+              display_name: "Printables public model pages",
+              auth_mode: "browser_session",
+              session_id: "session-1",
+              status: "linked",
+              message: "Signed-in site session captured.",
+              login_url: "https://www.printables.com/login",
+              expires_at: "2026-06-22T17:00:00Z",
+              cookie_count: 2,
+              auth_profile: {
+                site_key: "printables",
+                display_name: "Printables public model pages",
+                auth_mode: "browser_session",
+                label: "Personal account",
+                account_identifier: "maker@example.test",
+                masked_account_identifier: "m***@example.test",
+                header_name: null,
+                configured: true,
+                enabled: true,
+                auth_ready: true,
+                link_status: "linked",
+                link_status_message: "Stored account link is available for unattended authenticated requests.",
+                masked_value: "****abcd",
+                updated_at: "2026-06-22T17:00:00Z"
+              }
+            }),
+            { status: 200 }
+          )
+        );
+      }
       if (url === "/api/site-scanning/auth-profiles/printables/test") {
         return Promise.resolve(
           new Response(
@@ -456,14 +522,14 @@ describe("App", () => {
               site_key: "printables",
               display_name: "Printables public model pages",
               auth_mode: "browser_session",
-              auth_ready: false,
-              link_status: "needs_relink",
-              message: "Browser session is not stored yet.",
-              configured: false,
+              auth_ready: true,
+              link_status: "linked",
+              message: "Stored account link is available for unattended authenticated requests.",
+              configured: true,
               enabled: true,
-              masked_account_identifier: null,
-              masked_value: null,
-              updated_at: null
+              masked_account_identifier: "m***@example.test",
+              masked_value: "****abcd",
+              updated_at: "2026-06-22T17:00:00Z"
             }),
             { status: 200 }
           )
@@ -479,15 +545,20 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Model Source Accounts" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Printables public model pages" })).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Auth type"), "browser_session");
+    await user.type(screen.getByLabelText("Account"), "maker@example.test");
     await user.click(screen.getByRole("button", { name: "Link with browser" }));
 
-    expect(openWindow).toHaveBeenCalledWith("https://www.printables.com/login", "_blank", "noopener,noreferrer");
-    expect(await screen.findByText("No Google password is stored.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Printables session cookie/header")).toBeInTheDocument();
+    expect(await screen.findByText("Login browser launched. Complete site sign-in, then capture the signed-in session.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Printables session cookie/header")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Capture signed-in session" }));
+    expect(await screen.findByText(/Captured 2 site cookies/)).toBeInTheDocument();
+    expect(await screen.findByText("Linked")).toBeInTheDocument();
     expect(screen.queryByLabelText("Printables password")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Google password")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Manual fallback" }));
+    expect(await screen.findByLabelText("Printables session cookie/header")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Test connection" }));
-    expect(await screen.findByText("Needs re-link")).toBeInTheDocument();
+    expect(await screen.findByText("Linked")).toBeInTheDocument();
   });
 
   it("opens model uploads from the dashboard Upload Model action", async () => {

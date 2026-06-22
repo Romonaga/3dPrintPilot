@@ -25,3 +25,8 @@ class UpsertSiteAuthProfileRequest(BaseModel):
     account_identifier: str | None = Field(default=None, max_length=255)
     header_name: str | None = Field(default=None, max_length=120)
     enabled: bool = True
+
+
+class StartSiteAuthBrowserLinkRequest(BaseModel):
+    label: str | None = Field(default=None, max_length=160)
+    account_identifier: str | None = Field(default=None, max_length=255)

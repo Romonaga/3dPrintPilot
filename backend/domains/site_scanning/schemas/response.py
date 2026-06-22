@@ -58,6 +58,19 @@ class SiteAuthReadinessResponse(BaseModel):
     updated_at: str | None
 
 
+class SiteAuthBrowserLinkResponse(BaseModel):
+    site_key: str
+    display_name: str
+    auth_mode: str
+    session_id: str
+    status: str
+    message: str
+    login_url: str | None
+    expires_at: str
+    cookie_count: int
+    auth_profile: SiteAuthProfileResponse | None = None
+
+
 class SiteScanSummaryResponse(BaseModel):
     scan_run_id: int | None = None
     status: str

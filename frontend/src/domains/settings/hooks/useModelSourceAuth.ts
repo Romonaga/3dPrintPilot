@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  captureSourceAuthBrowserLink,
   deleteSourceAuthProfile,
+  getSourceAuthBrowserLinkStatus,
   listModelSourceSites,
   saveSourceAuthProfile,
+  startSourceAuthBrowserLink,
   startSourceAuthLink,
   testSourceAuthProfile
 } from "../api/settingsApi";
 import {
+  type SourceAuthBrowserLinkStatus,
   type ModelSourceSiteStatus,
   type SaveSourceAuthProfileInput,
   type SourceAuthLinkInstructions
@@ -18,6 +22,7 @@ export function useModelSourceAuth() {
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState<string | null>(null);
   const [linkInstructions, setLinkInstructions] = useState<Record<string, SourceAuthLinkInstructions>>({});
+  const [browserLinks, setBrowserLinks] = useState<Record<string, SourceAuthBrowserLinkStatus>>({});
   const [error, setError] = useState<string | null>(null);
 
   const loadSites = useCallback(async () => {
@@ -57,14 +62,71 @@ export function useModelSourceAuth() {
     try {
       const instructions = await startSourceAuthLink(siteKey);
       setLinkInstructions((current) => ({ ...current, [siteKey]: instructions }));
-      if (instructions.loginUrl) {
-        window.open(instructions.loginUrl, "_blank", "noopener,noreferrer");
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Model source auth link failed");
     } finally {
       setIsSaving(null);
     }
+  }
+
+  async function startAssistedBrowserLink(siteKey: string, input: { label?: string | null; accountIdentifier?: string | null }) {
+    setIsSaving(siteKey);
+    setError(null);
+    try {
+      const link = await startSourceAuthBrowserLink(siteKey, input);
+      setBrowserLinks((current) => ({ ...current, [siteKey]: link }));
+      applyBrowserLinkProfile(link);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Browser link start failed");
+    } finally {
+      setIsSaving(null);
+    }
+  }
+
+  async function captureAssistedBrowserLink(siteKey: string) {
+    const sessionId = browserLinks[siteKey]?.sessionId;
+    if (!sessionId) {
+      setError("Start browser linking before capturing the session");
+      return;
+    }
+    setIsSaving(siteKey);
+    setError(null);
+    try {
+      const link = await captureSourceAuthBrowserLink(siteKey, sessionId);
+      setBrowserLinks((current) => ({ ...current, [siteKey]: link }));
+      applyBrowserLinkProfile(link);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Browser link capture failed");
+    } finally {
+      setIsSaving(null);
+    }
+  }
+
+  async function refreshAssistedBrowserLink(siteKey: string) {
+    const sessionId = browserLinks[siteKey]?.sessionId;
+    if (!sessionId) {
+      return;
+    }
+    setIsTesting(siteKey);
+    setError(null);
+    try {
+      const link = await getSourceAuthBrowserLinkStatus(siteKey, sessionId);
+      setBrowserLinks((current) => ({ ...current, [siteKey]: link }));
+      applyBrowserLinkProfile(link);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Browser link status failed");
+    } finally {
+      setIsTesting(null);
+    }
+  }
+
+  function applyBrowserLinkProfile(link: SourceAuthBrowserLinkStatus) {
+    if (!link.authProfile) {
+      return;
+    }
+    setSites((current) =>
+      current.map((site) => (site.siteKey === link.siteKey ? { ...site, authProfile: link.authProfile ?? site.authProfile } : site))
+    );
   }
 
   async function testSiteAuth(siteKey: string) {
@@ -119,10 +181,14 @@ export function useModelSourceAuth() {
     isSaving,
     isTesting,
     linkInstructions,
+    browserLinks,
     error,
     reload: loadSites,
     saveSiteAuth,
     startBrowserLink,
+    startAssistedBrowserLink,
+    captureAssistedBrowserLink,
+    refreshAssistedBrowserLink,
     testSiteAuth,
     disconnectSiteAuth
   };

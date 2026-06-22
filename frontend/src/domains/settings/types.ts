@@ -69,6 +69,19 @@ export type SourceAuthLinkInstructions = {
   storageNotes: string;
 };
 
+export type SourceAuthBrowserLinkStatus = {
+  siteKey: string;
+  displayName: string;
+  authMode: string;
+  sessionId: string;
+  status: string;
+  message: string;
+  loginUrl: string | null;
+  expiresAt: string;
+  cookieCount: number;
+  authProfile: SourceAuthProfileStatus | null;
+};
+
 export type SourceAuthReadinessStatus = {
   siteKey: string;
   displayName: string;

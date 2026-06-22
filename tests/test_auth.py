@@ -141,6 +141,13 @@ def test_protected_routes_require_sessions_and_roles_once_users_exist():
             "/api/site-scanning/auth-profiles/printables",
             {"auth_mode": "bearer_token", "secret_value": "test-token"},
         ),
+        (
+            "POST",
+            "/api/site-scanning/auth-profiles/printables/browser-link",
+            {"account_identifier": "maker@example.test"},
+        ),
+        ("POST", "/api/site-scanning/auth-profiles/printables/browser-link/session-1/capture", None),
+        ("GET", "/api/site-scanning/auth-profiles/printables/browser-link/session-1", None),
         ("DELETE", "/api/site-scanning/auth-profiles/printables", None),
         ("POST", "/api/resources/samples", None),
         ("GET", "/api/settings/provider-secrets", None),

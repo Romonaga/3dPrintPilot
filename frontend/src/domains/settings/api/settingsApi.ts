@@ -5,6 +5,7 @@ import {
   type ModelSourceSiteStatus,
   type ProviderSecretStatus,
   type SaveSourceAuthProfileInput,
+  type SourceAuthBrowserLinkStatus,
   type SourceAuthReadinessStatus,
   type SourceAuthProfileStatus
 } from "../types";
@@ -83,6 +84,19 @@ type ApiSourceAuthReadiness = {
   masked_account_identifier: string | null;
   masked_value: string | null;
   updated_at: string | null;
+};
+
+type ApiSourceAuthBrowserLink = {
+  site_key: string;
+  display_name: string;
+  auth_mode: string;
+  session_id: string;
+  status: string;
+  message: string;
+  login_url: string | null;
+  expires_at: string;
+  cookie_count: number;
+  auth_profile: ApiSourceAuthProfile | null;
 };
 
 export async function getFeatureSettings(): Promise<FeatureSettings> {
@@ -166,6 +180,48 @@ export async function startSourceAuthLink(siteKey: string): Promise<SourceAuthLi
     throw new Error(`Model source auth link failed with HTTP ${response.status}`);
   }
   return fromApiSourceAuthLink((await response.json()) as ApiSourceAuthLink);
+}
+
+export async function startSourceAuthBrowserLink(
+  siteKey: string,
+  input: { label?: string | null; accountIdentifier?: string | null }
+): Promise<SourceAuthBrowserLinkStatus> {
+  const response = await apiFetch(`/api/site-scanning/auth-profiles/${siteKey}/browser-link`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      label: input.label ?? null,
+      account_identifier: input.accountIdentifier ?? null
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`Browser link start failed with HTTP ${response.status}`);
+  }
+  return fromApiSourceAuthBrowserLink((await response.json()) as ApiSourceAuthBrowserLink);
+}
+
+export async function captureSourceAuthBrowserLink(
+  siteKey: string,
+  sessionId: string
+): Promise<SourceAuthBrowserLinkStatus> {
+  const response = await apiFetch(`/api/site-scanning/auth-profiles/${siteKey}/browser-link/${sessionId}/capture`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    throw new Error(`Browser link capture failed with HTTP ${response.status}`);
+  }
+  return fromApiSourceAuthBrowserLink((await response.json()) as ApiSourceAuthBrowserLink);
+}
+
+export async function getSourceAuthBrowserLinkStatus(
+  siteKey: string,
+  sessionId: string
+): Promise<SourceAuthBrowserLinkStatus> {
+  const response = await apiFetch(`/api/site-scanning/auth-profiles/${siteKey}/browser-link/${sessionId}`);
+  if (!response.ok) {
+    throw new Error(`Browser link status failed with HTTP ${response.status}`);
+  }
+  return fromApiSourceAuthBrowserLink((await response.json()) as ApiSourceAuthBrowserLink);
 }
 
 export async function testSourceAuthProfile(siteKey: string): Promise<SourceAuthReadinessStatus> {
@@ -252,6 +308,21 @@ function fromApiSourceAuthReadiness(readiness: ApiSourceAuthReadiness): SourceAu
     maskedAccountIdentifier: readiness.masked_account_identifier,
     maskedValue: readiness.masked_value,
     updatedAt: readiness.updated_at
+  };
+}
+
+function fromApiSourceAuthBrowserLink(link: ApiSourceAuthBrowserLink): SourceAuthBrowserLinkStatus {
+  return {
+    siteKey: link.site_key,
+    displayName: link.display_name,
+    authMode: link.auth_mode,
+    sessionId: link.session_id,
+    status: link.status,
+    message: link.message,
+    loginUrl: link.login_url,
+    expiresAt: link.expires_at,
+    cookieCount: link.cookie_count,
+    authProfile: link.auth_profile ? fromApiSourceAuthProfile(link.auth_profile) : null
   };
 }
 
