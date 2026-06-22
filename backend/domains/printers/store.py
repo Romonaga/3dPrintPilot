@@ -75,6 +75,7 @@ class PrinterStore:
         build_volume_x_mm: int | None = None,
         build_volume_y_mm: int | None = None,
         build_volume_z_mm: int | None = None,
+        capabilities: dict | None = None,
         scan_result_id: int | None = None,
     ) -> Printer:
         source = self._session.get(NetworkScanResult, scan_result_id) if scan_result_id is not None else None
@@ -83,6 +84,14 @@ class PrinterStore:
         final_host = source.host if source is not None else host
         final_port = source.port if source is not None else port
         final_protocol = source.protocol if source is not None else protocol
+        final_capabilities = _merge_capabilities(
+            capabilities_for_service_type(final_service_type),
+            getattr(source, "capabilities", None) if source is not None else None,
+            capabilities,
+        )
+        final_build_volume_x_mm = build_volume_x_mm or (getattr(source, "build_volume_x_mm", None) if source is not None else None)
+        final_build_volume_y_mm = build_volume_y_mm or (getattr(source, "build_volume_y_mm", None) if source is not None else None)
+        final_build_volume_z_mm = build_volume_z_mm or (getattr(source, "build_volume_z_mm", None) if source is not None else None)
         final_identity_key = (
             identity_key
             or (source.identity_key if source is not None else None)
@@ -113,6 +122,10 @@ class PrinterStore:
                 service_type=final_service_type,
                 identity_key=final_identity_key,
                 state="confirmed",
+                capabilities=final_capabilities,
+                build_volume_x_mm=final_build_volume_x_mm,
+                build_volume_y_mm=final_build_volume_y_mm,
+                build_volume_z_mm=final_build_volume_z_mm,
             )
             self._session.commit()
             self._session.refresh(existing)
@@ -124,13 +137,13 @@ class PrinterStore:
             port=final_port,
             protocol=final_protocol,
             printer_type=final_service_type,
-            build_volume_x_mm=build_volume_x_mm,
-            build_volume_y_mm=build_volume_y_mm,
-            build_volume_z_mm=build_volume_z_mm,
+            build_volume_x_mm=final_build_volume_x_mm,
+            build_volume_y_mm=final_build_volume_y_mm,
+            build_volume_z_mm=final_build_volume_z_mm,
             state="confirmed",
             identity_key=final_identity_key,
             adapter_type=infer_adapter_type(final_service_type),
-            capabilities=capabilities_for_service_type(final_service_type),
+            capabilities=final_capabilities,
         )
 
     def delete_printer(self, printer_id: int) -> bool:
@@ -181,6 +194,10 @@ class PrinterStore:
                     service_type=printer.service_type,
                     identity_key=identity_key,
                     state="online",
+                    capabilities=printer.capabilities,
+                    build_volume_x_mm=printer.build_volume_x_mm,
+                    build_volume_y_mm=printer.build_volume_y_mm,
+                    build_volume_z_mm=printer.build_volume_z_mm,
                 )
             self._session.add(
                 NetworkScanResult(
@@ -198,8 +215,18 @@ class PrinterStore:
                         "service_type": printer.service_type,
                         "confidence": printer.confidence,
                         "identity_key": identity_key,
+                        "capabilities": printer.capabilities or {},
+                        "build_volume": {
+                            "x_mm": printer.build_volume_x_mm,
+                            "y_mm": printer.build_volume_y_mm,
+                            "z_mm": printer.build_volume_z_mm,
+                        },
                     },
                     evidence=list(printer.evidence),
+                    capabilities=printer.capabilities or {},
+                    build_volume_x_mm=printer.build_volume_x_mm,
+                    build_volume_y_mm=printer.build_volume_y_mm,
+                    build_volume_z_mm=printer.build_volume_z_mm,
                 )
             )
         self._session.commit()
@@ -234,6 +261,10 @@ class PrinterStore:
         service_type: str,
         identity_key: str | None,
         state: str,
+        capabilities: dict | None = None,
+        build_volume_x_mm: int | None = None,
+        build_volume_y_mm: int | None = None,
+        build_volume_z_mm: int | None = None,
     ) -> None:
         preserve_confirmed_endpoint = (
             state == "online"
@@ -247,7 +278,30 @@ class PrinterStore:
             printer.protocol = protocol
             printer.printer_type = service_type
             printer.adapter_type = infer_adapter_type(service_type)
-            printer.capabilities = capabilities_for_service_type(service_type)
+            printer.capabilities = _merge_capabilities(
+                capabilities_for_service_type(service_type),
+                printer.capabilities,
+                capabilities,
+            )
+        else:
+            printer.capabilities = _merge_capabilities(
+                printer.capabilities or capabilities_for_service_type(service_type),
+                capabilities,
+            )
+        printer.build_volume_x_mm = build_volume_x_mm or printer.build_volume_x_mm
+        printer.build_volume_y_mm = build_volume_y_mm or printer.build_volume_y_mm
+        printer.build_volume_z_mm = build_volume_z_mm or printer.build_volume_z_mm
         printer.state = state
         if identity_key and printer.identity_key is None:
             printer.identity_key = identity_key
+
+
+def _merge_capabilities(*sources: dict | None) -> dict:
+    merged: dict = {}
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key, value in source.items():
+            if value is not None:
+                merged[key] = value
+    return merged

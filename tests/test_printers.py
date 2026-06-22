@@ -30,6 +30,7 @@ from backend.domains.printers.service import (
     _detect_octoprint_or_prusalink,
     _limited_hosts,
     _mdns_printer_metadata,
+    _moonraker_capabilities_from_objects,
     _prioritized_probe_ports,
     _probe_http_port,
     _resolve_probe_network,
@@ -116,6 +117,7 @@ class FakePrinterStore:
         protocol,
         service_type,
         identity_key=None,
+        capabilities=None,
         build_volume_x_mm=None,
         build_volume_y_mm=None,
         build_volume_z_mm=None,
@@ -129,7 +131,10 @@ class FakePrinterStore:
         printer.printer_type = service_type
         printer.state = "confirmed"
         printer.adapter_type = "moonraker" if "moonraker" in service_type else None
-        printer.capabilities = {"read_only_status": printer.adapter_type is not None}
+        printer.capabilities = capabilities or {"read_only_status": printer.adapter_type is not None}
+        printer.build_volume_x_mm = build_volume_x_mm
+        printer.build_volume_y_mm = build_volume_y_mm
+        printer.build_volume_z_mm = build_volume_z_mm
         return printer
 
     def delete_printer(self, printer_id):
@@ -185,6 +190,10 @@ def test_printer_models_are_registered():
     assert "identity_key" in Printer.__table__.columns
     assert "identity_key" in NetworkScanResult.__table__.columns
     assert "matched_printer_id" in NetworkScanResult.__table__.columns
+    assert "capabilities" in NetworkScanResult.__table__.columns
+    assert "build_volume_x_mm" in NetworkScanResult.__table__.columns
+    assert "build_volume_y_mm" in NetworkScanResult.__table__.columns
+    assert "build_volume_z_mm" in NetworkScanResult.__table__.columns
 
 
 def test_printer_api_lists_and_adds_printers():
@@ -419,6 +428,124 @@ def test_printer_store_persists_scan_metrics_and_results():
     assert session.committed is True
     assert any(isinstance(item, NetworkScanRun) for item in session.added)
     assert any(isinstance(item, NetworkScanResult) for item in session.added)
+
+
+def test_printer_store_persists_scan_capabilities_and_build_volume():
+    result = PrinterScanResult(
+        summary=PrinterScanSummary(
+            status=PrinterScanStatus.COMPLETED,
+            duration_ms=100,
+            discovered_count=1,
+            method="http_probe",
+            scanned_host_count=1,
+            probe_count=1,
+        ),
+        printers=(
+            DiscoveredPrinter(
+                name="Snapmaker U1 Moonraker",
+                host="192.168.1.80",
+                port=7125,
+                protocol="http",
+                service_type="http_probe:snapmaker_moonraker",
+                confidence=94,
+                capabilities={"adapter": "moonraker", "toolhead_count": 4, "color_count": 4},
+                build_volume_x_mm=320,
+                build_volume_y_mm=320,
+                build_volume_z_mm=320,
+            ),
+        ),
+    )
+    session = FakeSession()
+
+    PrinterStore(session).save_scan_result(result)
+
+    saved_result = next(item for item in session.added if isinstance(item, NetworkScanResult))
+    assert saved_result.capabilities["toolhead_count"] == 4
+    assert saved_result.capabilities["color_count"] == 4
+    assert saved_result.build_volume_x_mm == 320
+    assert saved_result.raw_payload["build_volume"]["x_mm"] == 320
+
+
+def test_confirm_discovered_printer_inherits_persisted_scan_capabilities():
+    source = NetworkScanResult(
+        id=5,
+        scan_run_id=1,
+        name="Snapmaker U1 Moonraker",
+        host="192.168.1.80",
+        port=7125,
+        protocol="http",
+        service_type="http_probe:snapmaker_moonraker",
+        identity_key="moonraker:snapmaker:machine_id:u1",
+        confidence=94,
+        evidence=["Read-only Moonraker object query exposed deterministic capability metadata"],
+        capabilities={"adapter": "moonraker", "toolhead_count": 4, "color_count": 4},
+        build_volume_x_mm=320,
+        build_volume_y_mm=320,
+        build_volume_z_mm=320,
+    )
+    session = FakeSession(scan_results={source.id: source})
+
+    printer = PrinterStore(session).confirm_discovered_printer(
+        name="Snapmaker U1",
+        host="192.168.1.80",
+        port=7125,
+        protocol="http",
+        service_type="http_probe:snapmaker_moonraker",
+        scan_result_id=source.id,
+    )
+
+    assert printer.capabilities["toolhead_count"] == 4
+    assert printer.capabilities["color_count"] == 4
+    assert printer.build_volume_x_mm == 320
+    assert printer.build_volume_y_mm == 320
+    assert printer.build_volume_z_mm == 320
+
+
+def test_scan_refresh_preserves_manual_build_volume_when_scan_does_not_prove_it():
+    known = Printer(
+        id=10,
+        name="Manual U1",
+        host="192.168.1.80",
+        port=7125,
+        protocol="http",
+        printer_type="http_probe:snapmaker_moonraker",
+        state="confirmed",
+        identity_key="moonraker:snapmaker:machine_id:u1",
+        capabilities={"adapter": "moonraker", "toolhead_count": 4},
+        build_volume_x_mm=320,
+        build_volume_y_mm=320,
+        build_volume_z_mm=320,
+    )
+    result = PrinterScanResult(
+        summary=PrinterScanSummary(
+            status=PrinterScanStatus.COMPLETED,
+            duration_ms=100,
+            discovered_count=1,
+            method="http_probe",
+            scanned_host_count=1,
+            probe_count=1,
+        ),
+        printers=(
+            DiscoveredPrinter(
+                name="Snapmaker U1 Moonraker",
+                host="192.168.1.81",
+                port=7125,
+                protocol="http",
+                service_type="http_probe:snapmaker_moonraker",
+                confidence=94,
+                identity_key=known.identity_key,
+                capabilities={"adapter": "moonraker"},
+            ),
+        ),
+    )
+    session = FakeSession(known_printer=known)
+
+    PrinterStore(session).save_scan_result(result)
+
+    assert known.build_volume_x_mm == 320
+    assert known.build_volume_y_mm == 320
+    assert known.build_volume_z_mm == 320
+    assert known.capabilities["toolhead_count"] == 4
 
 
 def test_confirm_discovered_printer_returns_known_match_instead_of_duplicate():
@@ -902,6 +1029,35 @@ def test_octoprint_and_moonraker_status_parsers_are_read_only():
     assert moonraker.adapter_type == "moonraker"
     assert moonraker.state == "ready"
     assert moonraker.capabilities["read_only_status"] is True
+
+
+def test_moonraker_capability_parser_extracts_build_volume_and_multi_head_fields():
+    payload = {
+        "result": {
+            "status": {
+                "toolhead": {"axis_maximum": [320.0, 320.0, 320.0, 0]},
+                "configfile": {
+                    "settings": {
+                        "extruder": {"max_temp": 300, "nozzle_diameter": 0.4},
+                        "extruder1": {"max_temp": 300, "nozzle_diameter": 0.4},
+                        "extruder2": {"max_temp": 300, "nozzle_diameter": 0.4},
+                        "extruder3": {"max_temp": 300, "nozzle_diameter": 0.4},
+                        "heater_bed": {"max_temp": 110},
+                    }
+                },
+            }
+        }
+    }
+
+    capabilities = _moonraker_capabilities_from_objects(payload, "http_probe:snapmaker_moonraker")
+
+    assert capabilities["build_volume_mm"] == {"x": 320, "y": 320, "z": 320}
+    assert capabilities["toolhead_count"] == 4
+    assert capabilities["color_count"] == 4
+    assert capabilities["multi_head"] is True
+    assert capabilities["multi_color"] is True
+    assert capabilities["max_nozzle_temp_c"] == 300
+    assert capabilities["max_bed_temp_c"] == 110
 
 
 def test_moonraker_adapter_maps_file_and_job_requests(monkeypatch):

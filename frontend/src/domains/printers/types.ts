@@ -53,6 +53,10 @@ export type DiscoveredPrinter = {
   scanResultId: number | null;
   identityKey: string | null;
   matchedPrinterId: number | null;
+  capabilities: Record<string, unknown>;
+  buildVolumeXmm: number | null;
+  buildVolumeYmm: number | null;
+  buildVolumeZmm: number | null;
 };
 
 export type PrinterEndpointGroup = {
