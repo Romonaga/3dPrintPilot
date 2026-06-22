@@ -182,13 +182,19 @@ describe("App", () => {
                 state: "online",
                 identity_key: "moonraker:snapmaker:machine_id:u1",
                 adapter_type: "moonraker",
-                capabilities: { adapter: "moonraker", job_control: true },
+                capabilities: {
+                  adapter: "moonraker",
+                  job_control: true,
+                  toolhead_count: 4,
+                  color_count: 4,
+                  nozzle_diameter_mm: 0.4
+                },
                 credential_configured: false,
                 last_status: {},
                 last_status_at: null,
-                build_volume_x_mm: null,
-                build_volume_y_mm: null,
-                build_volume_z_mm: null
+                build_volume_x_mm: 320,
+                build_volume_y_mm: 320,
+                build_volume_z_mm: 320
               },
               {
                 id: 5,
@@ -218,7 +224,7 @@ describe("App", () => {
                 state: "online",
                 identity_key: "mdns:_bambu._tcp.local.:bambu-a1._bambu._tcp.local.",
                 adapter_type: null,
-                capabilities: {},
+                capabilities: { toolhead_count: 2 },
                 credential_configured: false,
                 last_status: {},
                 last_status_at: null,
@@ -270,6 +276,11 @@ describe("App", () => {
     expect(await screen.findByText("Printing - benchy.gcode")).toBeInTheDocument();
     expect(screen.getByText("42%")).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "Print progress for Snapmaker U1" })).toHaveValue(42);
+    expect(screen.getByText("320 x 320 x 320 mm")).toBeInTheDocument();
+    expect(screen.getByText("4 toolheads")).toBeInTheDocument();
+    expect(screen.getByText("4 colors")).toBeInTheDocument();
+    expect(screen.getByText("0.4 mm nozzle")).toBeInTheDocument();
+    expect(screen.getByText("2 toolheads")).toBeInTheDocument();
     expect(screen.getByText("Confirmed")).toBeInTheDocument();
     expect(screen.getByText("Idle")).toBeInTheDocument();
     expect(screen.getByText("Print telemetry unavailable")).toBeInTheDocument();

@@ -921,6 +921,10 @@ h3 {
   font-weight: 650;
 }
 
+.printer-capability-summary {
+  margin-top: 6px;
+}
+
 .endpoint-list {
   display: grid;
   gap: 6px;

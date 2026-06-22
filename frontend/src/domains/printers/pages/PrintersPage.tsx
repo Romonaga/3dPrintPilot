@@ -1,6 +1,7 @@
 import { Radar, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
+import { PrinterCapabilitySummary } from "../components/PrinterCapabilitySummary";
 import { discoveredPrinterKey, type PrintersState } from "../hooks/usePrinters";
 
 type PrintersPageProps = {
@@ -176,6 +177,11 @@ export default function PrintersPage({
                     {printer.protocol}://{printer.host}:{printer.port}
                   </p>
                   <p>{formatBuildVolume(printer.buildVolumeXmm, printer.buildVolumeYmm, printer.buildVolumeZmm)}</p>
+                  <PrinterCapabilitySummary
+                    ariaLabel={`Capabilities for ${printer.name}`}
+                    emptyLabel="Capabilities unknown"
+                    printer={printer}
+                  />
                 </div>
                 <div className="row-meta">
                   <span>{printer.printerType}</span>
@@ -251,6 +257,13 @@ export default function PrintersPage({
                         </span>
                       ))}
                     </div>
+                    {primaryEndpoint ? (
+                      <PrinterCapabilitySummary
+                        ariaLabel={`Detected hardware capabilities for ${group.host}`}
+                        includeBuildVolume
+                        printer={primaryEndpoint}
+                      />
+                    ) : null}
                     <div className="endpoint-list" aria-label={`Detected endpoints for ${group.host}`}>
                       {group.endpoints.map((endpoint) => (
                         <div className="endpoint-row" key={`${endpoint.host}:${endpoint.port}:${endpoint.serviceType}`}>
@@ -294,6 +307,11 @@ export default function PrintersPage({
                     <div>
                       <h3>{printer.name}</h3>
                       <p>{formatEndpoint(printer.protocol, printer.host, printer.port)}</p>
+                      <PrinterCapabilitySummary
+                        ariaLabel={`Detected hardware capabilities for ${printer.name}`}
+                        includeBuildVolume
+                        printer={printer}
+                      />
                     </div>
                     <div className="row-meta">
                       <span>{printer.serviceType}</span>

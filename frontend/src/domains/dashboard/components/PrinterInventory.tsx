@@ -1,5 +1,6 @@
 import { Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
+import { PrinterCapabilitySummary } from "../../printers/components/PrinterCapabilitySummary";
 import { PrinterControlPanel, supportsMoonrakerControl } from "../../printers/components/PrinterControlPanel";
 import { type Printer } from "../../printers/types";
 import { type PrinterSummary } from "../types";
@@ -44,6 +45,13 @@ export function PrinterInventory({ onScanLan, printerRecords, printers }: Printe
                     <strong>{printer.jobStatusLabel}</strong>
                   </div>
                 </div>
+                {printerRecord ? (
+                  <PrinterCapabilitySummary
+                    ariaLabel={`Capabilities for ${printer.name}`}
+                    emptyLabel="Capabilities unknown"
+                    printer={printerRecord}
+                  />
+                ) : null}
                 {printer.progressPercent !== null ? (
                   <div className="dashboard-printer-progress">
                     <progress aria-label={`Print progress for ${printer.name}`} max={100} value={printer.progressPercent} />
