@@ -34,6 +34,9 @@ type ApiFeatureSettings = {
 type ApiSiteAdapter = {
   site_key: string;
   display_name: string;
+  support_level: string;
+  capabilities: string[];
+  setup_required: boolean;
   base_url: string | null;
   login_url: string | null;
   enabled: boolean;
@@ -333,6 +336,9 @@ function fromApiModelSourceSite(
   return {
     siteKey: adapter.site_key,
     displayName: adapter.display_name,
+    supportLevel: adapter.support_level ?? "generic_only",
+    capabilities: adapter.capabilities ?? ["public_scan"],
+    setupRequired: adapter.setup_required ?? false,
     baseUrl: adapter.base_url ?? null,
     loginUrl: adapter.login_url ?? null,
     enabled: adapter.enabled,

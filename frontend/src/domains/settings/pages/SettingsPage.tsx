@@ -224,13 +224,20 @@ function SourceSiteAuthRow({
   onTest,
   onDisconnect
 }: SourceSiteAuthRowProps) {
-  const initialMode = site.authProfile.authMode === "none" ? site.supportedAuthModes[0] ?? "none" : site.authProfile.authMode;
+  const hasGuidedBrowserSetup = site.capabilities.includes("account_setup") && site.supportedAuthModes.includes("browser_session");
+  const initialMode =
+    site.authProfile.authMode === "none" && hasGuidedBrowserSetup
+      ? "browser_session"
+      : site.authProfile.authMode === "none"
+        ? site.supportedAuthModes[0] ?? "none"
+        : site.authProfile.authMode;
   const [authMode, setAuthMode] = useState(initialMode);
   const [accountIdentifier, setAccountIdentifier] = useState(site.authProfile.accountIdentifier ?? "");
   const [label, setLabel] = useState(site.authProfile.label ?? "");
   const [headerName, setHeaderName] = useState(site.authProfile.headerName ?? "");
   const [secretValue, setSecretValue] = useState("");
   const [showManualSessionField, setShowManualSessionField] = useState(false);
+  const [showAdvancedSetup, setShowAdvancedSetup] = useState(false);
   const requiresAccountIdentifier = authMode === "username_password" || authMode === "browser_session";
   const requiresSecret = ["api_token", "bearer_token", "cookie_header", "username_password"].includes(authMode);
   const canSaveManualBrowserSession =
@@ -256,6 +263,19 @@ function SourceSiteAuthRow({
     setSecretValue("");
   }
 
+  async function handleGuidedBrowserStart(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onStartBrowserLink({
+      accountIdentifier: accountIdentifier.trim() || null,
+      label: label.trim() || null
+    });
+  }
+
+  const statusAuthMode = hasGuidedBrowserSetup ? "browser_session" : authMode;
+  const canStartGuidedBrowserLink = accountIdentifier.trim().length > 0;
+  const hasManualFallback = site.supportedAuthModes.some((mode) => mode !== "none");
+  const showManualForm = showAdvancedSetup && hasManualFallback;
+
   return (
     <article className="source-site-row">
       <div className="source-site-heading">
@@ -266,12 +286,25 @@ function SourceSiteAuthRow({
         </div>
       </div>
 
-      <div className="secret-status">
+      <div className="source-site-badges" aria-label={`${site.displayName} source capabilities`}>
         <StatusBadge
           icon={site.authProfile.authReady ? CheckCircle2 : AlertTriangle}
-          label={sourceAuthStatusLabel(site.authProfile.linkStatus, authMode)}
+          label={sourceAuthStatusLabel(site.authProfile.linkStatus, statusAuthMode)}
           tone={site.authProfile.authReady ? "ok" : "warn"}
         />
+        <StatusBadge
+          icon={site.supportLevel === "generic_only" ? AlertTriangle : CheckCircle2}
+          label={supportLevelLabel(site.supportLevel)}
+          tone={site.supportLevel === "generic_only" ? "warn" : site.supportLevel === "partial" ? "muted" : "ok"}
+        />
+        {site.capabilities.map((capability) => (
+          <span className="capability-chip" key={capability}>
+            {capabilityLabel(capability)}
+          </span>
+        ))}
+      </div>
+
+      <div className="secret-status">
         <span>{site.authProfile.maskedAccountIdentifier ?? site.authProfile.maskedValue ?? "No credential stored"}</span>
         {site.loginUrl ? (
           <a className="inline-link" href={site.loginUrl} rel="noreferrer" target="_blank">
@@ -294,7 +327,85 @@ function SourceSiteAuthRow({
         </div>
       ) : null}
 
-      <form className="source-site-form" onSubmit={handleSubmit}>
+      {hasGuidedBrowserSetup ? (
+        <form className="source-site-form source-site-guided-form" onSubmit={handleGuidedBrowserStart}>
+          <label className="field-label">
+            Label
+            <input
+              autoComplete="off"
+              onChange={(event) => setLabel(event.target.value)}
+              placeholder="Personal account"
+              type="text"
+              value={label}
+            />
+          </label>
+          <label className="field-label">
+            Account
+            <input
+              autoComplete="username"
+              onChange={(event) => setAccountIdentifier(event.target.value)}
+              placeholder="account email"
+              type="email"
+              value={accountIdentifier}
+            />
+          </label>
+          <div className="source-site-actions">
+            <button className="text-button icon-action" disabled={isSaving || !canStartGuidedBrowserLink} type="submit">
+              {isSaving ? <Spinner size={15} /> : <Link2 size={15} aria-hidden="true" />}
+              <span>Link with browser</span>
+            </button>
+            {browserLink ? (
+              <>
+                <button className="primary-action icon-action" disabled={isSaving} onClick={onCaptureBrowserLink} type="button">
+                  {isSaving ? <Spinner size={15} /> : <KeyRound size={15} aria-hidden="true" />}
+                  <span>Capture signed-in session</span>
+                </button>
+                <button className="text-button icon-action" disabled={isTesting} onClick={onRefreshBrowserLink} type="button">
+                  {isTesting ? <Spinner size={15} /> : <RefreshCw size={15} aria-hidden="true" />}
+                  <span>Refresh link status</span>
+                </button>
+              </>
+            ) : null}
+            <button
+              className="text-button icon-action"
+              disabled={isTesting || site.authProfile.authMode === "none"}
+              onClick={onTest}
+              type="button"
+            >
+              {isTesting ? <Spinner size={15} /> : <RefreshCw size={15} aria-hidden="true" />}
+              <span>{isTesting ? "Testing" : "Test connection"}</span>
+            </button>
+            <button
+              className="text-button icon-action"
+              disabled={isSaving || site.authProfile.authMode === "none"}
+              onClick={onDisconnect}
+              type="button"
+            >
+              {isSaving ? <Spinner size={15} /> : <Trash2 size={15} aria-hidden="true" />}
+              <span>Disconnect</span>
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="source-site-public-only">
+          <StatusBadge icon={AlertTriangle} label="Public scan only" tone="warn" />
+          <p>No supported runner is installed for managed login, download selection, or authenticated file import.</p>
+        </div>
+      )}
+
+      {hasManualFallback ? (
+        <button
+          className="text-button icon-action source-site-advanced-toggle"
+          type="button"
+          onClick={() => setShowAdvancedSetup((current) => !current)}
+        >
+          <KeyRound size={15} aria-hidden="true" />
+          <span>{showAdvancedSetup ? "Hide advanced fallback" : "Advanced fallback"}</span>
+        </button>
+      ) : null}
+
+      {showManualForm ? (
+        <form className="source-site-form source-site-manual-form" onSubmit={handleSubmit}>
         <label className="field-label">
           Auth type
           <select value={authMode} onChange={(event) => setAuthMode(event.target.value)}>
@@ -426,26 +537,9 @@ function SourceSiteAuthRow({
               <span>{isSaving ? "Saving" : authMode === "browser_session" ? "Save session" : "Save"}</span>
             </button>
           ) : null}
-          <button
-            className="text-button icon-action"
-            disabled={isTesting || authMode === "none"}
-            onClick={onTest}
-            type="button"
-          >
-            {isTesting ? <Spinner size={15} /> : <RefreshCw size={15} aria-hidden="true" />}
-            <span>{isTesting ? "Testing" : "Test connection"}</span>
-          </button>
-          <button
-            className="text-button icon-action"
-            disabled={isSaving || site.authProfile.authMode === "none"}
-            onClick={onDisconnect}
-            type="button"
-          >
-            {isSaving ? <Spinner size={15} /> : <Trash2 size={15} aria-hidden="true" />}
-            <span>Disconnect</span>
-          </button>
         </div>
-      </form>
+        </form>
+      ) : null}
       {browserLink ? (
         <div className="browser-link-status" role="status">
           <StatusBadge
@@ -484,6 +578,28 @@ function authModeLabel(mode: string) {
     browser_session: "Browser session"
   };
   return labels[mode] ?? mode;
+}
+
+function supportLevelLabel(level: string) {
+  const labels: Record<string, string> = {
+    supported: "Supported site",
+    partial: "Supported setup",
+    generic_only: "Generic site",
+    planned: "Planned"
+  };
+  return labels[level] ?? level;
+}
+
+function capabilityLabel(capability: string) {
+  const labels: Record<string, string> = {
+    public_scan: "Public scan",
+    account_setup: "Account setup",
+    project_lookup: "Project lookup",
+    file_listing: "File listing",
+    file_download: "File download",
+    license_metadata: "License metadata"
+  };
+  return labels[capability] ?? capability;
 }
 
 function sourceAuthStatusLabel(status: string, authMode: string) {

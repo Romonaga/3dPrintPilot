@@ -39,6 +39,9 @@ export type SourceAuthProfileStatus = {
 export type ModelSourceSiteStatus = {
   siteKey: string;
   displayName: string;
+  supportLevel: string;
+  capabilities: string[];
+  setupRequired: boolean;
   baseUrl: string | null;
   loginUrl: string | null;
   enabled: boolean;

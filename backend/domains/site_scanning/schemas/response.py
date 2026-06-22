@@ -6,6 +6,9 @@ from pydantic import BaseModel
 class SiteScanAdapterResponse(BaseModel):
     site_key: str
     display_name: str
+    support_level: str
+    capabilities: list[str]
+    setup_required: bool
     base_url: str | None
     login_url: str | None
     enabled: bool

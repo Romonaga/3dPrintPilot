@@ -1103,6 +1103,45 @@ dd {
   gap: 10px;
 }
 
+.source-site-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.capability-chip {
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--muted-strong);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  padding: 6px 8px;
+}
+
+.source-site-public-only {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  padding: 10px;
+}
+
+.source-site-public-only p {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+}
+
+.source-site-advanced-toggle {
+  width: fit-content;
+}
+
 .browser-link-status {
   display: flex;
   align-items: center;
@@ -1280,6 +1319,10 @@ dd {
   }
 
   .source-site-form {
+    grid-template-columns: 1fr;
+  }
+
+  .source-site-public-only {
     grid-template-columns: 1fr;
   }
 
