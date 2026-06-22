@@ -40,6 +40,42 @@ endsolid sample
 class FakeModelStore:
     def __init__(self) -> None:
         self.saved = []
+        self.source_scans = []
+
+    def list_source_project_scans(self, limit=20):
+        return self.source_scans[:limit]
+
+    def save_source_project_scan(self, project_files, *, requested_by_user_id):
+        now = datetime.now(UTC)
+        scan = SimpleNamespace(
+            id=11 + len(self.source_scans),
+            site_key=project_files.site_key,
+            source_project_url=project_files.source_project_url,
+            external_project_id=project_files.external_project_id,
+            project_title=project_files.project_title,
+            requested_by_user_id=requested_by_user_id,
+            raw_metadata={"file_count": len(project_files.files)},
+            created_at=now,
+            updated_at=now,
+            files=[
+                SimpleNamespace(
+                    id=index + 1,
+                    file_id=source_file.file_id,
+                    filename=source_file.filename,
+                    file_format=source_file.file_format,
+                    size_bytes=source_file.size_bytes,
+                    source_file_url=source_file.source_file_url,
+                    supported_model_file=source_file.supported_model_file,
+                    source_created_at=source_file.created_at,
+                    notes=source_file.notes,
+                    raw_metadata={},
+                    created_at=now,
+                )
+                for index, source_file in enumerate(project_files.files)
+            ],
+        )
+        self.source_scans.insert(0, scan)
+        return scan
 
     def list_models(self, limit=50):
         return []
@@ -323,10 +359,12 @@ def test_model_import_downloaded_file_requires_absolute_source_urls():
 
 
 def test_model_source_file_discovery_returns_printables_files_without_auth_values(monkeypatch):
+    store = FakeModelStore()
     runner = FakeSourceRunner()
     auth_store = FakeSourceAuthStore()
     monkeypatch.setattr(model_routes, "source_site_service", FakeSourceSiteService(runner))
     app = create_app()
+    app.dependency_overrides[get_model_store] = lambda: store
     app.dependency_overrides[get_site_auth_profile_store] = lambda: auth_store
     allow_anonymous_until_bootstrap(app)
     client = TestClient(app)
@@ -338,12 +376,34 @@ def test_model_source_file_discovery_returns_printables_files_without_auth_value
 
     assert response.status_code == 200
     body = response.json()
+    assert body["scan_id"] == 11
+    assert body["scanned_at"] is not None
     assert body["project_title"] == "Triangle"
     assert body["files"][0]["filename"] == "triangle.stl"
     assert body["files"][0]["supported_model_file"] is True
     assert body["files"][1]["supported_model_file"] is False
+    assert store.source_scans[0].source_project_url == "https://www.printables.com/model/123-triangle"
     assert runner.list_headers == [{"Cookie": "session=abc"}]
     assert "session=abc" not in response.text
+
+
+def test_model_source_file_scan_list_returns_saved_project_files():
+    store = FakeModelStore()
+    project_files = FakeSourceRunner().list_project_files("https://www.printables.com/model/123-triangle")
+    store.save_source_project_scan(project_files, requested_by_user_id=None)
+    app = create_app()
+    app.dependency_overrides[get_model_store] = lambda: store
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.get("/api/models/imports/source-files/scans")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body[0]["site_key"] == "printables"
+    assert body[0]["project_title"] == "Triangle"
+    assert body[0]["files"][0]["file_id"] == "stl-1"
+    assert body[0]["files"][1]["supported_model_file"] is False
 
 
 def test_model_source_file_import_downloads_and_stores_selected_printables_files(monkeypatch):

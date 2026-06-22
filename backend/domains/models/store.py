@@ -4,8 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from backend.domains.models.entities import CompressedModelPayload, GeometryAnalysis
-from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry
+from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry, SourceProjectScan, SourceProjectScanFile
 from backend.domains.resources.store import ResourceStore
+from backend.domains.site_scanning.runners import SourceSiteProjectFiles
 
 
 class ModelStore:
@@ -32,6 +33,53 @@ class ModelStore:
                 selectinload(Model.files).selectinload(ModelFile.payload),
             )
             .where(Model.id == model_id)
+        )
+        return self._session.scalars(statement).first()
+
+    def list_source_project_scans(self, limit: int = 20) -> list[SourceProjectScan]:
+        statement = (
+            select(SourceProjectScan)
+            .options(selectinload(SourceProjectScan.files))
+            .order_by(SourceProjectScan.created_at.desc(), SourceProjectScan.id.desc())
+            .limit(max(1, min(limit, 100)))
+        )
+        return list(self._session.scalars(statement).all())
+
+    def save_source_project_scan(self, project_files: SourceSiteProjectFiles, *, requested_by_user_id: int | None) -> SourceProjectScan:
+        scan = SourceProjectScan(
+            site_key=project_files.site_key,
+            source_project_url=project_files.source_project_url,
+            external_project_id=project_files.external_project_id,
+            project_title=project_files.project_title,
+            requested_by_user_id=requested_by_user_id,
+            raw_metadata={"file_count": len(project_files.files)},
+        )
+        self._session.add(scan)
+        self._session.flush()
+        for source_file in project_files.files:
+            self._session.add(
+                SourceProjectScanFile(
+                    scan_id=scan.id,
+                    file_id=source_file.file_id,
+                    filename=source_file.filename,
+                    file_format=source_file.file_format,
+                    size_bytes=source_file.size_bytes,
+                    source_file_url=source_file.source_file_url,
+                    supported_model_file=source_file.supported_model_file,
+                    source_created_at=source_file.created_at,
+                    notes=source_file.notes,
+                    raw_metadata={},
+                )
+            )
+        self._session.commit()
+        self._session.refresh(scan)
+        return self.get_source_project_scan(scan.id) or scan
+
+    def get_source_project_scan(self, scan_id: int) -> SourceProjectScan | None:
+        statement = (
+            select(SourceProjectScan)
+            .options(selectinload(SourceProjectScan.files))
+            .where(SourceProjectScan.id == scan_id)
         )
         return self._session.scalars(statement).first()
 

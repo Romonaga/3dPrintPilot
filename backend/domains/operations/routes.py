@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_db_session
 from backend.domains.ai.models import AiCostReconciliationRun, AiUsageEvent
 from backend.domains.compatibility.models import CompatibilityCheck, CompatibilityCheckItem
-from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry
+from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry, SourceProjectScan, SourceProjectScanFile
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
 from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
@@ -32,6 +32,8 @@ EXPORT_MODELS = (
     Model,
     ModelFile,
     ModelGeometry,
+    SourceProjectScan,
+    SourceProjectScanFile,
     CompatibilityCheck,
     CompatibilityCheckItem,
     AiUsageEvent,
@@ -58,7 +60,11 @@ def export_backup(
         },
         "tables": {},
     }
+    inspector = inspect(session.bind)
     for model in EXPORT_MODELS:
+        if not inspector.has_table(model.__tablename__):
+            payload["tables"][model.__tablename__] = []
+            continue
         payload["tables"][model.__tablename__] = [
             _row_to_dict(row)
             for row in session.scalars(select(model).order_by(*model.__table__.primary_key.columns)).all()
@@ -76,7 +82,7 @@ def export_backup(
         for secret in session.scalars(select(ProviderSecret).order_by(ProviderSecret.id)).all()
     ]
     payload["tables"]["site_auth_profiles"] = []
-    if inspect(session.bind).has_table(SiteAuthProfile.__tablename__):
+    if inspector.has_table(SiteAuthProfile.__tablename__):
         payload["tables"]["site_auth_profiles"] = [
             {
                 "id": profile.id,
@@ -94,7 +100,7 @@ def export_backup(
             for profile in session.scalars(select(SiteAuthProfile).order_by(SiteAuthProfile.id)).all()
         ]
     payload["tables"]["model_file_payloads"] = []
-    if inspect(session.bind).has_table(ModelFilePayload.__tablename__):
+    if inspector.has_table(ModelFilePayload.__tablename__):
         payload["tables"]["model_file_payloads"] = [
             {
                 "id": model_payload.id,

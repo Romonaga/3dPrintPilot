@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Index, Integer, JSON, LargeBinary, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, LargeBinary, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db.base import Base
@@ -87,6 +87,52 @@ class ModelFilePayload(Base):
     __table_args__ = (
         UniqueConstraint("model_file_id", name="uq_model_file_payloads_model_file_id"),
         Index("ix_model_file_payloads_original_sha256", "original_sha256"),
+    )
+
+
+class SourceProjectScan(Base):
+    __tablename__ = "source_project_scans"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    site_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_project_url: Mapped[str] = mapped_column(Text, nullable=False)
+    external_project_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    project_title: Mapped[str | None] = mapped_column(String(300))
+    requested_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    raw_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    files: Mapped[list["SourceProjectScanFile"]] = relationship(back_populates="scan", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_source_project_scans_site_project", "site_key", "external_project_id"),
+        Index("ix_source_project_scans_source_project_url", "source_project_url"),
+        Index("ix_source_project_scans_created_at", "created_at"),
+    )
+
+
+class SourceProjectScanFile(Base):
+    __tablename__ = "source_project_scan_files"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    scan_id: Mapped[int] = mapped_column(ForeignKey("source_project_scans.id", ondelete="CASCADE"), nullable=False)
+    file_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_format: Mapped[str] = mapped_column(String(40), nullable=False)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    source_file_url: Mapped[str] = mapped_column(Text, nullable=False)
+    supported_model_file: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source_created_at: Mapped[str | None] = mapped_column(String(80))
+    notes: Mapped[str | None] = mapped_column(Text)
+    raw_metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    scan: Mapped[SourceProjectScan] = relationship(back_populates="files")
+
+    __table_args__ = (
+        Index("ix_source_project_scan_files_scan_id", "scan_id"),
+        Index("ix_source_project_scan_files_file_id", "file_id"),
     )
 
 

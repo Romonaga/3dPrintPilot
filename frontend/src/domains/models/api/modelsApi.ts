@@ -66,10 +66,12 @@ type ApiSourceModelFile = {
 };
 
 type ApiSourceProjectFiles = {
+  scan_id?: number | null;
   site_key: string;
   source_project_url: string;
   external_project_id: string;
   project_title: string | null;
+  scanned_at?: string | null;
   files: ApiSourceModelFile[];
 };
 
@@ -123,6 +125,15 @@ export async function discoverSourceModelFiles(input: DiscoverSourceFilesInput):
     throw new Error(await apiErrorDetail(response, `Source file discovery failed with HTTP ${response.status}`));
   }
   return fromApiSourceProjectFiles(await response.json());
+}
+
+export async function listSourceProjectScans(): Promise<SourceProjectFiles[]> {
+  const response = await apiFetch("/api/models/imports/source-files/scans");
+  if (!response.ok) {
+    throw new Error(`Source project scan list failed with HTTP ${response.status}`);
+  }
+  const projects = (await response.json()) as ApiSourceProjectFiles[];
+  return projects.map(fromApiSourceProjectFiles);
 }
 
 export async function importSourceModelFiles(input: ImportSourceFilesInput): Promise<UploadedModel[]> {
@@ -230,10 +241,12 @@ function fromApiModel(model: ApiModel): UploadedModel {
 
 function fromApiSourceProjectFiles(project: ApiSourceProjectFiles): SourceProjectFiles {
   return {
+    scanId: project.scan_id ?? null,
     siteKey: project.site_key,
     sourceProjectUrl: project.source_project_url,
     externalProjectId: project.external_project_id,
     projectTitle: project.project_title,
+    scannedAt: project.scanned_at ?? null,
     files: project.files.map((file) => ({
       fileId: file.file_id,
       filename: file.filename,
