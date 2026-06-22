@@ -1,7 +1,6 @@
 import { Radar, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
-import { PrinterControlPanel } from "../components/PrinterControlPanel";
 import { discoveredPrinterKey, type PrintersState } from "../hooks/usePrinters";
 
 type PrintersPageProps = {
@@ -191,7 +190,6 @@ export default function PrintersPage({
                   </button>
                 </div>
               </div>
-              <PrinterControlPanel printer={printer} />
             </article>
           ))}
           {!printers.isLoading && printers.printers.length === 0 ? <p className="empty-text">No saved printers yet.</p> : null}

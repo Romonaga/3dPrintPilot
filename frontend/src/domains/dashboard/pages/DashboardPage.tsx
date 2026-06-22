@@ -1,5 +1,5 @@
 import { QuickActions } from "../components/QuickActions";
-import { PrinterInventory } from "../../printers/components/PrinterInventory";
+import { PrinterInventory } from "../components/PrinterInventory";
 import { CompatibilitySummary } from "../../compatibility/components/CompatibilitySummary";
 import { AiCostSummary } from "../../ai-usage/components/AiCostSummary";
 import { ResourceSummary } from "../../resources/components/ResourceSummary";
@@ -33,7 +33,7 @@ export default function DashboardPage({ onRouteChange, onScanLan, printers }: Da
           }
         }}
       />
-      <PrinterInventory printers={snapshot.printers} onScanLan={onScanLan} />
+      <PrinterInventory printers={snapshot.printers} printerRecords={printers} onScanLan={onScanLan} />
       <CompatibilitySummary checks={snapshot.compatibilityChecks} />
       <AiCostSummary usage={snapshot.aiUsage} />
       <ResourceSummary resources={snapshot.resources} />

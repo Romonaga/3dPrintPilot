@@ -727,7 +727,7 @@ describe("App", () => {
     expect(screen.queryByRole("menu", { name: "Actions for Bambu A1" })).not.toBeInTheDocument();
   });
 
-  it("shows Moonraker file controls and keeps unsupported printers gated", async () => {
+  it("expands Moonraker file controls from dashboard cards and keeps scan inventory focused", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const fetchMock = mockApiFetch((input, init) => {
       const url = String(input);
@@ -826,8 +826,9 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByRole("button", { name: "Printers" }));
-
+    expect(await screen.findByText("Printing - benchy.gcode")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Controls for Snapmaker U1" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Show controls for Snapmaker U1" }));
     const panel = await screen.findByRole("group", { name: "Controls for Snapmaker U1" });
     expect(screen.queryByRole("group", { name: "Controls for Bambu A1" })).not.toBeInTheDocument();
     expect(await within(panel).findByText("42%")).toBeInTheDocument();
@@ -862,6 +863,11 @@ describe("App", () => {
       )
     );
     expect(confirm).toHaveBeenCalledWith("Cancel the current print on Snapmaker U1?");
+
+    await user.click(screen.getByRole("button", { name: "Printers" }));
+    expect(await screen.findByRole("heading", { name: "Printer Actions" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Saved Printers" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Controls for Snapmaker U1" })).not.toBeInTheDocument();
   });
 
   it("keeps LAN scan results after navigating away during a pending scan", async () => {
