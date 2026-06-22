@@ -11,6 +11,9 @@ class SiteAdapterDeclaration:
     site_key: str
     display_name: str
     allowed_hosts: tuple[str, ...]
+    browser_session_hosts: tuple[str, ...] = ()
+    browser_session_observe_hosts: tuple[str, ...] = ()
+    browser_session_required_cookie_names: tuple[str, ...] = ()
     base_url: str | None = None
     login_url: str | None = None
     enabled: bool = True

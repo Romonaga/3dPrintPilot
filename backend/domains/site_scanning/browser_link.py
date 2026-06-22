@@ -36,6 +36,7 @@ class _BrowserLinkSession:
     site_key: str
     login_url: str
     allowed_hosts: tuple[str, ...]
+    capture_hosts: tuple[str, ...]
     expires_at: datetime
     work_dir: Path
     signal_file: Path
@@ -51,7 +52,16 @@ class SiteAuthBrowserLinkService:
         self._timeout_seconds = timeout_seconds
         self._sessions: dict[str, _BrowserLinkSession] = {}
 
-    def start(self, *, site_key: str, login_url: str, allowed_hosts: tuple[str, ...]) -> BrowserLinkStart:
+    def start(
+        self,
+        *,
+        site_key: str,
+        login_url: str,
+        allowed_hosts: tuple[str, ...],
+        capture_hosts: tuple[str, ...] | None = None,
+        observe_hosts: tuple[str, ...] | None = None,
+        required_cookie_names: tuple[str, ...] = (),
+    ) -> BrowserLinkStart:
         session_id = uuid.uuid4().hex
         work_dir = Path(tempfile.mkdtemp(prefix=f"3dprintpilot-{site_key}-link-"))
         signal_file = work_dir / "capture.json"
@@ -64,6 +74,12 @@ class SiteAuthBrowserLinkService:
             login_url,
             "--allowed-hosts",
             ",".join(allowed_hosts),
+            "--capture-hosts",
+            ",".join(capture_hosts or allowed_hosts),
+            "--observe-hosts",
+            ",".join(observe_hosts or capture_hosts or allowed_hosts),
+            "--required-cookie-names",
+            ",".join(required_cookie_names),
             "--signal-file",
             str(signal_file),
             "--result-file",
@@ -92,6 +108,7 @@ class SiteAuthBrowserLinkService:
             site_key=site_key,
             login_url=login_url,
             allowed_hosts=allowed_hosts,
+            capture_hosts=capture_hosts or allowed_hosts,
             expires_at=expires_at,
             work_dir=work_dir,
             signal_file=signal_file,

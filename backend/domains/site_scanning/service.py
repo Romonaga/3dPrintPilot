@@ -36,6 +36,21 @@ class SiteScanService:
                     site_key=adapter.site_key,
                     display_name=adapter.display_name,
                     allowed_hosts=tuple(sorted(adapter.allowed_hosts)),
+                    browser_session_hosts=tuple(
+                        sorted(getattr(adapter, "browser_session_hosts", adapter.allowed_hosts))
+                    ),
+                    browser_session_observe_hosts=tuple(
+                        sorted(
+                            getattr(
+                                adapter,
+                                "browser_session_observe_hosts",
+                                getattr(adapter, "browser_session_hosts", adapter.allowed_hosts),
+                            )
+                        )
+                    ),
+                    browser_session_required_cookie_names=tuple(
+                        sorted(getattr(adapter, "browser_session_required_cookie_names", ()))
+                    ),
                     base_url=getattr(adapter, "base_url", None),
                     login_url=getattr(adapter, "login_url", None),
                     supports_downloads=adapter.supports_downloads,

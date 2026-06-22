@@ -11,6 +11,14 @@ from backend.domains.site_scanning.entities import CrawlCandidate
 from backend.domains.site_scanning.utils import normalize_url
 
 PRINTABLES_HOSTS = frozenset({"www.printables.com", "printables.com"})
+PRINTABLES_BROWSER_SESSION_HOSTS = frozenset(
+    {
+        "api.printables.com",
+        "printables.com",
+        "www.printables.com",
+    }
+)
+PRINTABLES_BROWSER_SESSION_OBSERVE_HOSTS = PRINTABLES_BROWSER_SESSION_HOSTS | {"account.prusa3d.com"}
 MAX_CANDIDATES_PER_PAGE = 24
 
 
@@ -18,6 +26,9 @@ class PrintablesAdapter:
     site_key = "printables"
     display_name = "Printables public model pages"
     allowed_hosts = PRINTABLES_HOSTS
+    browser_session_hosts = PRINTABLES_BROWSER_SESSION_HOSTS
+    browser_session_observe_hosts = PRINTABLES_BROWSER_SESSION_OBSERVE_HOSTS
+    browser_session_required_cookie_names = ("sessionid",)
     base_url = "https://www.printables.com/"
     login_url = "https://www.printables.com/login"
     supports_downloads = False

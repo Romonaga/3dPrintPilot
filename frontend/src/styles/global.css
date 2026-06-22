@@ -1103,6 +1103,19 @@ dd {
   gap: 10px;
 }
 
+.browser-link-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--muted-strong);
+  font-size: 13px;
+  padding: 10px;
+}
+
 .source-link-instructions {
   border-left: 3px solid var(--border-strong);
   color: var(--muted-strong);

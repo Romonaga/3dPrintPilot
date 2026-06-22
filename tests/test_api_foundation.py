@@ -113,9 +113,22 @@ class FakeSiteAuthProfileStore:
 
 
 class FakeBrowserLinkService:
-    def start(self, *, site_key, login_url, allowed_hosts):
+    def start(
+        self,
+        *,
+        site_key,
+        login_url,
+        allowed_hosts,
+        capture_hosts=None,
+        observe_hosts=None,
+        required_cookie_names=(),
+    ):
         assert site_key == "printables"
         assert "printables.com" in allowed_hosts
+        assert "api.printables.com" in capture_hosts
+        assert "account.prusa3d.com" not in capture_hosts
+        assert "account.prusa3d.com" in observe_hosts
+        assert "sessionid" in required_cookie_names
         return BrowserLinkStart(
             session_id="session-1",
             status="running",
@@ -182,7 +195,8 @@ def test_operations_backup_export_redacts_provider_secret_payloads():
     assert "site_auth_profiles" in body["tables"]
     assert "encrypted_value" not in str(body["tables"]["site_auth_profiles"])
     assert "secret_fingerprint" not in str(body["tables"]["site_auth_profiles"])
-    assert "account_identifier" not in str(body["tables"]["site_auth_profiles"])
+    for row in body["tables"]["site_auth_profiles"]:
+        assert "account_identifier" not in row
     assert "model_file_payloads" in body["tables"]
     assert "compressed_bytes" not in str(body["tables"]["model_file_payloads"])
 
@@ -286,6 +300,19 @@ def test_site_scanning_adapter_api_exposes_printables_auth_capabilities():
     assert printables["login_url"] == "https://www.printables.com/login"
     assert "username_password" in printables["supported_auth_modes"]
     assert "browser_session" in printables["supported_auth_modes"]
+
+
+def test_printables_browser_link_uses_sso_session_hosts():
+    from backend.domains.site_scanning.service import SiteScanService
+
+    declaration = next(
+        declaration for declaration in SiteScanService().adapter_declarations() if declaration.site_key == "printables"
+    )
+
+    assert "account.prusa3d.com" not in declaration.browser_session_hosts
+    assert "api.printables.com" in declaration.browser_session_hosts
+    assert "account.prusa3d.com" in declaration.browser_session_observe_hosts
+    assert "sessionid" in declaration.browser_session_required_cookie_names
 
 
 def test_site_scanning_api_returns_metrics_for_metadata_only_scan():

@@ -41,6 +41,39 @@ export function useModelSourceAuth() {
     void loadSites();
   }, [loadSites]);
 
+  useEffect(() => {
+    const activeLinks = Object.values(browserLinks).filter((link) =>
+      ["running", "capture_requested"].includes(link.status)
+    );
+    if (activeLinks.length === 0) {
+      return;
+    }
+
+    let canceled = false;
+    const interval = window.setInterval(() => {
+      for (const activeLink of activeLinks) {
+        void getSourceAuthBrowserLinkStatus(activeLink.siteKey, activeLink.sessionId)
+          .then((link) => {
+            if (canceled) {
+              return;
+            }
+            setBrowserLinks((current) => ({ ...current, [link.siteKey]: link }));
+            applyBrowserLinkProfile(link);
+          })
+          .catch((err) => {
+            if (!canceled) {
+              setError(err instanceof Error ? err.message : "Browser link status failed");
+            }
+          });
+      }
+    }, 2500);
+
+    return () => {
+      canceled = true;
+      window.clearInterval(interval);
+    };
+  }, [browserLinks]);
+
   async function saveSiteAuth(siteKey: string, input: SaveSourceAuthProfileInput) {
     setIsSaving(siteKey);
     setError(null);
