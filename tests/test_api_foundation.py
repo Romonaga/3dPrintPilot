@@ -257,6 +257,23 @@ def test_site_auth_profile_browser_link_api_never_requests_google_passwords():
     assert "encrypted-secret" not in test_response.text
 
 
+def test_generic_metadata_only_site_does_not_offer_managed_account_setup():
+    app = create_app()
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    link_response = client.get("/api/site-scanning/auth-profiles/metadata_only/link")
+    assert link_response.status_code == 400
+    assert "account setup runner" in link_response.json()["detail"]
+
+    browser_link_response = client.post(
+        "/api/site-scanning/auth-profiles/metadata_only/browser-link",
+        json={"account_identifier": "maker@example.test"},
+    )
+    assert browser_link_response.status_code == 400
+    assert "account setup runner" in browser_link_response.json()["detail"]
+
+
 def test_site_auth_browser_link_capture_stores_cookie_without_returning_it():
     app = create_app()
     fake_store = FakeSiteAuthProfileStore()
