@@ -93,9 +93,11 @@ verlyn governance refresh --target /path/to/repo --dry-run --json
 The CLI fetches the canonical governance pack from Verlyn before
 writing local files. Verlyn owns files installed from that pack
 except `RULES.md`, which is the repo-owned customization layer. Refresh creates
-`RULES.md` when it is missing, preserves it when it exists, and reports
-conflicts for locally edited Verlyn-owned files unless `--force` is
-supplied.
+`RULES.md` when it is missing, preserves it when it exists, and overwrites
+Verlyn-owned governance files so old or locally edited generated
+guidance returns to the current contract. Use `--dry-run --json` to preview the
+file actions before writing. `--force` is only for remaining non-`RULES.md`
+conflicts such as unsafe path shapes.
 
 Verlyn-owned governance files include `AGENTS.md`, `CONTRIBUTING.md`,
 `CLAUDE.md`, `.verlyn/runtime_context.json`, `.verlyn/workflow_pack.json`,

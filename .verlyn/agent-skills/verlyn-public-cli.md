@@ -112,6 +112,8 @@ is the repo-owned customization layer. Verlyn-owned files include `AGENTS.md`,
 `Documentation/guides/VERLYN_AGENT_WORKFLOW.md`,
 `Documentation/guides/VERLYN_PUBLIC_CLI.md`, this tool-neutral skill file, and
 the Codex adapter at `.verlyn/.codex/skills/verlyn-public-cli/SKILL.md`.
+Refresh preserves repo-owned `RULES.md` and overwrites Verlyn-owned generated
+files so stale governance instructions return to the current contract.
 
 Skill files guide AI-assisted work; they are not substitutes for the public CLI
 and they must defer to `AGENTS.md`, `CONTRIBUTING.md`, and `RULES.md`.

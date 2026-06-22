@@ -1,16 +1,16 @@
 {
   "product": "Verlyn",
-  "workflow_pack_version": "2026.06.21.2",
+  "workflow_pack_version": "2026.06.21.3",
   "repo_name": "3dprintpilot",
   "install_mode": "governance",
   "installed_at": "2026-06-18T17:17:08.937383+00:00",
-  "refreshed_at": "2026-06-21T16:11:00.403486+00:00",
+  "refreshed_at": "2026-06-22T11:53:00.432589+00:00",
   "governance_pack": {
     "name": "verlyn-standard",
-    "version": "2026.06.21.2",
-    "manifest_hash": "4b97c4f64f8cd2659c9e9a8ababebb6cf63968836013f59a7d2c056ab3d7c905",
+    "version": "2026.06.21.3",
+    "manifest_hash": "7f1332c81fe60b32c12bdc2c2595abc3f5b29f0a07d26757454fe3d573956e2b",
     "source": "verlyn_api",
-    "refreshed_at": "2026-06-21T16:11:00.403486+00:00",
+    "refreshed_at": "2026-06-22T11:53:00.432589+00:00",
     "repo_owned_paths": [
       "RULES.md"
     ],
@@ -59,7 +59,7 @@
       },
       ".verlyn/agent-skills/verlyn-public-cli.md": {
         "owner": "verlyn",
-        "sha256": "4b07c0428d27489fe1e1ccfb3006da6b98e531c2a3a9ba3afeea46abb817ba38",
+        "sha256": "08555ff8412ebd1e2db5c63c6ec6802a495ba44b7447e76dc52b280130fc420d",
         "required": false,
         "category": "governance",
         "purpose": "agent_skill_reference"
@@ -129,7 +129,7 @@
       },
       "Documentation/guides/VERLYN_PUBLIC_CLI.md": {
         "owner": "verlyn",
-        "sha256": "4248d0ee732247247518c29990e3c50d41743a07bfb806134ffeaab016246fec",
+        "sha256": "1e895ec96fca3081984ff98a980f854e6f373cd80ff3992ba4858efe1fd4dc9c",
         "required": true,
         "category": "documentation",
         "purpose": "cli_reference"
@@ -164,5 +164,5 @@
       }
     }
   },
-  "manifest_hash": "4b97c4f64f8cd2659c9e9a8ababebb6cf63968836013f59a7d2c056ab3d7c905"
+  "manifest_hash": "7f1332c81fe60b32c12bdc2c2595abc3f5b29f0a07d26757454fe3d573956e2b"
 }
