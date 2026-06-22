@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { reconcileOpenAiCosts, getAiAccountingStatus } from "./ai-usage/api/aiUsageApi";
 import { runCompatibilityChecks } from "./compatibility/api/compatibilityApi";
+import { importDownloadedModelFile } from "./models/api/modelsApi";
 import { downloadOperationsBackup } from "./operations/api";
 import {
   cancelPrinterPrint,
@@ -307,6 +308,56 @@ describe("domain API adapters", () => {
       perHostConcurrency: 1
     });
     expect(scan.candidates[0].attribution).toBe("example.test");
+  });
+
+  it("imports downloaded model files with source project and file links", async () => {
+    mockJson({
+      id: 7,
+      title: "Downloaded Triangle",
+      source_url: "https://www.printables.com/model/123-triangle",
+      status: "analyzed",
+      created_at: "2026-06-22T17:00:00Z",
+      updated_at: "2026-06-22T17:00:00Z",
+      files: [
+        {
+          id: 8,
+          filename: "triangle.stl",
+          content_type: "model/stl",
+          file_format: "stl",
+          size_bytes: 123,
+          storage_status: "stored_compressed",
+          analysis_status: "completed",
+          analysis_job_id: 43,
+          analysis_warnings: [],
+          geometry: null,
+          payload: {
+            source_project_url: "https://www.printables.com/model/123-triangle",
+            source_file_url: "https://files.printables.com/triangle.stl",
+            compression: "gzip",
+            original_size_bytes: 123,
+            compressed_size_bytes: 99,
+            original_sha256: "a".repeat(64),
+            compressed_sha256: "b".repeat(64),
+            created_at: "2026-06-22T17:00:00Z"
+          },
+          created_at: "2026-06-22T17:00:00Z"
+        }
+      ]
+    }, 201);
+
+    const model = await importDownloadedModelFile({
+      file: new File(["solid sample"], "triangle.stl", { type: "model/stl" }),
+      title: "Downloaded Triangle",
+      sourceProjectUrl: "https://www.printables.com/model/123-triangle",
+      sourceFileUrl: "https://files.printables.com/triangle.stl"
+    });
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("/api/models/imports/downloaded-file");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeInstanceOf(FormData);
+    expect(model.files[0].payload?.sourceProjectUrl).toBe("https://www.printables.com/model/123-triangle");
+    expect(model.files[0].payload?.sourceFileUrl).toBe("https://files.printables.com/triangle.stl");
   });
 
   it("maps model source auth status and writes selected auth modes", async () => {
