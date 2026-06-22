@@ -315,6 +315,9 @@ def test_site_scanning_adapter_api_exposes_printables_auth_capabilities():
     printables = next(adapter for adapter in response.json() if adapter["site_key"] == "printables")
     assert printables["base_url"] == "https://www.printables.com/"
     assert printables["login_url"] == "https://www.printables.com/login"
+    assert printables["support_level"] == "partial"
+    assert "account_setup" in printables["capabilities"]
+    assert "project_lookup" in printables["capabilities"]
     assert "username_password" in printables["supported_auth_modes"]
     assert "browser_session" in printables["supported_auth_modes"]
 

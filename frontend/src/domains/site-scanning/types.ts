@@ -9,6 +9,9 @@ export type SiteScanLimits = {
 export type SiteAdapter = {
   siteKey: string;
   displayName: string;
+  supportLevel: string;
+  capabilities: string[];
+  setupRequired: boolean;
   baseUrl: string | null;
   loginUrl: string | null;
   enabled: boolean;

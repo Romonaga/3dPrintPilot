@@ -24,7 +24,7 @@ from backend.domains.site_scanning.schemas.response import (
     SiteScanResponse,
     SiteScanSummaryResponse,
 )
-from backend.domains.site_scanning.runners import SourceSiteCapability, SourceSiteRunnerManifest
+from backend.domains.site_scanning.runners import SourceSiteCapability, SourceSiteRunnerManifest, SourceSiteSupportLevel
 from backend.domains.site_scanning.service import SiteScanService
 from backend.domains.site_scanning.store import (
     SiteAuthProfileStore,
@@ -58,19 +58,7 @@ def list_adapters(
     store: SiteScanStore = Depends(get_site_scan_store),
 ) -> list[SiteScanAdapterResponse]:
     return [
-        SiteScanAdapterResponse(
-            site_key=record.site_key,
-            display_name=record.display_name,
-            base_url=record.base_url,
-            login_url=record.login_url,
-            enabled=record.enabled,
-            supports_downloads=record.supports_downloads,
-            supported_auth_modes=list((record.auth_capabilities or {}).get("supported_auth_modes") or ["none"]),
-            auth_storage_notes=(record.auth_capabilities or {}).get("auth_storage_notes"),
-            allowed_hosts=list((record.allowed_hosts or {}).get("hosts") or []),
-            default_limits=record.default_limits or {},
-            robots_terms_notes=record.robots_terms_notes,
-        )
+        _site_scan_adapter_response(record)
         for record in store.list_adapter_records(service.adapter_declarations())
     ]
 
@@ -85,9 +73,26 @@ def update_adapter(
     record = store.update_adapter_enabled(service.adapter_declarations(), site_key, request.enabled)
     if record is None:
         raise HTTPException(status_code=404, detail="Site adapter not found")
+    return _site_scan_adapter_response(record)
+
+
+def _site_scan_adapter_response(record) -> SiteScanAdapterResponse:
+    runner_manifest = service.runner_manifest_for(record.site_key)
+    capabilities = (
+        [capability.value for capability in runner_manifest.capabilities]
+        if runner_manifest is not None
+        else [SourceSiteCapability.PUBLIC_SCAN.value]
+    )
+    support_level = (
+        runner_manifest.support_level.value if runner_manifest is not None else SourceSiteSupportLevel.GENERIC_ONLY.value
+    )
+    setup_required = runner_manifest.setup_required if runner_manifest is not None else False
     return SiteScanAdapterResponse(
         site_key=record.site_key,
         display_name=record.display_name,
+        support_level=support_level,
+        capabilities=capabilities,
+        setup_required=setup_required,
         base_url=record.base_url,
         login_url=record.login_url,
         enabled=record.enabled,

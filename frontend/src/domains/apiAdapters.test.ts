@@ -244,6 +244,9 @@ describe("domain API adapters", () => {
     mockJson({
       site_key: "printables",
       display_name: "Printables",
+      support_level: "partial",
+      capabilities: ["public_scan", "account_setup", "project_lookup"],
+      setup_required: false,
       base_url: "https://www.printables.com/",
       login_url: "https://www.printables.com/login",
       enabled: false,
@@ -254,7 +257,10 @@ describe("domain API adapters", () => {
       default_limits: {},
       robots_terms_notes: "metadata only"
     });
-    expect((await updateSiteAdapter("printables", false)).enabled).toBe(false);
+    const adapter = await updateSiteAdapter("printables", false);
+    expect(adapter.enabled).toBe(false);
+    expect(adapter.supportLevel).toBe("partial");
+    expect(adapter.capabilities).toContain("account_setup");
 
     mockJson({
       summary: {
@@ -308,6 +314,9 @@ describe("domain API adapters", () => {
       {
         site_key: "printables",
         display_name: "Printables",
+        support_level: "partial",
+        capabilities: ["public_scan", "account_setup", "project_lookup"],
+        setup_required: false,
         base_url: "https://www.printables.com/",
         login_url: "https://www.printables.com/login",
         enabled: true,
@@ -341,6 +350,8 @@ describe("domain API adapters", () => {
     const sites = await listModelSourceSites();
 
     expect(sites[0].loginUrl).toBe("https://www.printables.com/login");
+    expect(sites[0].supportLevel).toBe("partial");
+    expect(sites[0].capabilities).toContain("account_setup");
     expect(sites[0].supportedAuthModes).toContain("browser_session");
     expect(sites[0].authProfile.maskedAccountIdentifier).toBe("m***@example.test");
     expect(sites[0].authProfile.linkStatus).toBe("needs_relink");

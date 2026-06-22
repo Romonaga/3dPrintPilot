@@ -391,6 +391,9 @@ describe("App", () => {
               {
                 site_key: "printables",
                 display_name: "Printables public model pages",
+                support_level: "partial",
+                capabilities: ["public_scan", "account_setup", "project_lookup"],
+                setup_required: false,
                 base_url: "https://www.printables.com/",
                 login_url: "https://www.printables.com/login",
                 enabled: true,
@@ -544,7 +547,9 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "Model Source Accounts" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Printables public model pages" })).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("Auth type"), "browser_session");
+    expect(screen.getByText("Supported setup")).toBeInTheDocument();
+    expect(screen.getByText("Account setup")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Auth type")).not.toBeInTheDocument();
     await user.type(screen.getByLabelText("Account"), "maker@example.test");
     await user.click(screen.getByRole("button", { name: "Link with browser" }));
 
@@ -555,6 +560,7 @@ describe("App", () => {
     expect(await screen.findByText("Linked")).toBeInTheDocument();
     expect(screen.queryByLabelText("Printables password")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Google password")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Advanced fallback" }));
     await user.click(screen.getByRole("button", { name: "Manual fallback" }));
     expect(await screen.findByLabelText("Printables session cookie/header")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Test connection" }));
