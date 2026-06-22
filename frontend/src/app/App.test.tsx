@@ -75,6 +75,118 @@ describe("App", () => {
     expect(screen.queryByText("Bambu X1C")).not.toBeInTheDocument();
   });
 
+  it("shows machine state and meaningful print progress on dashboard printer cards", async () => {
+    const fetchMock = mockApiFetch((input) => {
+      const url = String(input);
+      if (url === "/api/printers") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: 4,
+                name: "Snapmaker U1",
+                host: "192.168.1.24",
+                port: 7125,
+                protocol: "http",
+                printer_type: "snapmaker_moonraker",
+                state: "online",
+                identity_key: "moonraker:snapmaker:machine_id:u1",
+                adapter_type: "moonraker",
+                capabilities: { adapter: "moonraker", job_control: true },
+                credential_configured: false,
+                last_status: {},
+                last_status_at: null,
+                build_volume_x_mm: null,
+                build_volume_y_mm: null,
+                build_volume_z_mm: null
+              },
+              {
+                id: 5,
+                name: "Creality K1",
+                host: "192.168.1.25",
+                port: 7125,
+                protocol: "http",
+                printer_type: "moonraker",
+                state: "confirmed",
+                identity_key: "moonraker:creality:k1",
+                adapter_type: "moonraker",
+                capabilities: { adapter: "moonraker", job_control: true },
+                credential_configured: false,
+                last_status: {},
+                last_status_at: null,
+                build_volume_x_mm: null,
+                build_volume_y_mm: null,
+                build_volume_z_mm: null
+              },
+              {
+                id: 7,
+                name: "Bambu A1",
+                host: "192.168.1.44",
+                port: 80,
+                protocol: "http",
+                printer_type: "mdns:bambu",
+                state: "online",
+                identity_key: "mdns:_bambu._tcp.local.:bambu-a1._bambu._tcp.local.",
+                adapter_type: null,
+                capabilities: {},
+                credential_configured: false,
+                last_status: {},
+                last_status_at: null,
+                build_volume_x_mm: null,
+                build_volume_y_mm: null,
+                build_volume_z_mm: null
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/printers/4/job-status") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              printer_id: 4,
+              state: "printing",
+              filename: "benchy.gcode",
+              progress: 0.42,
+              message: "Printing",
+              raw_status: {},
+              observed_at: "2026-06-22T15:00:00Z"
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/printers/5/job-status") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              printer_id: 5,
+              state: "standby",
+              filename: null,
+              progress: 0,
+              message: null,
+              raw_status: {},
+              observed_at: "2026-06-22T15:00:00Z"
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      return authenticatedFetch(input);
+    });
+    render(<App />);
+
+    expect(await screen.findByText("Printing - benchy.gcode")).toBeInTheDocument();
+    expect(screen.getByText("42%")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Print progress for Snapmaker U1" })).toHaveValue(42);
+    expect(screen.getByText("Confirmed")).toBeInTheDocument();
+    expect(screen.getByText("Idle")).toBeInTheDocument();
+    expect(screen.getByText("Print telemetry unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("0%")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/printers/7/job-status");
+  });
+
   it("toggles dark mode from the app shell", async () => {
     const user = userEvent.setup();
     render(<App />);

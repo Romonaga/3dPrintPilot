@@ -1,9 +1,12 @@
 export type PrinterSummary = {
   id: string;
   name: string;
-  state: string;
   buildVolume: string;
-  confidence: number;
+  availabilityLabel: string;
+  availabilityTone: "ok" | "warn" | "bad" | "neutral";
+  jobStatusLabel: string;
+  progressPercent: number | null;
+  progressLabel: string | null;
 };
 
 export type CompatibilityCheck = {
