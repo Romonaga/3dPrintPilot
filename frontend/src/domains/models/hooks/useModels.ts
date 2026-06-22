@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { listModels, uploadModel } from "../api/modelsApi";
-import { type UploadedModel, type UploadModelInput } from "../types";
+import { importDownloadedModelFile, listModels, uploadModel } from "../api/modelsApi";
+import { type ImportDownloadedModelInput, type UploadedModel, type UploadModelInput } from "../types";
 
 export function useModels() {
   const [models, setModels] = useState<UploadedModel[]>([]);
@@ -8,6 +8,7 @@ export function useModels() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   async function refreshModels() {
     setIsLoading(true);
@@ -37,12 +38,27 @@ export function useModels() {
     }
   }
 
+  async function submitDownloadedImport(input: ImportDownloadedModelInput) {
+    setIsImporting(true);
+    setError(null);
+    try {
+      const created = await importDownloadedModelFile(input);
+      setModels((current) => [created, ...current]);
+      setSelectedModelId(created.id);
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : "Downloaded model import failed");
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
   useEffect(() => {
     void refreshModels();
   }, []);
 
   return {
     error,
+    isImporting,
     isLoading,
     isUploading,
     models,
@@ -50,6 +66,7 @@ export function useModels() {
     selectedModel: models.find((model) => model.id === selectedModelId) ?? models[0] ?? null,
     selectedModelId,
     setSelectedModelId,
+    submitDownloadedImport,
     submitUpload
   };
 }

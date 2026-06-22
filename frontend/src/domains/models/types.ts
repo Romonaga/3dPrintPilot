@@ -19,6 +19,18 @@ export type ModelFile = {
   analysisJobId: number | null;
   analysisWarnings: string[];
   geometry: ModelGeometry | null;
+  payload: ModelFilePayload | null;
+  createdAt: string;
+};
+
+export type ModelFilePayload = {
+  sourceProjectUrl: string;
+  sourceFileUrl: string;
+  compression: string;
+  originalSizeBytes: number;
+  compressedSizeBytes: number;
+  originalSha256: string;
+  compressedSha256: string;
   createdAt: string;
 };
 
@@ -36,4 +48,11 @@ export type UploadModelInput = {
   file: File;
   title: string;
   sourceUrl: string;
+};
+
+export type ImportDownloadedModelInput = {
+  file: File;
+  title: string;
+  sourceProjectUrl: string;
+  sourceFileUrl: string;
 };

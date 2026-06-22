@@ -297,13 +297,14 @@ h3 {
 }
 
 .model-upload-panel,
+.model-import-panel,
 .model-list-panel {
   grid-column: 1;
 }
 
 .model-detail-panel {
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1 / span 3;
 }
 
 .panel {
@@ -440,6 +441,22 @@ h3 {
   gap: 12px;
 }
 
+.source-download-status {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.source-download-status div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px;
+}
+
 .model-list {
   display: grid;
   gap: 8px;
@@ -492,6 +509,21 @@ h3 {
 .model-detail-title a {
   color: var(--muted-strong);
   font-size: 13px;
+}
+
+.model-source-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.model-source-links a {
+  color: var(--muted-strong);
+  font-weight: 700;
 }
 
 .model-geometry-grid {
@@ -1284,6 +1316,7 @@ dd {
   .printer-list-panel,
   .discovered-printers-panel,
   .model-upload-panel,
+  .model-import-panel,
   .model-list-panel,
   .model-detail-panel {
     grid-column: 1;

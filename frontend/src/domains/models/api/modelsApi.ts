@@ -1,5 +1,5 @@
 import { apiFetch } from "../../../lib/apiFetch";
-import { type UploadedModel, type UploadModelInput } from "../types";
+import { type ImportDownloadedModelInput, type UploadedModel, type UploadModelInput } from "../types";
 
 type ApiModelGeometry = {
   units: string;
@@ -22,6 +22,18 @@ type ApiModelFile = {
   analysis_job_id: number | null;
   analysis_warnings: string[];
   geometry: ApiModelGeometry | null;
+  payload: ApiModelFilePayload | null;
+  created_at: string;
+};
+
+type ApiModelFilePayload = {
+  source_project_url: string;
+  source_file_url: string;
+  compression: string;
+  original_size_bytes: number;
+  compressed_size_bytes: number;
+  original_sha256: string;
+  compressed_sha256: string;
   created_at: string;
 };
 
@@ -72,6 +84,33 @@ export async function uploadModel(input: UploadModelInput): Promise<UploadedMode
   return fromApiModel(await response.json());
 }
 
+export async function importDownloadedModelFile(input: ImportDownloadedModelInput): Promise<UploadedModel> {
+  const form = new FormData();
+  form.append("file", input.file);
+  form.append("source_project_url", input.sourceProjectUrl.trim());
+  form.append("source_file_url", input.sourceFileUrl.trim());
+  if (input.title.trim()) {
+    form.append("title", input.title.trim());
+  }
+  const response = await apiFetch("/api/models/imports/downloaded-file", {
+    method: "POST",
+    body: form
+  });
+  if (!response.ok) {
+    let detail = `Downloaded model import failed with HTTP ${response.status}`;
+    try {
+      const body = await response.json();
+      if (typeof body.detail === "string") {
+        detail = body.detail;
+      }
+    } catch {
+      // Keep HTTP status fallback.
+    }
+    throw new Error(detail);
+  }
+  return fromApiModel(await response.json());
+}
+
 function fromApiModel(model: ApiModel): UploadedModel {
   return {
     id: model.id,
@@ -99,6 +138,18 @@ function fromApiModel(model: ApiModel): UploadedModel {
             volumeMm3: file.geometry.volume_mm3,
             triangleCount: file.geometry.triangle_count,
             warnings: file.geometry.warnings
+          }
+        : null,
+      payload: file.payload
+        ? {
+            sourceProjectUrl: file.payload.source_project_url,
+            sourceFileUrl: file.payload.source_file_url,
+            compression: file.payload.compression,
+            originalSizeBytes: file.payload.original_size_bytes,
+            compressedSizeBytes: file.payload.compressed_size_bytes,
+            originalSha256: file.payload.original_sha256,
+            compressedSha256: file.payload.compressed_sha256,
+            createdAt: file.payload.created_at
           }
         : null,
       createdAt: file.created_at
