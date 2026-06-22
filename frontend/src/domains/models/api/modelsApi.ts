@@ -1,5 +1,12 @@
 import { apiFetch } from "../../../lib/apiFetch";
-import { type ImportDownloadedModelInput, type UploadedModel, type UploadModelInput } from "../types";
+import {
+  type DiscoverSourceFilesInput,
+  type ImportDownloadedModelInput,
+  type ImportSourceFilesInput,
+  type SourceProjectFiles,
+  type UploadedModel,
+  type UploadModelInput
+} from "../types";
 
 type ApiModelGeometry = {
   units: string;
@@ -47,6 +54,25 @@ type ApiModel = {
   files: ApiModelFile[];
 };
 
+type ApiSourceModelFile = {
+  file_id: string;
+  filename: string;
+  file_format: string;
+  size_bytes: number | null;
+  source_file_url: string;
+  supported_model_file: boolean;
+  created_at: string | null;
+  notes: string | null;
+};
+
+type ApiSourceProjectFiles = {
+  site_key: string;
+  source_project_url: string;
+  external_project_id: string;
+  project_title: string | null;
+  files: ApiSourceModelFile[];
+};
+
 export async function listModels(): Promise<UploadedModel[]> {
   const response = await apiFetch("/api/models");
   if (!response.ok) {
@@ -84,6 +110,39 @@ export async function uploadModel(input: UploadModelInput): Promise<UploadedMode
   return fromApiModel(await response.json());
 }
 
+export async function discoverSourceModelFiles(input: DiscoverSourceFilesInput): Promise<SourceProjectFiles> {
+  const response = await apiFetch("/api/models/imports/source-files/discover", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      site_key: input.siteKey,
+      source_project_url: input.sourceProjectUrl.trim()
+    })
+  });
+  if (!response.ok) {
+    throw new Error(await apiErrorDetail(response, `Source file discovery failed with HTTP ${response.status}`));
+  }
+  return fromApiSourceProjectFiles(await response.json());
+}
+
+export async function importSourceModelFiles(input: ImportSourceFilesInput): Promise<UploadedModel[]> {
+  const response = await apiFetch("/api/models/imports/source-files", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      site_key: input.siteKey,
+      source_project_url: input.sourceProjectUrl.trim(),
+      file_ids: input.fileIds,
+      title: input.title.trim() || null
+    })
+  });
+  if (!response.ok) {
+    throw new Error(await apiErrorDetail(response, `Source file import failed with HTTP ${response.status}`));
+  }
+  const models = (await response.json()) as ApiModel[];
+  return models.map(fromApiModel);
+}
+
 export async function importDownloadedModelFile(input: ImportDownloadedModelInput): Promise<UploadedModel> {
   const form = new FormData();
   form.append("file", input.file);
@@ -109,6 +168,18 @@ export async function importDownloadedModelFile(input: ImportDownloadedModelInpu
     throw new Error(detail);
   }
   return fromApiModel(await response.json());
+}
+
+async function apiErrorDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    if (typeof body.detail === "string") {
+      return body.detail;
+    }
+  } catch {
+    // Keep HTTP status fallback.
+  }
+  return fallback;
 }
 
 function fromApiModel(model: ApiModel): UploadedModel {
@@ -153,6 +224,25 @@ function fromApiModel(model: ApiModel): UploadedModel {
           }
         : null,
       createdAt: file.created_at
+    }))
+  };
+}
+
+function fromApiSourceProjectFiles(project: ApiSourceProjectFiles): SourceProjectFiles {
+  return {
+    siteKey: project.site_key,
+    sourceProjectUrl: project.source_project_url,
+    externalProjectId: project.external_project_id,
+    projectTitle: project.project_title,
+    files: project.files.map((file) => ({
+      fileId: file.file_id,
+      filename: file.filename,
+      fileFormat: file.file_format,
+      sizeBytes: file.size_bytes,
+      sourceFileUrl: file.source_file_url,
+      supportedModelFile: file.supported_model_file,
+      createdAt: file.created_at,
+      notes: file.notes
     }))
   };
 }

@@ -1,4 +1,4 @@
-import { Download, RefreshCw, Upload } from "lucide-react";
+import { Download, FileDown, RefreshCw, Search, Upload } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
 import { type ModelFile, type UploadedModel } from "../types";
@@ -17,6 +17,7 @@ export default function ModelsPage() {
   const [sourceFileUrl, setSourceFileUrl] = useState("");
   const [sourceSites, setSourceSites] = useState<SiteAdapter[]>([]);
   const [sourceSiteError, setSourceSiteError] = useState<string | null>(null);
+  const [selectedSourceFileIds, setSelectedSourceFileIds] = useState<string[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -69,6 +70,42 @@ export default function ModelsPage() {
     form.reset();
   }
 
+  async function handleDiscoverSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const discovered = await models.discoverSourceFiles({
+      siteKey: "printables",
+      sourceProjectUrl
+    });
+    setSelectedSourceFileIds(discovered?.files.filter((sourceFile) => sourceFile.supportedModelFile).map((sourceFile) => sourceFile.fileId) ?? []);
+  }
+
+  async function handleSourceImportSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const created = await models.submitSourceFileImport({
+      siteKey: "printables",
+      sourceProjectUrl,
+      fileIds: selectedSourceFileIds,
+      title: importTitle
+    });
+    if (created.length > 0) {
+      setImportTitle("");
+      setSelectedSourceFileIds([]);
+      models.clearSourceFiles();
+    }
+  }
+
+  function handleSourceProjectUrlChange(value: string) {
+    setSourceProjectUrl(value);
+    setSelectedSourceFileIds([]);
+    models.clearSourceFiles();
+  }
+
+  function toggleSourceFile(fileId: string) {
+    setSelectedSourceFileIds((current) =>
+      current.includes(fileId) ? current.filter((selected) => selected !== fileId) : [...current, fileId]
+    );
+  }
+
   return (
     <section className="models-page" aria-label="Models">
       <section className="panel model-upload-panel" aria-labelledby="model-upload-title">
@@ -112,6 +149,67 @@ export default function ModelsPage() {
           </div>
         </div>
         <SourceSiteDownloadStatus sites={sourceSites} />
+        <form className="source-project-form" onSubmit={handleDiscoverSubmit}>
+          <label className="field-label">
+            Printables Project URL
+            <input
+              onChange={(event) => handleSourceProjectUrlChange(event.target.value)}
+              placeholder="https://www.printables.com/model/..."
+              required
+              type="url"
+              value={sourceProjectUrl}
+            />
+          </label>
+          <button className="text-button icon-action" disabled={!sourceProjectUrl.trim() || models.isDiscoveringSourceFiles} type="submit">
+            {models.isDiscoveringSourceFiles ? <Spinner size={15} /> : <Search size={15} aria-hidden="true" />}
+            <span>{models.isDiscoveringSourceFiles ? "Discovering" : "Discover Files"}</span>
+          </button>
+        </form>
+        {models.sourceFileError ? <p className="form-error">{models.sourceFileError}</p> : null}
+        {models.sourceFiles ? (
+          <form className="source-file-import" onSubmit={handleSourceImportSubmit}>
+            <div className="source-file-list" aria-label="Discovered source files">
+              <div className="source-file-list-header">
+                <strong>{models.sourceFiles.projectTitle ?? "Printables project"}</strong>
+                <span className="status-badge muted">{models.sourceFiles.files.length} files</span>
+              </div>
+              {models.sourceFiles.files.map((sourceFile) => (
+                <label className={sourceFile.supportedModelFile ? "source-file-row" : "source-file-row disabled"} key={sourceFile.fileId}>
+                  <input
+                    checked={selectedSourceFileIds.includes(sourceFile.fileId)}
+                    disabled={!sourceFile.supportedModelFile}
+                    onChange={() => toggleSourceFile(sourceFile.fileId)}
+                    type="checkbox"
+                  />
+                  <span>
+                    <strong>{sourceFile.filename}</strong>
+                    <small>
+                      {sourceFile.fileFormat.toUpperCase()} · {formatBytes(sourceFile.sizeBytes)}
+                    </small>
+                  </span>
+                  {sourceFile.supportedModelFile ? (
+                    <span className="status-badge ok">Importable</span>
+                  ) : (
+                    <span className="status-badge muted">Not importable</span>
+                  )}
+                </label>
+              ))}
+            </div>
+            <label className="field-label">
+              Title
+              <input onChange={(event) => setImportTitle(event.target.value)} placeholder="Optional for one selected file" type="text" value={importTitle} />
+            </label>
+            <button
+              className="primary-action icon-action"
+              disabled={selectedSourceFileIds.length === 0 || models.isImportingSourceFiles}
+              type="submit"
+            >
+              {models.isImportingSourceFiles ? <Spinner size={15} /> : <FileDown size={15} aria-hidden="true" />}
+              <span>{models.isImportingSourceFiles ? "Importing" : `Import Selected (${selectedSourceFileIds.length})`}</span>
+            </button>
+          </form>
+        ) : null}
+        <div className="form-divider" role="presentation" />
         <form className="model-upload-form" onSubmit={handleImportSubmit}>
           <label className="field-label">
             Downloaded File
@@ -270,4 +368,21 @@ function WarningList({ file }: { file: ModelFile }) {
 
 function formatMm(value: number | null) {
   return value === null ? "Unknown" : `${value.toFixed(2)} mm`;
+}
+
+function formatBytes(value: number | null) {
+  if (value === null) {
+    return "Size unknown";
+  }
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  const units = ["KB", "MB", "GB"];
+  let size = value / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }

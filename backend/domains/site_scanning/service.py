@@ -16,6 +16,7 @@ from backend.domains.site_scanning.entities import (
     ScanSummary,
 )
 from backend.domains.site_scanning.runners import (
+    SourceSiteRunner,
     SourceSiteRunnerManifest,
     SourceSiteRunnerRegistry,
     default_runner_registry,
@@ -43,6 +44,9 @@ class SiteScanService:
 
     def runner_manifest_for(self, site_key: str) -> SourceSiteRunnerManifest | None:
         return self._runner_registry.manifest_for(site_key.strip().lower())
+
+    def runner_for(self, site_key: str) -> SourceSiteRunner | None:
+        return self._runner_registry.get(site_key.strip().lower())
 
     def adapter_declarations(self) -> list[SiteAdapterDeclaration]:
         declarations = []

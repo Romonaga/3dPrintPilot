@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { reconcileOpenAiCosts, getAiAccountingStatus } from "./ai-usage/api/aiUsageApi";
 import { runCompatibilityChecks } from "./compatibility/api/compatibilityApi";
-import { importDownloadedModelFile } from "./models/api/modelsApi";
+import { discoverSourceModelFiles, importDownloadedModelFile, importSourceModelFiles } from "./models/api/modelsApi";
 import { downloadOperationsBackup } from "./operations/api";
 import {
   cancelPrinterPrint,
@@ -358,6 +358,101 @@ describe("domain API adapters", () => {
     expect(init?.body).toBeInstanceOf(FormData);
     expect(model.files[0].payload?.sourceProjectUrl).toBe("https://www.printables.com/model/123-triangle");
     expect(model.files[0].payload?.sourceFileUrl).toBe("https://files.printables.com/triangle.stl");
+  });
+
+  it("discovers managed source model files", async () => {
+    mockJson({
+      site_key: "printables",
+      source_project_url: "https://www.printables.com/model/123-triangle",
+      external_project_id: "123",
+      project_title: "Triangle",
+      files: [
+        {
+          file_id: "stl-1",
+          filename: "triangle.stl",
+          file_format: "stl",
+          size_bytes: 123,
+          source_file_url: "https://www.printables.com/model/123-triangle/files#file-stl-1",
+          supported_model_file: true,
+          created_at: "2026-06-22T17:00:00Z",
+          notes: null
+        }
+      ]
+    });
+
+    const project = await discoverSourceModelFiles({
+      siteKey: "printables",
+      sourceProjectUrl: " https://www.printables.com/model/123-triangle "
+    });
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("/api/models/imports/source-files/discover");
+    expect(init?.method).toBe("POST");
+    expect((init?.headers as Headers).get("Content-Type")).toBe("application/json");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      site_key: "printables",
+      source_project_url: "https://www.printables.com/model/123-triangle"
+    });
+    expect(project.projectTitle).toBe("Triangle");
+    expect(project.files[0].fileId).toBe("stl-1");
+    expect(project.files[0].supportedModelFile).toBe(true);
+  });
+
+  it("imports selected managed source files", async () => {
+    mockJson([
+      {
+        id: 7,
+        title: "Managed Triangle",
+        source_url: "https://www.printables.com/model/123-triangle",
+        status: "analyzed",
+        created_at: "2026-06-22T17:00:00Z",
+        updated_at: "2026-06-22T17:00:00Z",
+        files: [
+          {
+            id: 8,
+            filename: "triangle.stl",
+            content_type: "model/stl",
+            file_format: "stl",
+            size_bytes: 123,
+            storage_status: "stored_compressed",
+            analysis_status: "completed",
+            analysis_job_id: 43,
+            analysis_warnings: [],
+            geometry: null,
+            payload: {
+              source_project_url: "https://www.printables.com/model/123-triangle",
+              source_file_url: "https://files.printables.com/triangle.stl",
+              compression: "gzip",
+              original_size_bytes: 123,
+              compressed_size_bytes: 99,
+              original_sha256: "a".repeat(64),
+              compressed_sha256: "b".repeat(64),
+              created_at: "2026-06-22T17:00:00Z"
+            },
+            created_at: "2026-06-22T17:00:00Z"
+          }
+        ]
+      }
+    ], 201);
+
+    const models = await importSourceModelFiles({
+      siteKey: "printables",
+      sourceProjectUrl: " https://www.printables.com/model/123-triangle ",
+      fileIds: ["stl-1"],
+      title: "Managed Triangle"
+    });
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("/api/models/imports/source-files");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      site_key: "printables",
+      source_project_url: "https://www.printables.com/model/123-triangle",
+      file_ids: ["stl-1"],
+      title: "Managed Triangle"
+    });
+    expect(models[0].title).toBe("Managed Triangle");
+    expect(models[0].files[0].payload?.sourceFileUrl).toBe("https://files.printables.com/triangle.stl");
   });
 
   it("maps model source auth status and writes selected auth modes", async () => {

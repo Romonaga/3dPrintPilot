@@ -69,13 +69,23 @@ class SiteScanStore:
             record = configured[declaration.site_key]
             next_capabilities = _auth_capabilities_from_declaration(declaration)
             if (
-                record.base_url != declaration.base_url
+                record.display_name != declaration.display_name
+                or record.supports_downloads != declaration.supports_downloads
+                or record.base_url != declaration.base_url
                 or record.login_url != declaration.login_url
                 or record.auth_capabilities != next_capabilities
+                or record.allowed_hosts != {"hosts": list(declaration.allowed_hosts)}
+                or record.default_limits != declaration.default_limits
+                or record.robots_terms_notes != declaration.robots_terms_notes
             ):
+                record.display_name = declaration.display_name
+                record.supports_downloads = declaration.supports_downloads
                 record.base_url = declaration.base_url
                 record.login_url = declaration.login_url
                 record.auth_capabilities = next_capabilities
+                record.allowed_hosts = {"hosts": list(declaration.allowed_hosts)}
+                record.default_limits = declaration.default_limits
+                record.robots_terms_notes = declaration.robots_terms_notes
                 changed = True
         if changed:
             self._session.commit()

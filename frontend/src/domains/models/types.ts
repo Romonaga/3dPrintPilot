@@ -56,3 +56,34 @@ export type ImportDownloadedModelInput = {
   sourceProjectUrl: string;
   sourceFileUrl: string;
 };
+
+export type SourceModelFile = {
+  fileId: string;
+  filename: string;
+  fileFormat: string;
+  sizeBytes: number | null;
+  sourceFileUrl: string;
+  supportedModelFile: boolean;
+  createdAt: string | null;
+  notes: string | null;
+};
+
+export type SourceProjectFiles = {
+  siteKey: string;
+  sourceProjectUrl: string;
+  externalProjectId: string;
+  projectTitle: string | null;
+  files: SourceModelFile[];
+};
+
+export type DiscoverSourceFilesInput = {
+  siteKey: string;
+  sourceProjectUrl: string;
+};
+
+export type ImportSourceFilesInput = {
+  siteKey: string;
+  sourceProjectUrl: string;
+  fileIds: string[];
+  title: string;
+};

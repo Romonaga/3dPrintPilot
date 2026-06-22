@@ -29,6 +29,41 @@ class SourceSiteProjectRef:
 
 
 @dataclass(frozen=True)
+class SourceSiteFile:
+    file_id: str
+    filename: str
+    file_format: str
+    size_bytes: int | None
+    source_file_url: str
+    supported_model_file: bool
+    created_at: str | None = None
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
+class SourceSiteProjectFiles:
+    site_key: str
+    source_project_url: str
+    external_project_id: str
+    project_title: str | None
+    files: tuple[SourceSiteFile, ...]
+
+
+@dataclass(frozen=True)
+class SourceSiteDownloadedFile:
+    file_id: str
+    filename: str
+    content_type: str | None
+    data: bytes
+    source_project_url: str
+    source_file_url: str
+
+
+class SourceSiteRunnerError(RuntimeError):
+    """Raised when a supported source site cannot complete a runner operation."""
+
+
+@dataclass(frozen=True)
 class SourceSiteRunnerManifest:
     site_key: str
     display_name: str
@@ -58,3 +93,21 @@ class SourceSiteRunner(Protocol):
 
     def identify_project(self, url: str) -> SourceSiteProjectRef | None:
         """Return a normalized project reference when this runner understands the URL."""
+
+    def list_project_files(
+        self,
+        project_url: str,
+        *,
+        auth_headers: dict[str, str] | None = None,
+    ) -> SourceSiteProjectFiles:
+        """Return files exposed by a supported project URL."""
+
+    def download_project_file(
+        self,
+        project_url: str,
+        file_id: str,
+        *,
+        auth_headers: dict[str, str] | None = None,
+        max_bytes: int,
+    ) -> SourceSiteDownloadedFile:
+        """Download a selected project file without exposing site credentials."""
