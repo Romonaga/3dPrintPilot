@@ -77,6 +77,16 @@ def test_metadata_only_scan_records_status_timing_and_counts():
     assert result.candidates[0].attribution == "example.com"
 
 
+def test_metadata_only_adapter_remains_generic_without_runner_support():
+    service = SiteScanService()
+    declaration = next(declaration for declaration in service.adapter_declarations() if declaration.site_key == "metadata_only")
+
+    assert declaration.supported_auth_modes == ("none",)
+    assert declaration.supports_downloads is False
+    assert declaration.login_url is None
+    assert declaration.allowed_hosts == ()
+
+
 def test_scan_rejects_invalid_urls_with_chartable_summary():
     service = SiteScanService()
 
