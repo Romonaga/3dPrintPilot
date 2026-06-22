@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { reconcileOpenAiCosts, getAiAccountingStatus } from "./ai-usage/api/aiUsageApi";
 import { runCompatibilityChecks } from "./compatibility/api/compatibilityApi";
-import { discoverSourceModelFiles, importDownloadedModelFile, importSourceModelFiles } from "./models/api/modelsApi";
+import { discoverSourceModelFiles, importDownloadedModelFile, importSourceModelFiles, listSourceProjectScans } from "./models/api/modelsApi";
 import { downloadOperationsBackup } from "./operations/api";
 import {
   cancelPrinterPrint,
@@ -362,10 +362,12 @@ describe("domain API adapters", () => {
 
   it("discovers managed source model files", async () => {
     mockJson({
+      scan_id: 42,
       site_key: "printables",
       source_project_url: "https://www.printables.com/model/123-triangle",
       external_project_id: "123",
       project_title: "Triangle",
+      scanned_at: "2026-06-22T17:00:00Z",
       files: [
         {
           file_id: "stl-1",
@@ -394,8 +396,42 @@ describe("domain API adapters", () => {
       source_project_url: "https://www.printables.com/model/123-triangle"
     });
     expect(project.projectTitle).toBe("Triangle");
+    expect(project.scanId).toBe(42);
+    expect(project.scannedAt).toBe("2026-06-22T17:00:00Z");
     expect(project.files[0].fileId).toBe("stl-1");
     expect(project.files[0].supportedModelFile).toBe(true);
+  });
+
+  it("lists saved source project scans", async () => {
+    mockJson([
+      {
+        scan_id: 43,
+        site_key: "printables",
+        source_project_url: "https://www.printables.com/model/123-triangle",
+        external_project_id: "123",
+        project_title: "Triangle",
+        scanned_at: "2026-06-22T17:00:00Z",
+        files: [
+          {
+            file_id: "stl-1",
+            filename: "triangle.stl",
+            file_format: "stl",
+            size_bytes: 123,
+            source_file_url: "https://www.printables.com/model/123-triangle/files#file-stl-1",
+            supported_model_file: true,
+            created_at: null,
+            notes: null
+          }
+        ]
+      }
+    ]);
+
+    const scans = await listSourceProjectScans();
+
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("/api/models/imports/source-files/scans");
+    expect(scans[0].scanId).toBe(43);
+    expect(scans[0].files[0].filename).toBe("triangle.stl");
   });
 
   it("imports selected managed source files", async () => {

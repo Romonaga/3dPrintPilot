@@ -9,7 +9,7 @@ from backend.core.config import get_settings
 from backend.db.base import Base
 from backend.domains.ai.models import AiCostReconciliationRun, AiUsageEvent
 from backend.domains.compatibility.models import CompatibilityCheck, CompatibilityCheckItem
-from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry
+from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry, SourceProjectScan, SourceProjectScanFile
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
 from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
@@ -25,6 +25,8 @@ _ = (
     ModelFile,
     ModelFilePayload,
     ModelGeometry,
+    SourceProjectScan,
+    SourceProjectScanFile,
     ModelSiteAdapter,
     ModelSiteScanResult,
     ModelSiteScanRun,

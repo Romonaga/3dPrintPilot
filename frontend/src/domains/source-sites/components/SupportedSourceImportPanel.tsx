@@ -42,32 +42,71 @@ export function SupportedSourceImportPanel({
         </div>
       </div>
       <SourceSiteDownloadStatus
+        activeSite={sourceImport.activeSite}
         isLoading={sourceImport.isLoadingSites}
-        managedSites={sourceImport.managedSites}
+        siteCount={sourceImport.supportedSites.length}
       />
       <form className="source-project-form" onSubmit={handleDiscoverSubmit}>
         <label className="field-label">
-          Printables Project URL
+          Source site
+          <select
+            disabled={sourceImport.supportedSites.length === 0}
+            onChange={(event) => sourceImport.updateSelectedSite(event.target.value)}
+            required
+            value={sourceImport.selectedSiteKey}
+          >
+            {sourceImport.supportedSites.length === 0 ? <option value="">No configured runners</option> : null}
+            {sourceImport.supportedSites.map((site) => (
+              <option key={site.siteKey} value={site.siteKey}>
+                {site.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field-label">
+          Project URL
           <input
+            disabled={!sourceImport.activeSite}
             onChange={(event) => sourceImport.updateProjectUrl(event.target.value)}
-            placeholder="https://www.printables.com/model/..."
+            placeholder={sourceImport.activeSite?.baseUrl ? `${sourceImport.activeSite.baseUrl}model/...` : "Select a source site first"}
             required
             type="url"
             value={sourceImport.projectUrl}
           />
         </label>
-        <button className="text-button icon-action" disabled={!sourceImport.projectUrl.trim() || sourceImport.isDiscovering} type="submit">
+        <button
+          className="text-button icon-action"
+          disabled={!sourceImport.activeSite || !sourceImport.projectUrl.trim() || sourceImport.isDiscovering}
+          type="submit"
+        >
           {sourceImport.isDiscovering ? <Spinner size={15} /> : <Search size={15} aria-hidden="true" />}
-          <span>{sourceImport.isDiscovering ? "Discovering" : "Discover Files"}</span>
+          <span>{sourceImport.isDiscovering ? "Scanning" : "Scan Files"}</span>
         </button>
       </form>
       {sourceImport.sourceError ? <p className="form-error">{sourceImport.sourceError}</p> : null}
+      {sourceImport.recentScans.length > 0 ? (
+        <div className="source-scan-history" aria-label="Saved source project scans">
+          <div className="source-file-list-header">
+            <strong>Saved scans</strong>
+            <span className="status-badge muted">{sourceImport.recentScans.length} projects</span>
+          </div>
+          {sourceImport.recentScans.slice(0, 3).map((scan) => (
+            <button className="source-scan-row" key={scan.scanId ?? scan.sourceProjectUrl} onClick={() => sourceImport.loadRecentScan(scan)} type="button">
+              <span>
+                <strong>{scan.projectTitle ?? scan.sourceProjectUrl}</strong>
+                <small>{scan.files.length} files saved from {scan.siteKey}</small>
+              </span>
+              <span className="status-badge muted">Load</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {sourceImport.sourceFiles ? (
         <form className="source-file-import" onSubmit={handleImportSubmit}>
           <div className="source-file-list" aria-label="Discovered source files">
             <div className="source-file-list-header">
-              <strong>{sourceImport.sourceFiles.projectTitle ?? "Printables project"}</strong>
-              <span className="status-badge muted">{sourceImport.sourceFiles.files.length} files</span>
+              <strong>{sourceImport.sourceFiles.projectTitle ?? "Source project"}</strong>
+              <span className="status-badge muted">{sourceImport.sourceFiles.files.length} files stored</span>
             </div>
             {sourceImport.sourceFiles.files.map((sourceFile) => (
               <label className={sourceFile.supportedModelFile ? "source-file-row" : "source-file-row disabled"} key={sourceFile.fileId}>
@@ -106,7 +145,7 @@ export function SupportedSourceImportPanel({
             type="submit"
           >
             {sourceImport.isImporting ? <Spinner size={15} /> : <FileDown size={15} aria-hidden="true" />}
-            <span>{sourceImport.isImporting ? "Importing" : `Import Selected (${sourceImport.selectedFileIds.length})`}</span>
+            <span>{sourceImport.isImporting ? "Downloading" : `Download Selected (${sourceImport.selectedFileIds.length})`}</span>
           </button>
         </form>
       ) : null}
@@ -125,28 +164,26 @@ export function SupportedSourceImportPanel({
 }
 
 function SourceSiteDownloadStatus({
+  activeSite,
   isLoading,
-  managedSites
+  siteCount
 }: {
+  activeSite: SiteAdapter | null;
   isLoading: boolean;
-  managedSites: SiteAdapter[];
+  siteCount: number;
 }) {
   if (isLoading) {
-    return <p className="muted-copy">Loading supported sites.</p>;
+    return <p className="muted-copy">Loading configured source runners.</p>;
   }
-  if (managedSites.length === 0) {
-    return <p className="muted-copy">Unsupported sites can still be tracked with project and file links after manual download.</p>;
+  if (siteCount === 0) {
+    return <p className="muted-copy">No enabled source site runners support managed file downloads yet.</p>;
   }
   return (
     <div className="source-download-status" aria-label="Source download support">
-      {managedSites.map((site) => (
-        <div key={site.siteKey}>
-          <strong>{site.displayName}</strong>
-          <span className={site.supportsDownloads ? "status-badge ok" : "status-badge muted"}>
-            {site.supportsDownloads ? "Managed downloads available" : "Manual download required"}
-          </span>
-        </div>
-      ))}
+      <div>
+        <strong>{activeSite?.displayName ?? "Select a source site"}</strong>
+        <span className="status-badge ok">Runner downloads available</span>
+      </div>
     </div>
   );
 }

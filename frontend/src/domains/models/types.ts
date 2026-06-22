@@ -69,10 +69,12 @@ export type SourceModelFile = {
 };
 
 export type SourceProjectFiles = {
+  scanId: number | null;
   siteKey: string;
   sourceProjectUrl: string;
   externalProjectId: string;
   projectTitle: string | null;
+  scannedAt: string | null;
   files: SourceModelFile[];
 };
 

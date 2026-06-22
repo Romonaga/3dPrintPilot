@@ -3,7 +3,7 @@ from __future__ import annotations
 from backend.db.base import Base
 from backend.domains.ai.models import AiUsageEvent
 from backend.domains.compatibility.models import CompatibilityCheck, CompatibilityCheckItem
-from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry
+from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry, SourceProjectScan, SourceProjectScanFile
 from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
 from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun, SiteAuthProfile
@@ -22,6 +22,8 @@ def test_foundation_models_are_registered_by_domain():
     assert ModelFile.__tablename__ in table_names
     assert ModelFilePayload.__tablename__ in table_names
     assert ModelGeometry.__tablename__ in table_names
+    assert SourceProjectScan.__tablename__ in table_names
+    assert SourceProjectScanFile.__tablename__ in table_names
     assert ResourceSample.__tablename__ in table_names
     assert BackgroundJob.__tablename__ in table_names
     assert ProviderSecret.__tablename__ in table_names
@@ -113,3 +115,16 @@ def test_model_upload_geometry_tables_are_persistable():
     assert "original_sha256" in payload_columns
     assert "triangle_count" in geometry_columns
     assert "volume_mm3" in geometry_columns
+
+
+def test_source_project_scan_tables_store_file_listing_metadata():
+    scan_columns = SourceProjectScan.__table__.columns
+    file_columns = SourceProjectScanFile.__table__.columns
+
+    assert "site_key" in scan_columns
+    assert "source_project_url" in scan_columns
+    assert "external_project_id" in scan_columns
+    assert "requested_by_user_id" in scan_columns
+    assert "file_id" in file_columns
+    assert "source_file_url" in file_columns
+    assert "supported_model_file" in file_columns

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_db_session
 from backend.core.secrets import get_secret_cipher
 from backend.domains.models.entities import GeometryParseError
-from backend.domains.models.models import Model, ModelFile
+from backend.domains.models.models import Model, ModelFile, SourceProjectScan, SourceProjectScanFile
 from backend.domains.models.schemas.response import ModelFilePayloadResponse, ModelFileResponse, ModelGeometryResponse, ModelResponse
 from backend.domains.models.service import MAX_UPLOAD_BYTES, analyze_model_bytes, compress_model_payload, safe_filename
 from backend.domains.models.store import ModelStore
@@ -52,10 +52,12 @@ class SourceModelFileResponse(BaseModel):
 
 
 class SourceProjectFilesResponse(BaseModel):
+    scan_id: int | None = None
     site_key: str
     source_project_url: str
     external_project_id: str
     project_title: str | None
+    scanned_at: str | None = None
     files: list[SourceModelFileResponse]
 
 
@@ -138,7 +140,8 @@ async def import_downloaded_model_file(
 @router.post("/imports/source-files/discover", response_model=SourceProjectFilesResponse)
 def discover_source_model_files(
     request: DiscoverSourceFilesRequest,
-    _user=Depends(require_roles("user")),
+    user=Depends(require_roles("user")),
+    store: ModelStore = Depends(get_model_store),
     auth_store: SiteAuthProfileStore = Depends(get_site_auth_profile_store),
 ) -> SourceProjectFilesResponse:
     runner = _source_site_runner(request.site_key, SourceSiteCapability.FILE_LISTING)
@@ -149,7 +152,17 @@ def discover_source_model_files(
         )
     except SourceSiteRunnerError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _source_files_response(project_files)
+    scan = store.save_source_project_scan(project_files, requested_by_user_id=getattr(user, "id", None))
+    return _source_files_response(project_files, scan=scan)
+
+
+@router.get("/imports/source-files/scans", response_model=list[SourceProjectFilesResponse])
+def list_source_project_file_scans(
+    limit: int = 20,
+    _user=Depends(require_roles("viewer")),
+    store: ModelStore = Depends(get_model_store),
+) -> list[SourceProjectFilesResponse]:
+    return [_source_files_response_from_scan(scan) for scan in store.list_source_project_scans(limit=max(1, min(limit, 100)))]
 
 
 @router.post("/imports/source-files", response_model=list[ModelResponse], status_code=201)
@@ -283,13 +296,27 @@ def _source_auth_headers(auth_store: SiteAuthProfileStore, site_key: str) -> dic
     return context.headers if context.enabled and context.headers else None
 
 
-def _source_files_response(project_files: SourceSiteProjectFiles) -> SourceProjectFilesResponse:
+def _source_files_response(project_files: SourceSiteProjectFiles, *, scan: SourceProjectScan | None = None) -> SourceProjectFilesResponse:
     return SourceProjectFilesResponse(
+        scan_id=scan.id if scan is not None else None,
         site_key=project_files.site_key,
         source_project_url=project_files.source_project_url,
         external_project_id=project_files.external_project_id,
         project_title=project_files.project_title,
+        scanned_at=scan.created_at.isoformat() if scan is not None else None,
         files=[_source_file_response(file) for file in project_files.files],
+    )
+
+
+def _source_files_response_from_scan(scan: SourceProjectScan) -> SourceProjectFilesResponse:
+    return SourceProjectFilesResponse(
+        scan_id=scan.id,
+        site_key=scan.site_key,
+        source_project_url=scan.source_project_url,
+        external_project_id=scan.external_project_id,
+        project_title=scan.project_title,
+        scanned_at=scan.created_at.isoformat(),
+        files=[_source_scan_file_response(file) for file in sorted(scan.files, key=lambda item: item.id)],
     )
 
 
@@ -302,6 +329,19 @@ def _source_file_response(file: SourceSiteFile) -> SourceModelFileResponse:
         source_file_url=file.source_file_url,
         supported_model_file=file.supported_model_file,
         created_at=file.created_at,
+        notes=file.notes,
+    )
+
+
+def _source_scan_file_response(file: SourceProjectScanFile) -> SourceModelFileResponse:
+    return SourceModelFileResponse(
+        file_id=file.file_id,
+        filename=file.filename,
+        file_format=file.file_format,
+        size_bytes=file.size_bytes,
+        source_file_url=file.source_file_url,
+        supported_model_file=file.supported_model_file,
+        created_at=file.source_created_at,
         notes=file.notes,
     )
 

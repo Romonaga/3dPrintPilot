@@ -50,6 +50,9 @@ function authenticatedFetch(input: RequestInfo | URL): Promise<Response> {
   if (url === "/api/site-scanning/adapters") {
     return Promise.resolve(new Response(JSON.stringify(sampleSiteAdapters()), { status: 200 }));
   }
+  if (url === "/api/models/imports/source-files/scans") {
+    return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+  }
   return Promise.resolve(new Response("{}", { status: 404 }));
 }
 
@@ -85,6 +88,9 @@ describe("App", () => {
       if (url === "/api/site-scanning/adapters") {
         return Promise.resolve(new Response(JSON.stringify(sampleSiteAdapters()), { status: 200 }));
       }
+      if (url === "/api/models/imports/source-files/scans") {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
       if (url === "/api/models/imports/source-files/discover" && init?.method === "POST") {
         return Promise.resolve(new Response(JSON.stringify(sampleSourceProjectFiles()), { status: 200 }));
       }
@@ -97,17 +103,21 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "Find Models" })).toBeInTheDocument();
-    expect(await screen.findByText("Managed downloads available")).toBeInTheDocument();
+    expect(await screen.findByText("Runner downloads available")).toBeInTheDocument();
+    expect(screen.getByLabelText("Source site")).toHaveValue("printables");
 
-    await user.type(screen.getByLabelText("Printables Project URL"), "https://www.printables.com/model/123-managed-triangle");
-    await user.click(screen.getByRole("button", { name: "Discover Files" }));
+    await user.type(screen.getByLabelText("Project URL"), "https://www.printables.com/model/123-managed-triangle");
+    await user.click(screen.getByRole("button", { name: "Scan Files" }));
 
-    expect(await screen.findByText("Managed Triangle Project")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Discovered source files")).toBeInTheDocument());
+    expect(within(screen.getByLabelText("Discovered source files")).getByText("Managed Triangle Project")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Saved source project scans")).getByText("Managed Triangle Project")).toBeInTheDocument();
     expect(screen.getByLabelText(/triangle\.stl/i)).toBeChecked();
     expect(screen.getByLabelText(/assembly-notes\.pdf/i)).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Import Selected (1)" })).toBeInTheDocument();
+    expect(screen.getByText("1 projects")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download Selected (1)" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Import Selected (1)" }));
+    await user.click(screen.getByRole("button", { name: "Download Selected (1)" }));
 
     expect(await screen.findByText("Managed Triangle")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
@@ -132,6 +142,27 @@ describe("App", () => {
         method: "POST"
       })
     );
+  });
+
+  it("shows a clear unavailable state when no configured source runners support downloads", async () => {
+    mockApiFetch((input) => {
+      const url = String(input);
+      if (url === "/api/site-scanning/adapters") {
+        return Promise.resolve(
+          new Response(JSON.stringify([{ ...sampleSiteAdapters()[0], enabled: false, supports_downloads: false }]), { status: 200 })
+        );
+      }
+      if (url === "/api/models/imports/source-files/scans") {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      return authenticatedFetch(input);
+    });
+    render(<App />);
+
+    expect(await screen.findByText("No enabled source site runners support managed file downloads yet.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Source site")).toBeDisabled();
+    expect(screen.getByLabelText("Project URL")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Scan Files" })).toBeDisabled();
   });
 
   it("shows machine state and meaningful print progress on dashboard printer cards", async () => {
@@ -1215,7 +1246,7 @@ function sampleSiteAdapters() {
       site_key: "printables",
       display_name: "Printables",
       support_level: "managed",
-      capabilities: ["project_lookup", "managed_downloads"],
+      capabilities: ["public_scan", "account_setup", "project_lookup", "file_listing", "file_download"],
       setup_required: false,
       base_url: "https://www.printables.com/",
       login_url: "https://www.printables.com/login",
@@ -1232,10 +1263,12 @@ function sampleSiteAdapters() {
 
 function sampleSourceProjectFiles() {
   return {
+    scan_id: 33,
     site_key: "printables",
     source_project_url: "https://www.printables.com/model/123-managed-triangle",
     external_project_id: "123",
     project_title: "Managed Triangle Project",
+    scanned_at: "2026-06-22T19:00:00Z",
     files: [
       {
         file_id: "file-stl",
