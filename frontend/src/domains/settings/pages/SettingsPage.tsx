@@ -447,13 +447,31 @@ function SourceSiteAuthRow({
         </div>
       </form>
       {browserLink ? (
-        <p className="muted-copy" role="status">
-          {browserLink.message}
-          {browserLink.cookieCount > 0 ? ` Captured ${browserLink.cookieCount} site cookies.` : ""}
-        </p>
+        <div className="browser-link-status" role="status">
+          <StatusBadge
+            icon={browserLink.status === "linked" ? CheckCircle2 : browserLink.status === "failed" ? AlertTriangle : RefreshCw}
+            label={browserLinkStatusLabel(browserLink.status)}
+            tone={browserLink.status === "linked" ? "ok" : browserLink.status === "failed" ? "warn" : "muted"}
+          />
+          <span>
+            {browserLink.message}
+            {browserLink.cookieCount > 0 ? ` Captured ${browserLink.cookieCount} site cookies.` : ""}
+          </span>
+        </div>
       ) : null}
     </article>
   );
+}
+
+function browserLinkStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    capture_requested: "Capturing",
+    expired: "Expired",
+    failed: "Capture failed",
+    linked: "Session captured",
+    running: "Waiting for login"
+  };
+  return labels[status] ?? "Browser link";
 }
 
 function authModeLabel(mode: string) {

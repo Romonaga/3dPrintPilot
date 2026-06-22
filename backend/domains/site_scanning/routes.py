@@ -192,6 +192,13 @@ def start_site_auth_browser_link(
             site_key=declaration.site_key,
             login_url=declaration.login_url,
             allowed_hosts=tuple(declaration.allowed_hosts),
+            capture_hosts=tuple(declaration.browser_session_hosts or declaration.allowed_hosts),
+            observe_hosts=tuple(
+                declaration.browser_session_observe_hosts
+                or declaration.browser_session_hosts
+                or declaration.allowed_hosts
+            ),
+            required_cookie_names=tuple(declaration.browser_session_required_cookie_names),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -6,6 +6,9 @@ import process from "node:process";
 const args = parseArgs(process.argv.slice(2));
 const loginUrl = requireArg(args, "login-url");
 const allowedHosts = requireArg(args, "allowed-hosts").split(",").map((host) => host.trim()).filter(Boolean);
+const captureHosts = (args["capture-hosts"] || args["allowed-hosts"]).split(",").map((host) => host.trim()).filter(Boolean);
+const observeHosts = (args["observe-hosts"] || args["capture-hosts"] || args["allowed-hosts"]).split(",").map((host) => host.trim()).filter(Boolean);
+const requiredCookieNames = (args["required-cookie-names"] || "").split(",").map((name) => name.trim()).filter(Boolean);
 const signalFile = requireArg(args, "signal-file");
 const resultFile = requireArg(args, "result-file");
 const timeoutSeconds = Number(args["timeout-seconds"] || "900");
@@ -23,36 +26,25 @@ try {
   await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
 
   const deadline = Date.now() + timeoutSeconds * 1000;
+  let captureRequested = false;
   while (Date.now() < deadline) {
-    if (await exists(signalFile)) {
-      const cookies = await context.cookies([
-        loginUrl,
-        ...allowedHosts.map((host) => `https://${host}/`)
-      ]);
-      const scopedCookies = cookies.filter((cookie) => isAllowedCookie(cookie.domain, allowedHosts));
-      if (scopedCookies.length === 0) {
-        await writeResult({
-          status: "failed",
-          message: "No site-scoped cookies were available from the login browser."
-        });
-        break;
-      }
-      await writeResult({
-        status: "captured",
-        cookie_header: scopedCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; "),
-        cookie_count: scopedCookies.length,
-        cookie_names: scopedCookies.map((cookie) => cookie.name),
-        cookie_domains: [...new Set(scopedCookies.map((cookie) => cookie.domain))]
-      });
+    const autoCaptured = await captureIfReady(page, false);
+    if (autoCaptured) {
       break;
+    }
+    if (await exists(signalFile)) {
+      captureRequested = true;
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   if (!(await exists(resultFile))) {
+    const cookies = await context.cookies();
     await writeResult({
       status: "failed",
-      message: "Login browser timed out before capture was requested."
+      message: captureRequested
+        ? cookieFailureMessage(cookies, captureHosts, requiredCookieNames)
+        : "Login browser timed out before a signed-in site session was available."
     });
   }
 } catch (error) {
@@ -64,6 +56,59 @@ try {
   if (context) {
     await context.close();
   }
+}
+
+async function captureIfReady(page, force) {
+  const cookies = await context.cookies();
+  const observedCookies = cookies.filter((cookie) => isAllowedCookie(cookie.domain, observeHosts));
+  const scopedCookies = cookies.filter((cookie) => isAllowedCookie(cookie.domain, captureHosts));
+  const hasRequiredCookie =
+    requiredCookieNames.length === 0 ||
+    observedCookies.some((cookie) => requiredCookieNames.includes(cookie.name));
+
+  if (scopedCookies.length === 0 || !hasRequiredCookie) {
+    if (force) {
+      await writeResult({
+        status: "failed",
+        message: cookieFailureMessage(cookies, captureHosts, requiredCookieNames)
+      });
+    }
+    return false;
+  }
+
+  if (!force) {
+    await settleSiteSession(page);
+  }
+  const settledCookies = await context.cookies();
+  const settledScopedCookies = settledCookies.filter((cookie) => isAllowedCookie(cookie.domain, captureHosts));
+
+  await writeResult({
+    status: "captured",
+    cookie_header: settledScopedCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; "),
+    cookie_count: settledScopedCookies.length,
+    cookie_names: settledScopedCookies.map((cookie) => cookie.name),
+    cookie_domains: [...new Set(settledScopedCookies.map((cookie) => cookie.domain))]
+  });
+  return true;
+}
+
+async function settleSiteSession(page) {
+  try {
+    await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
+    await page.waitForTimeout(1500);
+  } catch {
+    await page.waitForTimeout(1500);
+  }
+}
+
+function cookieFailureMessage(cookies, hosts, requiredNames) {
+  const observedDomains = [...new Set(cookies.map((cookie) => cookie.domain.replace(/^\./, "").toLowerCase()))].sort();
+  const observedNames = [...new Set(cookies.map((cookie) => cookie.name))].sort();
+  if (observedDomains.length === 0) {
+    return "No browser cookies were available. Complete the site login before capturing the session.";
+  }
+  const requiredNote = requiredNames.length > 0 ? ` Required cookie names: ${requiredNames.join(", ")}.` : "";
+  return `No usable site session cookies were available for ${hosts.join(", ")}.${requiredNote} Observed cookie domains: ${observedDomains.join(", ")}. Observed cookie names: ${observedNames.join(", ")}.`;
 }
 
 function parseArgs(rawArgs) {
