@@ -8,39 +8,28 @@ import httpx
 
 from backend.domains.site_scanning.adapters.base import AdapterDiscoveryResult
 from backend.domains.site_scanning.entities import CrawlCandidate
+from backend.domains.site_scanning.runners.printables import PrintablesSourceSiteRunner
 from backend.domains.site_scanning.utils import normalize_url
 
-PRINTABLES_HOSTS = frozenset({"www.printables.com", "printables.com"})
-PRINTABLES_BROWSER_SESSION_HOSTS = frozenset(
-    {
-        "api.printables.com",
-        "printables.com",
-        "www.printables.com",
-    }
-)
-PRINTABLES_BROWSER_SESSION_OBSERVE_HOSTS = PRINTABLES_BROWSER_SESSION_HOSTS | {"account.prusa3d.com"}
+PRINTABLES_RUNNER_MANIFEST = PrintablesSourceSiteRunner.manifest
+PRINTABLES_HOSTS = frozenset(PRINTABLES_RUNNER_MANIFEST.allowed_hosts)
 MAX_CANDIDATES_PER_PAGE = 24
 
 
 class PrintablesAdapter:
-    site_key = "printables"
-    display_name = "Printables public model pages"
+    site_key = PRINTABLES_RUNNER_MANIFEST.site_key
+    display_name = PRINTABLES_RUNNER_MANIFEST.display_name
     allowed_hosts = PRINTABLES_HOSTS
-    browser_session_hosts = PRINTABLES_BROWSER_SESSION_HOSTS
-    browser_session_observe_hosts = PRINTABLES_BROWSER_SESSION_OBSERVE_HOSTS
-    browser_session_required_cookie_names = ("sessionid",)
-    base_url = "https://www.printables.com/"
-    login_url = "https://www.printables.com/login"
-    supports_downloads = False
-    supported_auth_modes = ("none", "username_password", "browser_session")
-    auth_storage_notes = (
-        "Email/password can be encrypted for a Printables account. Google login must use browser-assisted session "
-        "linking; do not enter or store a Google password here."
-    )
-    default_limits = {"max_depth": 1, "max_pages": 50, "max_runtime_seconds": 300, "per_host_concurrency": 1}
-    robots_terms_notes = (
-        "Public metadata only. Does not sign in, bypass paywalls, evade anti-bot controls, or download model files."
-    )
+    browser_session_hosts = frozenset(PRINTABLES_RUNNER_MANIFEST.browser_session_hosts)
+    browser_session_observe_hosts = frozenset(PRINTABLES_RUNNER_MANIFEST.browser_session_observe_hosts)
+    browser_session_required_cookie_names = PRINTABLES_RUNNER_MANIFEST.browser_session_required_cookie_names
+    base_url = PRINTABLES_RUNNER_MANIFEST.base_url
+    login_url = PRINTABLES_RUNNER_MANIFEST.login_url
+    supports_downloads = PRINTABLES_RUNNER_MANIFEST.supports_downloads
+    supported_auth_modes = PRINTABLES_RUNNER_MANIFEST.supported_auth_modes
+    auth_storage_notes = PRINTABLES_RUNNER_MANIFEST.auth_storage_notes
+    default_limits = PRINTABLES_RUNNER_MANIFEST.default_limits
+    robots_terms_notes = PRINTABLES_RUNNER_MANIFEST.robots_terms_notes
 
     def discover(
         self,

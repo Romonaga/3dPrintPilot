@@ -15,11 +15,21 @@ from backend.domains.site_scanning.entities import (
     ScanStopReason,
     ScanSummary,
 )
+from backend.domains.site_scanning.runners import (
+    SourceSiteRunnerManifest,
+    SourceSiteRunnerRegistry,
+    default_runner_registry,
+)
 from backend.domains.site_scanning.utils import try_normalize_url
 
 
 class SiteScanService:
-    def __init__(self, adapters: dict[str, SiteScanAdapter] | None = None) -> None:
+    def __init__(
+        self,
+        adapters: dict[str, SiteScanAdapter] | None = None,
+        runner_registry: SourceSiteRunnerRegistry | None = None,
+    ) -> None:
+        self._runner_registry = runner_registry or default_runner_registry()
         self._adapters = adapters or {
             MetadataOnlyAdapter.site_key: MetadataOnlyAdapter(),
             PrintablesAdapter.site_key: PrintablesAdapter(),
@@ -28,38 +38,14 @@ class SiteScanService:
     def list_adapters(self) -> list[SiteScanAdapter]:
         return list(self._adapters.values())
 
+    def runner_manifests(self) -> list[SourceSiteRunnerManifest]:
+        return self._runner_registry.list_manifests()
+
     def adapter_declarations(self) -> list[SiteAdapterDeclaration]:
         declarations = []
         for adapter in self.list_adapters():
-            declarations.append(
-                SiteAdapterDeclaration(
-                    site_key=adapter.site_key,
-                    display_name=adapter.display_name,
-                    allowed_hosts=tuple(sorted(adapter.allowed_hosts)),
-                    browser_session_hosts=tuple(
-                        sorted(getattr(adapter, "browser_session_hosts", adapter.allowed_hosts))
-                    ),
-                    browser_session_observe_hosts=tuple(
-                        sorted(
-                            getattr(
-                                adapter,
-                                "browser_session_observe_hosts",
-                                getattr(adapter, "browser_session_hosts", adapter.allowed_hosts),
-                            )
-                        )
-                    ),
-                    browser_session_required_cookie_names=tuple(
-                        sorted(getattr(adapter, "browser_session_required_cookie_names", ()))
-                    ),
-                    base_url=getattr(adapter, "base_url", None),
-                    login_url=getattr(adapter, "login_url", None),
-                    supports_downloads=adapter.supports_downloads,
-                    supported_auth_modes=tuple(getattr(adapter, "supported_auth_modes", ("none",))),
-                    auth_storage_notes=getattr(adapter, "auth_storage_notes", None),
-                    default_limits=getattr(adapter, "default_limits", {}),
-                    robots_terms_notes=getattr(adapter, "robots_terms_notes", None),
-                )
-            )
+            runner_manifest = self._runner_registry.manifest_for(adapter.site_key)
+            declarations.append(_adapter_declaration(adapter, runner_manifest))
         return declarations
 
     def scan(
@@ -238,6 +224,47 @@ def _allowed_hosts(policy: CrawlPolicy, adapter: SiteScanAdapter, start_host: st
 def _host_allowed(host: str, allowed_hosts: frozenset[str]) -> bool:
     host = host.lower()
     return host in allowed_hosts
+
+
+def _adapter_declaration(
+    adapter: SiteScanAdapter,
+    runner_manifest: SourceSiteRunnerManifest | None,
+) -> SiteAdapterDeclaration:
+    if runner_manifest is not None:
+        return SiteAdapterDeclaration(
+            site_key=adapter.site_key,
+            display_name=runner_manifest.display_name,
+            allowed_hosts=tuple(sorted(runner_manifest.allowed_hosts)),
+            browser_session_hosts=tuple(sorted(runner_manifest.browser_session_hosts)),
+            browser_session_observe_hosts=tuple(sorted(runner_manifest.browser_session_observe_hosts)),
+            browser_session_required_cookie_names=tuple(sorted(runner_manifest.browser_session_required_cookie_names)),
+            base_url=runner_manifest.base_url,
+            login_url=runner_manifest.login_url,
+            supports_downloads=runner_manifest.supports_downloads,
+            supported_auth_modes=tuple(runner_manifest.supported_auth_modes),
+            auth_storage_notes=runner_manifest.auth_storage_notes,
+            default_limits=runner_manifest.default_limits,
+            robots_terms_notes=runner_manifest.robots_terms_notes,
+        )
+
+    browser_session_hosts = getattr(adapter, "browser_session_hosts", adapter.allowed_hosts)
+    return SiteAdapterDeclaration(
+        site_key=adapter.site_key,
+        display_name=adapter.display_name,
+        allowed_hosts=tuple(sorted(adapter.allowed_hosts)),
+        browser_session_hosts=tuple(sorted(browser_session_hosts)),
+        browser_session_observe_hosts=tuple(
+            sorted(getattr(adapter, "browser_session_observe_hosts", browser_session_hosts))
+        ),
+        browser_session_required_cookie_names=tuple(sorted(getattr(adapter, "browser_session_required_cookie_names", ()))),
+        base_url=getattr(adapter, "base_url", None),
+        login_url=getattr(adapter, "login_url", None),
+        supports_downloads=adapter.supports_downloads,
+        supported_auth_modes=tuple(getattr(adapter, "supported_auth_modes", ("none",))),
+        auth_storage_notes=getattr(adapter, "auth_storage_notes", None),
+        default_limits=getattr(adapter, "default_limits", {}),
+        robots_terms_notes=getattr(adapter, "robots_terms_notes", None),
+    )
 
 
 def _duration_ms(started: float) -> int:
