@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import backend.domains.site_scanning.runners.printables as printables_runner_module
 from backend.domains.site_scanning.adapters.printables import PrintablesAdapter
 from backend.domains.site_scanning.entities import CrawlPolicy, ScanStopReason
 from backend.domains.site_scanning.runners import SourceSiteCapability, SourceSiteSupportLevel, default_runner_registry
@@ -56,7 +57,8 @@ def test_printables_runner_self_registers_supported_capabilities():
     assert SourceSiteCapability.PUBLIC_SCAN in manifest.capabilities
     assert SourceSiteCapability.ACCOUNT_SETUP in manifest.capabilities
     assert SourceSiteCapability.PROJECT_LOOKUP in manifest.capabilities
-    assert SourceSiteCapability.FILE_DOWNLOAD not in manifest.capabilities
+    assert SourceSiteCapability.FILE_LISTING in manifest.capabilities
+    assert SourceSiteCapability.FILE_DOWNLOAD in manifest.capabilities
 
 
 def test_printables_runner_identifies_project_urls_without_guessing_other_hosts():
@@ -70,6 +72,95 @@ def test_printables_runner_identifies_project_urls_without_guessing_other_hosts(
     assert project.source_url == "https://www.printables.com/model/229198-printables-calibration-cube"
     assert runner.identify_project("https://example.com/model/229198-printables-calibration-cube") is None
     assert runner.identify_project("not-a-url") is None
+
+
+def test_printables_runner_lists_project_files_and_marks_unsupported_extensions(monkeypatch):
+    def fake_post_graphql(query, variables, *, auth_headers=None):
+        assert variables == {"id": "229198"}
+        assert auth_headers == {"Cookie": "session=abc"}
+        return {
+            "data": {
+                "model": {
+                    "id": "229198",
+                    "name": "Calibration Cube",
+                    "stls": [
+                        {"id": "file-2", "name": "helper.scad", "fileSize": 100, "order": 2},
+                        {"id": "file-1", "name": "cube.stl", "fileSize": 2048, "order": 1},
+                    ],
+                }
+            }
+        }
+
+    monkeypatch.setattr(printables_runner_module, "_post_graphql", fake_post_graphql)
+    runner = PrintablesSourceSiteRunner()
+
+    project_files = runner.list_project_files(
+        "https://www.printables.com/model/229198-printables-calibration-cube/files",
+        auth_headers={"Cookie": "session=abc"},
+    )
+
+    assert project_files.project_title == "Calibration Cube"
+    assert [item.filename for item in project_files.files] == ["cube.stl", "helper.scad"]
+    assert project_files.files[0].supported_model_file is True
+    assert project_files.files[0].source_file_url.endswith("/files#file-file-1")
+    assert project_files.files[1].file_format == "scad"
+    assert project_files.files[1].supported_model_file is False
+
+
+def test_printables_runner_downloads_selected_model_file_with_site_download_link(monkeypatch):
+    observed_mutation_variables = None
+
+    def fake_post_graphql(query, variables, *, auth_headers=None):
+        nonlocal observed_mutation_variables
+        assert auth_headers == {"Cookie": "session=abc"}
+        if "query ModelFiles" in query:
+            return {
+                "data": {
+                    "model": {
+                        "id": "229198",
+                        "name": "Calibration Cube",
+                        "stls": [{"id": "file-1", "name": "cube.3mf", "fileSize": 2048, "order": 1}],
+                    }
+                }
+            }
+        observed_mutation_variables = variables
+        return {
+            "data": {
+                "getDownloadLink": {
+                    "ok": True,
+                    "errors": [],
+                    "output": {"link": "https://files.printables.com/media/prints/229198/cube.3mf"},
+                }
+            }
+        }
+
+    def fake_download_bytes(url, *, auth_headers=None, max_bytes):
+        assert url == "https://files.printables.com/media/prints/229198/cube.3mf"
+        assert auth_headers == {"Cookie": "session=abc"}
+        assert max_bytes == 1024
+        return b"3mf-data", "model/3mf"
+
+    monkeypatch.setattr(printables_runner_module, "_post_graphql", fake_post_graphql)
+    monkeypatch.setattr(printables_runner_module, "_download_bytes", fake_download_bytes)
+    runner = PrintablesSourceSiteRunner()
+
+    downloaded = runner.download_project_file(
+        "https://www.printables.com/model/229198-printables-calibration-cube",
+        "file-1",
+        auth_headers={"Cookie": "session=abc"},
+        max_bytes=1024,
+    )
+
+    assert observed_mutation_variables == {
+        "id": "file-1",
+        "modelId": "229198",
+        "fileType": "stl",
+        "source": "model_detail",
+    }
+    assert downloaded.filename == "cube.3mf"
+    assert downloaded.content_type == "model/3mf"
+    assert downloaded.data == b"3mf-data"
+    assert downloaded.source_file_url == "https://files.printables.com/media/prints/229198/cube.3mf"
 
 
 def test_printables_child_urls_are_limited_by_shared_depth_guard():

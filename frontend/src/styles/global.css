@@ -441,6 +441,72 @@ h3 {
   gap: 12px;
 }
 
+.source-project-form,
+.source-file-import {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.source-project-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.source-file-list {
+  display: grid;
+  gap: 8px;
+}
+
+.source-file-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.source-file-list-header strong {
+  overflow-wrap: anywhere;
+}
+
+.source-file-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.source-file-row.disabled {
+  color: var(--muted);
+}
+
+.source-file-row span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.source-file-row strong,
+.source-file-row small {
+  overflow-wrap: anywhere;
+}
+
+.source-file-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.form-divider {
+  height: 1px;
+  margin: 16px 0;
+  background: var(--border-subtle);
+}
+
 .source-download-status {
   display: grid;
   gap: 8px;
@@ -1344,6 +1410,7 @@ dd {
   .resource-list,
   .scan-limit-grid,
   .scan-form,
+  .source-project-form,
   .printer-scan-settings,
   .compatibility-form,
   .reconciliation-form,
@@ -1381,7 +1448,8 @@ dd {
   .printer-row-main,
   .printer-file-grid,
   .printer-upload-row,
-  .printer-file-row {
+  .printer-file-row,
+  .source-file-row {
     grid-template-columns: 1fr;
   }
 

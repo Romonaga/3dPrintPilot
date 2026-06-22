@@ -11,8 +11,17 @@ from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
 from backend.domains.models.entities import GeometryParseError
-from backend.domains.models.routes import get_model_store
+import backend.domains.models.routes as model_routes
+from backend.domains.models.routes import get_model_store, get_site_auth_profile_store
 from backend.domains.models.service import MAX_UPLOAD_BYTES, analyze_model_bytes, compress_model_payload
+from backend.domains.site_scanning.runners import (
+    SourceSiteCapability,
+    SourceSiteDownloadedFile,
+    SourceSiteFile,
+    SourceSiteProjectFiles,
+    SourceSiteRunnerManifest,
+    SourceSiteSupportLevel,
+)
 from tests.helpers import allow_anonymous_until_bootstrap
 
 
@@ -137,6 +146,81 @@ class FakeModelStore:
         )
 
 
+class FakeSourceAuthStore:
+    def __init__(self) -> None:
+        self.requested_site_keys = []
+
+    def auth_context_for_site(self, site_key):
+        self.requested_site_keys.append(site_key)
+        return SimpleNamespace(enabled=True, headers={"Cookie": "session=abc"})
+
+
+class FakeSourceRunner:
+    manifest = SourceSiteRunnerManifest(
+        site_key="printables",
+        display_name="Printables",
+        support_level=SourceSiteSupportLevel.PARTIAL,
+        capabilities=(SourceSiteCapability.FILE_LISTING, SourceSiteCapability.FILE_DOWNLOAD),
+        allowed_hosts=("printables.com", "www.printables.com"),
+    )
+
+    def __init__(self) -> None:
+        self.list_headers = []
+        self.download_headers = []
+
+    def identify_project(self, url):
+        return None
+
+    def list_project_files(self, project_url, *, auth_headers=None):
+        self.list_headers.append(auth_headers)
+        return SourceSiteProjectFiles(
+            site_key="printables",
+            source_project_url="https://www.printables.com/model/123-triangle",
+            external_project_id="123",
+            project_title="Triangle",
+            files=(
+                SourceSiteFile(
+                    file_id="stl-1",
+                    filename="triangle.stl",
+                    file_format="stl",
+                    size_bytes=len(ASCII_STL),
+                    source_file_url="https://www.printables.com/model/123-triangle/files#file-stl-1",
+                    supported_model_file=True,
+                ),
+                SourceSiteFile(
+                    file_id="scad-1",
+                    filename="triangle.scad",
+                    file_format="scad",
+                    size_bytes=100,
+                    source_file_url="https://www.printables.com/model/123-triangle/files#file-scad-1",
+                    supported_model_file=False,
+                ),
+            ),
+        )
+
+    def download_project_file(self, project_url, file_id, *, auth_headers=None, max_bytes):
+        self.download_headers.append(auth_headers)
+        assert project_url == "https://www.printables.com/model/123-triangle"
+        assert file_id == "stl-1"
+        assert max_bytes == MAX_UPLOAD_BYTES
+        return SourceSiteDownloadedFile(
+            file_id=file_id,
+            filename="../triangle.stl",
+            content_type="model/stl",
+            data=ASCII_STL,
+            source_project_url="https://www.printables.com/model/123-triangle",
+            source_file_url="https://files.printables.com/media/prints/123/triangle.stl",
+        )
+
+
+class FakeSourceSiteService:
+    def __init__(self, runner: FakeSourceRunner) -> None:
+        self.runner = runner
+
+    def runner_for(self, site_key: str):
+        return self.runner if site_key == "printables" else None
+
+
 def test_ascii_stl_analysis_extracts_bounds_and_warning_for_flat_volume():
     analysis = analyze_model_bytes(ASCII_STL, filename="sample.stl", content_type="model/stl")
 
@@ -236,6 +320,65 @@ def test_model_import_downloaded_file_requires_absolute_source_urls():
     )
 
     assert response.status_code == 400
+
+
+def test_model_source_file_discovery_returns_printables_files_without_auth_values(monkeypatch):
+    runner = FakeSourceRunner()
+    auth_store = FakeSourceAuthStore()
+    monkeypatch.setattr(model_routes, "source_site_service", FakeSourceSiteService(runner))
+    app = create_app()
+    app.dependency_overrides[get_site_auth_profile_store] = lambda: auth_store
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/models/imports/source-files/discover",
+        json={"site_key": "printables", "source_project_url": "https://www.printables.com/model/123-triangle"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["project_title"] == "Triangle"
+    assert body["files"][0]["filename"] == "triangle.stl"
+    assert body["files"][0]["supported_model_file"] is True
+    assert body["files"][1]["supported_model_file"] is False
+    assert runner.list_headers == [{"Cookie": "session=abc"}]
+    assert "session=abc" not in response.text
+
+
+def test_model_source_file_import_downloads_and_stores_selected_printables_files(monkeypatch):
+    store = FakeModelStore()
+    runner = FakeSourceRunner()
+    auth_store = FakeSourceAuthStore()
+    monkeypatch.setattr(model_routes, "source_site_service", FakeSourceSiteService(runner))
+    app = create_app()
+    app.dependency_overrides[get_model_store] = lambda: store
+    app.dependency_overrides[get_site_auth_profile_store] = lambda: auth_store
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/models/imports/source-files",
+        json={
+            "site_key": "printables",
+            "source_project_url": "https://www.printables.com/model/123-triangle",
+            "file_ids": ["stl-1"],
+            "title": "Managed Triangle",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    payload = body[0]["files"][0]["payload"]
+    assert body[0]["title"] == "Managed Triangle"
+    assert body[0]["files"][0]["filename"] == "triangle.stl"
+    assert body[0]["files"][0]["storage_status"] == "stored_compressed"
+    assert payload["source_project_url"] == "https://www.printables.com/model/123-triangle"
+    assert payload["source_file_url"] == "https://files.printables.com/media/prints/123/triangle.stl"
+    assert payload["original_sha256"] == sha256(ASCII_STL).hexdigest()
+    assert gzip_decompress(store.saved[0]["payload"].compressed_bytes) == ASCII_STL
+    assert runner.download_headers == [{"Cookie": "session=abc"}]
+    assert "session=abc" not in response.text
 
 
 def test_model_upload_rejects_oversized_files_before_parsing():
