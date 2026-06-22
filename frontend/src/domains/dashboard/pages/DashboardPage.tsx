@@ -3,6 +3,7 @@ import { PrinterInventory } from "../components/PrinterInventory";
 import { CompatibilitySummary } from "../../compatibility/components/CompatibilitySummary";
 import { AiCostSummary } from "../../ai-usage/components/AiCostSummary";
 import { ResourceSummary } from "../../resources/components/ResourceSummary";
+import { SupportedSourceImportPanel } from "../../source-sites/components/SupportedSourceImportPanel";
 import { useDashboardSnapshot } from "../hooks/useDashboardSnapshot";
 import { type AppRouteId } from "../../../app/navigation";
 import { type Printer } from "../../printers/types";
@@ -32,6 +33,12 @@ export default function DashboardPage({ onRouteChange, onScanLan, printers }: Da
             openAiUsage();
           }
         }}
+      />
+      <SupportedSourceImportPanel
+        className="panel dashboard-source-panel"
+        heading="Find Models"
+        headingId="dashboard-source-import-title"
+        showImportedSummary
       />
       <PrinterInventory printers={snapshot.printers} printerRecords={printers} onScanLan={onScanLan} />
       <CompatibilitySummary checks={snapshot.compatibilityChecks} />

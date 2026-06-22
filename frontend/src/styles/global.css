@@ -316,6 +316,7 @@ h3 {
 }
 
 .quick-actions,
+.dashboard-source-panel,
 .printer-panel,
 .compatibility-panel {
   grid-column: 1;
@@ -521,6 +522,32 @@ h3 {
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 10px;
+}
+
+.source-import-embedded {
+  display: grid;
+  gap: 0;
+}
+
+.source-import-summary {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.source-import-summary div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.source-import-summary strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .model-list {
@@ -1374,6 +1401,7 @@ dd {
   }
 
   .quick-actions,
+  .dashboard-source-panel,
   .printer-panel,
   .compatibility-panel,
   .ai-panel,
