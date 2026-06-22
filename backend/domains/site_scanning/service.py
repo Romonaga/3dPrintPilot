@@ -41,6 +41,9 @@ class SiteScanService:
     def runner_manifests(self) -> list[SourceSiteRunnerManifest]:
         return self._runner_registry.list_manifests()
 
+    def runner_manifest_for(self, site_key: str) -> SourceSiteRunnerManifest | None:
+        return self._runner_registry.manifest_for(site_key.strip().lower())
+
     def adapter_declarations(self) -> list[SiteAdapterDeclaration]:
         declarations = []
         for adapter in self.list_adapters():

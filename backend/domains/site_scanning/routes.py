@@ -24,6 +24,7 @@ from backend.domains.site_scanning.schemas.response import (
     SiteScanResponse,
     SiteScanSummaryResponse,
 )
+from backend.domains.site_scanning.runners import SourceSiteCapability, SourceSiteRunnerManifest
 from backend.domains.site_scanning.service import SiteScanService
 from backend.domains.site_scanning.store import (
     SiteAuthProfileStore,
@@ -141,8 +142,7 @@ def start_site_auth_link(
     _user=Depends(require_roles("admin")),
 ) -> SiteAuthLinkResponse:
     declaration = _find_declaration(site_key)
-    if "browser_session" not in declaration.supported_auth_modes:
-        raise HTTPException(status_code=400, detail="Site does not support browser-assisted linking")
+    _find_account_setup_runner(declaration.site_key)
     return SiteAuthLinkResponse(
         site_key=declaration.site_key,
         display_name=declaration.display_name,
@@ -170,8 +170,7 @@ def start_site_auth_browser_link(
     link_service: SiteAuthBrowserLinkService = Depends(get_site_auth_browser_link_service),
 ) -> SiteAuthBrowserLinkResponse:
     declaration = _find_declaration(site_key)
-    if "browser_session" not in declaration.supported_auth_modes:
-        raise HTTPException(status_code=400, detail="Site does not support browser-assisted linking")
+    runner_manifest = _find_account_setup_runner(declaration.site_key)
     if not declaration.login_url:
         raise HTTPException(status_code=400, detail="Site does not provide a login URL")
     if not request.account_identifier:
@@ -192,13 +191,13 @@ def start_site_auth_browser_link(
             site_key=declaration.site_key,
             login_url=declaration.login_url,
             allowed_hosts=tuple(declaration.allowed_hosts),
-            capture_hosts=tuple(declaration.browser_session_hosts or declaration.allowed_hosts),
+            capture_hosts=tuple(runner_manifest.browser_session_hosts or declaration.allowed_hosts),
             observe_hosts=tuple(
-                declaration.browser_session_observe_hosts
-                or declaration.browser_session_hosts
+                runner_manifest.browser_session_observe_hosts
+                or runner_manifest.browser_session_hosts
                 or declaration.allowed_hosts
             ),
-            required_cookie_names=tuple(declaration.browser_session_required_cookie_names),
+            required_cookie_names=tuple(runner_manifest.browser_session_required_cookie_names),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -214,6 +213,7 @@ def capture_site_auth_browser_link(
     link_service: SiteAuthBrowserLinkService = Depends(get_site_auth_browser_link_service),
 ) -> SiteAuthBrowserLinkResponse:
     declaration = _find_declaration(site_key)
+    _find_account_setup_runner(declaration.site_key)
     try:
         status = link_service.request_capture(session_id)
     except KeyError as exc:
@@ -235,6 +235,7 @@ def get_site_auth_browser_link_status(
     link_service: SiteAuthBrowserLinkService = Depends(get_site_auth_browser_link_service),
 ) -> SiteAuthBrowserLinkResponse:
     declaration = _find_declaration(site_key)
+    _find_account_setup_runner(declaration.site_key)
     try:
         status = link_service.status(session_id)
     except KeyError as exc:
@@ -425,6 +426,15 @@ def _find_declaration(site_key: str):
     if declaration is None:
         raise HTTPException(status_code=404, detail="Site adapter not found")
     return declaration
+
+
+def _find_account_setup_runner(site_key: str) -> SourceSiteRunnerManifest:
+    runner_manifest = service.runner_manifest_for(site_key)
+    if runner_manifest is None or SourceSiteCapability.ACCOUNT_SETUP not in runner_manifest.capabilities:
+        raise HTTPException(status_code=400, detail="Site does not have a supported account setup runner")
+    if "browser_session" not in runner_manifest.supported_auth_modes:
+        raise HTTPException(status_code=400, detail="Site runner does not support browser-assisted linking")
+    return runner_manifest
 
 
 def _auth_headers_by_site(auth_store: SiteAuthProfileStore, declarations) -> dict[str, dict[str, str]]:
