@@ -568,9 +568,7 @@ h3 {
 }
 
 .printer-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 16px;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
@@ -589,6 +587,7 @@ h3 {
   justify-content: space-between;
   gap: 16px;
   min-width: 0;
+  width: 100%;
 }
 
 .printer-row p,
@@ -793,6 +792,55 @@ h3 {
 
 .row-meta strong {
   color: var(--muted-strong);
+}
+
+.printer-dashboard-meta strong {
+  max-width: 220px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.printer-state-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.printer-state-pill.ok {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+
+.printer-state-pill.warn,
+.printer-state-pill.neutral {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.printer-state-pill.bad {
+  background: var(--bad-bg);
+  color: var(--bad-text);
+}
+
+.dashboard-printer-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.dashboard-printer-progress progress {
+  width: 100%;
+  min-width: 0;
+  height: 8px;
+  accent-color: var(--brand);
 }
 
 table {

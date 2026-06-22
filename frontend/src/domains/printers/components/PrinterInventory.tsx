@@ -18,14 +18,22 @@ export function PrinterInventory({ onScanLan, printers }: PrinterInventoryProps)
         {printers.length > 0 ? (
           printers.map((printer) => (
             <article className="printer-row" key={printer.id}>
-              <div>
-                <h3>{printer.name}</h3>
-                <p>{printer.buildVolume}</p>
+              <div className="printer-row-main">
+                <div>
+                  <h3>{printer.name}</h3>
+                  <p>{printer.buildVolume}</p>
+                </div>
+                <div className="row-meta printer-dashboard-meta">
+                  <span className={`printer-state-pill ${printer.availabilityTone}`}>{printer.availabilityLabel}</span>
+                  <strong>{printer.jobStatusLabel}</strong>
+                </div>
               </div>
-              <div className="row-meta">
-                <span>{printer.state}</span>
-                <strong>{printer.confidence}%</strong>
-              </div>
+              {printer.progressPercent !== null ? (
+                <div className="dashboard-printer-progress">
+                  <progress aria-label={`Print progress for ${printer.name}`} max={100} value={printer.progressPercent} />
+                  <span>{printer.progressLabel}</span>
+                </div>
+              ) : null}
             </article>
           ))
         ) : (
