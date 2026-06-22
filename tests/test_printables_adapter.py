@@ -163,6 +163,107 @@ def test_printables_runner_downloads_selected_model_file_with_site_download_link
     assert downloaded.source_file_url == "https://files.printables.com/media/prints/229198/cube.3mf"
 
 
+def test_printables_graphql_requests_are_throttled(monkeypatch):
+    throttle_calls = []
+
+    class FakeGraphqlResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": {"ok": True}}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def post(self, url, json):
+            assert url == printables_runner_module.PRINTABLES_GRAPHQL_URL
+            return FakeGraphqlResponse()
+
+    def fake_wait(url, *, min_interval_seconds=None):
+        throttle_calls.append((url, min_interval_seconds))
+
+    monkeypatch.setattr(printables_runner_module.httpx, "Client", FakeClient)
+    monkeypatch.setattr(printables_runner_module.source_site_request_throttler, "wait", fake_wait)
+
+    payload = printables_runner_module._post_graphql("query Test { ok }", {})
+
+    assert payload == {"data": {"ok": True}}
+    assert throttle_calls == [
+        (
+            printables_runner_module.PRINTABLES_GRAPHQL_URL,
+            printables_runner_module.PRINTABLES_REQUEST_MIN_INTERVAL_SECONDS,
+        )
+    ]
+
+
+def test_printables_file_download_requests_are_throttled(monkeypatch):
+    throttle_calls = []
+
+    class FakeUrl:
+        scheme = "https"
+        host = printables_runner_module.PRINTABLES_FILES_HOST
+
+    class FakeDownloadResponse:
+        url = FakeUrl()
+        headers = {"content-type": "model/stl"}
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self):
+            yield b"solid sample"
+
+    class FakeStream:
+        def __enter__(self):
+            return FakeDownloadResponse()
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def stream(self, method, url):
+            assert method == "GET"
+            assert url == "https://files.printables.com/media/prints/229198/cube.stl"
+            return FakeStream()
+
+    def fake_wait(url, *, min_interval_seconds=None):
+        throttle_calls.append((url, min_interval_seconds))
+
+    monkeypatch.setattr(printables_runner_module.httpx, "Client", FakeClient)
+    monkeypatch.setattr(printables_runner_module.source_site_request_throttler, "wait", fake_wait)
+
+    data, content_type = printables_runner_module._download_bytes(
+        "https://files.printables.com/media/prints/229198/cube.stl",
+        max_bytes=1024,
+    )
+
+    assert data == b"solid sample"
+    assert content_type == "model/stl"
+    assert throttle_calls == [
+        (
+            "https://files.printables.com/media/prints/229198/cube.stl",
+            printables_runner_module.PRINTABLES_REQUEST_MIN_INTERVAL_SECONDS,
+        )
+    ]
+
+
 def test_printables_child_urls_are_limited_by_shared_depth_guard():
     service = SiteScanService(adapters={"printables": FakePrintablesAdapter()})
 

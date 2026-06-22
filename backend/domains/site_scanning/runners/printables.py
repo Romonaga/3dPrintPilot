@@ -16,6 +16,7 @@ from backend.domains.site_scanning.runners.base import (
     SourceSiteRunnerManifest,
     SourceSiteSupportLevel,
 )
+from backend.domains.site_scanning.runners.throttle import source_site_request_throttler
 from backend.domains.site_scanning.utils import normalize_url, try_normalize_url
 
 PRINTABLES_HOSTS = ("printables.com", "www.printables.com")
@@ -28,6 +29,7 @@ PRINTABLES_BROWSER_SESSION_OBSERVE_HOSTS = (
 )
 PRINTABLES_GRAPHQL_URL = "https://api.printables.com/graphql/"
 PRINTABLES_FILES_HOST = "files.printables.com"
+PRINTABLES_REQUEST_MIN_INTERVAL_SECONDS = 1.0
 SUPPORTED_MODEL_EXTENSIONS = {".stl": "stl", ".3mf": "3mf"}
 MODEL_FILES_QUERY = """
 query ModelFiles($id: ID!) {
@@ -239,6 +241,7 @@ def _post_graphql(query: str, variables: dict, *, auth_headers: dict[str, str] |
     headers = _request_headers(auth_headers)
     headers["Content-Type"] = "application/json"
     try:
+        _throttle_request(PRINTABLES_GRAPHQL_URL)
         with httpx.Client(headers=headers, follow_redirects=True, timeout=20) as client:
             response = client.post(PRINTABLES_GRAPHQL_URL, json={"query": query, "variables": variables})
             response.raise_for_status()
@@ -259,6 +262,7 @@ def _post_graphql(query: str, variables: dict, *, auth_headers: dict[str, str] |
 def _download_bytes(url: str, *, auth_headers: dict[str, str] | None = None, max_bytes: int) -> tuple[bytes, str | None]:
     data = bytearray()
     try:
+        _throttle_request(url)
         with httpx.Client(headers=_request_headers(auth_headers), follow_redirects=True, timeout=45) as client:
             with client.stream("GET", url) as response:
                 response.raise_for_status()
@@ -283,6 +287,10 @@ def _request_headers(auth_headers: dict[str, str] | None) -> dict[str, str]:
     }
     headers.update(auth_headers or {})
     return headers
+
+
+def _throttle_request(url: str) -> None:
+    source_site_request_throttler.wait(url, min_interval_seconds=PRINTABLES_REQUEST_MIN_INTERVAL_SECONDS)
 
 
 def _optional_int(value) -> int | None:
