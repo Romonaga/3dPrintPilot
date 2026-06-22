@@ -843,6 +843,15 @@ h3 {
   accent-color: var(--brand);
 }
 
+.dashboard-printer-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboard-printer-controls > .text-button {
+  justify-self: flex-start;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
