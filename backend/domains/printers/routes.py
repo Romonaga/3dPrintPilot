@@ -100,6 +100,7 @@ def confirm_discovered_printer(
         protocol=request.protocol,
         service_type=request.service_type,
         identity_key=request.identity_key,
+        capabilities=request.capabilities,
         scan_result_id=request.scan_result_id,
         build_volume_x_mm=request.build_volume_x_mm,
         build_volume_y_mm=request.build_volume_y_mm,
@@ -326,6 +327,10 @@ def _scan_response(
             "scan_result_id": item.id,
             "identity_key": getattr(item, "identity_key", None),
             "matched_printer_id": getattr(item, "matched_printer_id", None),
+            "capabilities": getattr(item, "capabilities", {}) or {},
+            "build_volume_x_mm": getattr(item, "build_volume_x_mm", None),
+            "build_volume_y_mm": getattr(item, "build_volume_y_mm", None),
+            "build_volume_z_mm": getattr(item, "build_volume_z_mm", None),
         }
         for item in (persisted_results or [])
     }
@@ -356,6 +361,10 @@ def _discovered_printer_response(
     scan_result_id: int | None = None,
     identity_key: str | None = None,
     matched_printer_id: int | None = None,
+    capabilities: dict | None = None,
+    build_volume_x_mm: int | None = None,
+    build_volume_y_mm: int | None = None,
+    build_volume_z_mm: int | None = None,
 ) -> DiscoveredPrinterResponse:
     evidence = list(getattr(printer, "evidence", ()))
     resolved_identity_key = getattr(printer, "identity_key", None) or identity_key or printer_identity_key(
@@ -378,6 +387,10 @@ def _discovered_printer_response(
         scan_result_id=getattr(printer, "scan_result_id", None) or scan_result_id,
         identity_key=resolved_identity_key,
         matched_printer_id=getattr(printer, "matched_printer_id", None) or matched_printer_id,
+        capabilities=getattr(printer, "capabilities", None) or capabilities or {},
+        build_volume_x_mm=getattr(printer, "build_volume_x_mm", None) or build_volume_x_mm,
+        build_volume_y_mm=getattr(printer, "build_volume_y_mm", None) or build_volume_y_mm,
+        build_volume_z_mm=getattr(printer, "build_volume_z_mm", None) or build_volume_z_mm,
     )
 
 

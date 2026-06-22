@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
+from dataclasses import replace
 from functools import lru_cache
 from ipaddress import IPv4Network, ip_network
 import socket
 import ssl
 from time import monotonic, sleep
+from typing import Any
 from urllib.parse import urljoin
 
 import httpx
@@ -273,6 +275,8 @@ def _probe_http_port(host: str, port: int, timeout_seconds: float) -> Discovered
                     continue
                 printer = detector(host, port, scheme, response)
                 if printer is not None:
+                    if "moonraker" in printer.service_type:
+                        printer = _enrich_moonraker_discovery(client, base_url, printer)
                     if best_printer is None or printer.confidence > best_printer.confidence:
                         best_printer = printer
                     if printer.confidence >= 94:
@@ -280,6 +284,160 @@ def _probe_http_port(host: str, port: int, timeout_seconds: float) -> Discovered
     except httpx.HTTPError:
         return best_printer
     return best_printer
+
+
+def _enrich_moonraker_discovery(
+    client: httpx.Client,
+    base_url: str,
+    printer: DiscoveredPrinter,
+) -> DiscoveredPrinter:
+    try:
+        response = client.get(
+            f"{base_url}/printer/objects/query?configfile&toolhead&extruder&heater_bed"
+        )
+    except httpx.HTTPError:
+        return printer
+    if response.status_code != 200:
+        return printer
+    payload = _response_json(response)
+    if not payload:
+        return printer
+    capabilities = _moonraker_capabilities_from_objects(payload, printer.service_type)
+    if not capabilities:
+        return printer
+    build_volume = capabilities.pop("build_volume_mm", {})
+    evidence = tuple(
+        list(printer.evidence)
+        + ["Read-only Moonraker object query exposed deterministic capability metadata"]
+    )
+    return replace(
+        printer,
+        capabilities={**(printer.capabilities or {}), **capabilities},
+        build_volume_x_mm=_int_or_none(build_volume.get("x")),
+        build_volume_y_mm=_int_or_none(build_volume.get("y")),
+        build_volume_z_mm=_int_or_none(build_volume.get("z")),
+        evidence=evidence,
+    )
+
+
+def _moonraker_capabilities_from_objects(payload: dict[str, Any], service_type: str) -> dict[str, Any]:
+    result = payload.get("result", payload)
+    status = result.get("status", result) if isinstance(result, dict) else {}
+    if not isinstance(status, dict):
+        return {}
+    configfile = status.get("configfile", {})
+    settings = {}
+    if isinstance(configfile, dict):
+        settings = configfile.get("settings") or configfile.get("config") or {}
+    if not isinstance(settings, dict):
+        settings = {}
+
+    capabilities: dict[str, Any] = {}
+    has_fact = False
+    volume = _moonraker_build_volume(status, settings)
+    if volume:
+        capabilities["build_volume_mm"] = volume
+        has_fact = True
+
+    extruder_names = _moonraker_extruder_names(status, settings)
+    if extruder_names:
+        capabilities["extruder_count"] = len(extruder_names)
+        capabilities["toolhead_count"] = len(extruder_names)
+        has_fact = True
+        if len(extruder_names) > 1:
+            capabilities["multi_head"] = True
+            capabilities["color_count"] = len(extruder_names)
+            capabilities["multi_color"] = True
+    max_nozzle_temp = _max_config_number(settings, extruder_names, "max_temp")
+    if max_nozzle_temp is not None:
+        capabilities["max_nozzle_temp_c"] = max_nozzle_temp
+        has_fact = True
+    nozzle_diameter = _max_config_number(settings, extruder_names, "nozzle_diameter")
+    if nozzle_diameter is not None:
+        capabilities["nozzle_diameter_mm"] = nozzle_diameter
+        has_fact = True
+    bed = settings.get("heater_bed") if isinstance(settings.get("heater_bed"), dict) else {}
+    max_bed_temp = _float_or_none(bed.get("max_temp") if isinstance(bed, dict) else None)
+    if max_bed_temp is not None:
+        capabilities["max_bed_temp_c"] = max_bed_temp
+        has_fact = True
+
+    if not has_fact:
+        return {}
+
+    if "snapmaker" in service_type.lower() and capabilities.get("toolhead_count"):
+        capabilities["known_multi_head_candidate"] = True
+    return {
+        "adapter": "moonraker",
+        "read_only_status": True,
+        "capability_source": "moonraker_object_query",
+        **capabilities,
+    }
+
+
+def _moonraker_build_volume(status: dict[str, Any], settings: dict[str, Any]) -> dict[str, int] | None:
+    toolhead = status.get("toolhead") if isinstance(status.get("toolhead"), dict) else {}
+    axis_maximum = toolhead.get("axis_maximum") if isinstance(toolhead, dict) else None
+    if isinstance(axis_maximum, (list, tuple)) and len(axis_maximum) >= 3:
+        volume = {
+            "x": _int_or_none(axis_maximum[0]),
+            "y": _int_or_none(axis_maximum[1]),
+            "z": _int_or_none(axis_maximum[2]),
+        }
+        if all(value is not None and value > 0 for value in volume.values()):
+            return volume
+    x = _axis_span(settings, "stepper_x")
+    y = _axis_span(settings, "stepper_y")
+    z = _axis_span(settings, "stepper_z")
+    if x and y and z:
+        return {"x": x, "y": y, "z": z}
+    return None
+
+
+def _axis_span(settings: dict[str, Any], axis_key: str) -> int | None:
+    axis = settings.get(axis_key)
+    if not isinstance(axis, dict):
+        return None
+    position_max = _float_or_none(axis.get("position_max"))
+    position_min = _float_or_none(axis.get("position_min")) or 0
+    if position_max is None:
+        return None
+    span = round(position_max - position_min)
+    return span if span > 0 else None
+
+
+def _moonraker_extruder_names(status: dict[str, Any], settings: dict[str, Any]) -> tuple[str, ...]:
+    names = set()
+    for source in (status, settings):
+        for key in source:
+            if key == "extruder" or (key.startswith("extruder") and key[8:].isdigit()):
+                names.add(key)
+    return tuple(sorted(names, key=lambda name: (len(name), name)))
+
+
+def _max_config_number(settings: dict[str, Any], section_names: tuple[str, ...], key: str) -> float | None:
+    values = []
+    for section_name in section_names:
+        section = settings.get(section_name)
+        if isinstance(section, dict):
+            value = _float_or_none(section.get(key))
+            if value is not None:
+                values.append(value)
+    return max(values) if values else None
+
+
+def _float_or_none(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_or_none(value) -> int | None:
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
 
 
 def _probe_bambu_mqtt_port(host: str, port: int, timeout_seconds: float) -> DiscoveredPrinter | None:

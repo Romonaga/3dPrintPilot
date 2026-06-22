@@ -10,6 +10,7 @@ import {
   pausePrinterPrint,
   resumePrinterPrint,
   scanPrinters,
+  confirmDiscoveredPrinter,
   startPrinterFile,
   uploadPrinterFile
 } from "./printers/api/printersApi";
@@ -123,7 +124,11 @@ describe("domain API adapters", () => {
               evidence: [],
               scan_result_id: 3,
               identity_key: "mdns:_moonraker._tcp.local.:printer._moonraker._tcp.local.",
-              matched_printer_id: 9
+              matched_printer_id: 9,
+              capabilities: { adapter: "moonraker", toolhead_count: 2 },
+              build_volume_x_mm: 256,
+              build_volume_y_mm: 256,
+              build_volume_z_mm: 256
             }
           ]
         }
@@ -145,6 +150,57 @@ describe("domain API adapters", () => {
     expect(result.groups[0].identityKey).toBe("mdns:_moonraker._tcp.local.:printer._moonraker._tcp.local.");
     expect(result.groups[0].matchedPrinterId).toBe(9);
     expect(result.groups[0].endpoints[0].matchedPrinterId).toBe(9);
+    expect(result.groups[0].endpoints[0].capabilities.toolhead_count).toBe(2);
+    expect(result.groups[0].endpoints[0].buildVolumeXmm).toBe(256);
+  });
+
+  it("confirms discovered printers with scan capability metadata", async () => {
+    mockJson({
+      id: 9,
+      name: "Snapmaker U1 Moonraker",
+      host: "192.168.1.80",
+      port: 7125,
+      protocol: "http",
+      printer_type: "http_probe:snapmaker_moonraker",
+      state: "confirmed",
+      identity_key: "moonraker:snapmaker:machine_id:u1",
+      adapter_type: "moonraker",
+      capabilities: { adapter: "moonraker", toolhead_count: 4, color_count: 4 },
+      credential_configured: false,
+      last_status: {},
+      last_status_at: null,
+      build_volume_x_mm: 320,
+      build_volume_y_mm: 320,
+      build_volume_z_mm: 320
+    });
+
+    const printer = await confirmDiscoveredPrinter({
+      name: "Snapmaker U1 Moonraker",
+      host: "192.168.1.80",
+      port: 7125,
+      protocol: "http",
+      serviceType: "http_probe:snapmaker_moonraker",
+      confidence: 94,
+      state: "discovered",
+      evidence: [],
+      scanResultId: 3,
+      identityKey: "moonraker:snapmaker:machine_id:u1",
+      matchedPrinterId: null,
+      capabilities: { adapter: "moonraker", toolhead_count: 4, color_count: 4 },
+      buildVolumeXmm: 320,
+      buildVolumeYmm: 320,
+      buildVolumeZmm: 320
+    });
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("/api/printers/confirm-discovered");
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      scan_result_id: 3,
+      capabilities: { adapter: "moonraker", toolhead_count: 4, color_count: 4 },
+      build_volume_x_mm: 320
+    });
+    expect(printer.capabilities.toolhead_count).toBe(4);
+    expect(printer.buildVolumeXmm).toBe(320);
   });
 
   it("maps Moonraker file and job control endpoints", async () => {

@@ -79,6 +79,10 @@ class NetworkScanResult(Base):
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="discovered")
     raw_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     evidence: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    capabilities: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    build_volume_x_mm: Mapped[int | None] = mapped_column(Integer)
+    build_volume_y_mm: Mapped[int | None] = mapped_column(Integer)
+    build_volume_z_mm: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     scan_run: Mapped[NetworkScanRun] = relationship(back_populates="results")

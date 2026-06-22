@@ -21,6 +21,10 @@ class DiscoveredPrinter:
     scan_result_id: int | None = None
     identity_key: str | None = None
     matched_printer_id: int | None = None
+    capabilities: dict | None = None
+    build_volume_x_mm: int | None = None
+    build_volume_y_mm: int | None = None
+    build_volume_z_mm: int | None = None
 
 
 @dataclass(frozen=True)

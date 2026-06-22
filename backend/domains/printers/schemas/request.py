@@ -34,6 +34,7 @@ class ConfirmDiscoveredPrinterRequest(BaseModel):
     confidence: int = Field(default=50, ge=0, le=100)
     scan_result_id: int | None = None
     identity_key: str | None = Field(default=None, min_length=1, max_length=255)
+    capabilities: dict = Field(default_factory=dict)
     build_volume_x_mm: int | None = Field(default=None, ge=1, le=2000)
     build_volume_y_mm: int | None = Field(default=None, ge=1, le=2000)
     build_volume_z_mm: int | None = Field(default=None, ge=1, le=2000)

@@ -4,6 +4,7 @@ from backend.db.base import Base
 from backend.domains.ai.models import AiUsageEvent
 from backend.domains.compatibility.models import CompatibilityCheck, CompatibilityCheckItem
 from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry, SourceProjectScan, SourceProjectScanFile
+from backend.domains.printers.models import NetworkScanResult
 from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import ProviderSecret
 from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun, SiteAuthProfile
@@ -128,3 +129,12 @@ def test_source_project_scan_tables_store_file_listing_metadata():
     assert "file_id" in file_columns
     assert "source_file_url" in file_columns
     assert "supported_model_file" in file_columns
+
+
+def test_network_scan_results_store_discovered_capabilities():
+    columns = NetworkScanResult.__table__.columns
+
+    assert "capabilities" in columns
+    assert "build_volume_x_mm" in columns
+    assert "build_volume_y_mm" in columns
+    assert "build_volume_z_mm" in columns

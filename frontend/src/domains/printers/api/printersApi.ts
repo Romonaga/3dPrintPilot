@@ -41,6 +41,10 @@ type ApiDiscoveredPrinter = {
   scan_result_id?: number | null;
   identity_key?: string | null;
   matched_printer_id?: number | null;
+  capabilities?: Record<string, unknown>;
+  build_volume_x_mm?: number | null;
+  build_volume_y_mm?: number | null;
+  build_volume_z_mm?: number | null;
 };
 
 type ApiPrinterScan = {
@@ -187,7 +191,11 @@ export async function confirmDiscoveredPrinter(input: DiscoveredPrinter): Promis
       service_type: input.serviceType,
       confidence: input.confidence,
       scan_result_id: input.scanResultId,
-      identity_key: input.identityKey
+      identity_key: input.identityKey,
+      capabilities: input.capabilities,
+      build_volume_x_mm: input.buildVolumeXmm,
+      build_volume_y_mm: input.buildVolumeYmm,
+      build_volume_z_mm: input.buildVolumeZmm
     })
   });
   if (!response.ok) {
@@ -210,9 +218,9 @@ export function fromDiscoveredPrinter(printer: DiscoveredPrinter): CreatePrinter
     port: printer.port,
     protocol: printer.protocol,
     printerType: printer.serviceType.replace("http_probe:", "").replace(/^_/, "").split(".")[0] || "unknown",
-    buildVolumeXmm: null,
-    buildVolumeYmm: null,
-    buildVolumeZmm: null
+    buildVolumeXmm: printer.buildVolumeXmm,
+    buildVolumeYmm: printer.buildVolumeYmm,
+    buildVolumeZmm: printer.buildVolumeZmm
   };
 }
 
@@ -257,7 +265,11 @@ export async function scanPrinters(settings: PrinterScanSettings): Promise<Print
       evidence: printer.evidence ?? [],
       scanResultId: printer.scan_result_id ?? null,
       identityKey: printer.identity_key ?? null,
-      matchedPrinterId: printer.matched_printer_id ?? null
+      matchedPrinterId: printer.matched_printer_id ?? null,
+      capabilities: printer.capabilities ?? {},
+      buildVolumeXmm: printer.build_volume_x_mm ?? null,
+      buildVolumeYmm: printer.build_volume_y_mm ?? null,
+      buildVolumeZmm: printer.build_volume_z_mm ?? null
     })),
     groups: (scan.groups ?? []).map((group) => ({
       host: group.host,
@@ -279,7 +291,11 @@ export async function scanPrinters(settings: PrinterScanSettings): Promise<Print
         evidence: endpoint.evidence ?? [],
         scanResultId: endpoint.scan_result_id ?? null,
         identityKey: endpoint.identity_key ?? null,
-        matchedPrinterId: endpoint.matched_printer_id ?? null
+        matchedPrinterId: endpoint.matched_printer_id ?? null,
+        capabilities: endpoint.capabilities ?? {},
+        buildVolumeXmm: endpoint.build_volume_x_mm ?? null,
+        buildVolumeYmm: endpoint.build_volume_y_mm ?? null,
+        buildVolumeZmm: endpoint.build_volume_z_mm ?? null
       }))
     }))
   };
