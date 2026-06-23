@@ -120,7 +120,9 @@ and they must defer to `AGENTS.md`, `CONTRIBUTING.md`, and `RULES.md`.
 
 ## Respect Edit Routing
 
-Before manual code edits, confirm `verlyn workflow assert-edit-route --json` allows editing.
+Before any file write, generated source artifact, formatter write, patch, or
+manual code edit, confirm `verlyn workflow assert-edit-route --json` allows
+editing for the active change.
 
 If the route is blocked because no active change is bound, create or activate the applicable Verlyn change before editing:
 
@@ -131,6 +133,11 @@ verlyn work-items list <change-id>
 verlyn work-items update <change-id> --updates-json '[{"task_id":"<starter-work-item-id>","notes":"Concrete scope, acceptance, and validation details."}]'
 verlyn changes activate <change-id>
 ```
+
+Draft changes are planning-only. It is acceptable to inspect files and flesh
+out change/work-item records while a change is draft, but do not modify the
+checkout until activation creates or binds the governed branch and
+`assert-edit-route` returns allowed.
 
 If repo policy allows direct work for a narrow documentation or inspection task, record the direct-work reason through the product path required by the repo. Do not treat a missing active change as permission to edit from memory.
 

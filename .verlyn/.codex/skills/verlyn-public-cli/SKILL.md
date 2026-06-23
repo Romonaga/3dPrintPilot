@@ -36,6 +36,9 @@ Required Codex behavior:
   the public CLI.
 - Inspect active changes and work items through `verlyn changes show --json`
   and `verlyn work-items list`.
+- Treat draft changes as planning-only. Do not write files, run modifying
+  formatters, generate source artifacts, or apply patches until the change is
+  active and `verlyn workflow assert-edit-route --json` returns `allowed: true`.
 - Record changed-file review evidence before delivery when real files changed.
 - Use `verlyn changes deliver <change-id>` for source-control closeout and
   `verlyn changes deploy <change-id>` for closeout plus provider deployment.
