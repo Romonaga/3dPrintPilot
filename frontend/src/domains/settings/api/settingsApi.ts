@@ -1,5 +1,6 @@
 import { apiFetch } from "../../../lib/apiFetch";
 import {
+  type AuthSettings,
   type FeatureSettings,
   type SourceAuthLinkInstructions,
   type ModelSourceSiteStatus,
@@ -29,6 +30,12 @@ type ApiFeatureSettings = {
   cost_reconciliation_required: boolean;
   local_ai_provider: string;
   local_ai_default_model: string;
+};
+
+type ApiAuthSettings = {
+  session_timeout_minutes: number;
+  min_session_timeout_minutes: number;
+  max_session_timeout_minutes: number;
 };
 
 type ApiSiteAdapter = {
@@ -108,6 +115,26 @@ export async function getFeatureSettings(): Promise<FeatureSettings> {
     throw new Error(`Feature settings failed with HTTP ${response.status}`);
   }
   return fromApiFeatureSettings((await response.json()) as ApiFeatureSettings);
+}
+
+export async function getAuthSettings(): Promise<AuthSettings> {
+  const response = await apiFetch("/api/settings/auth");
+  if (!response.ok) {
+    throw new Error(`Auth settings failed with HTTP ${response.status}`);
+  }
+  return fromApiAuthSettings((await response.json()) as ApiAuthSettings);
+}
+
+export async function saveAuthSettings(sessionTimeoutMinutes: number): Promise<AuthSettings> {
+  const response = await apiFetch("/api/settings/auth", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_timeout_minutes: sessionTimeoutMinutes })
+  });
+  if (!response.ok) {
+    throw new Error(`Auth settings save failed with HTTP ${response.status}`);
+  }
+  return fromApiAuthSettings((await response.json()) as ApiAuthSettings);
 }
 
 export async function listProviderSecrets(): Promise<ProviderSecretStatus[]> {
@@ -264,6 +291,14 @@ function fromApiFeatureSettings(settings: ApiFeatureSettings): FeatureSettings {
     costReconciliationRequired: settings.cost_reconciliation_required,
     localAiProvider: settings.local_ai_provider,
     localAiDefaultModel: settings.local_ai_default_model
+  };
+}
+
+function fromApiAuthSettings(settings: ApiAuthSettings): AuthSettings {
+  return {
+    sessionTimeoutMinutes: settings.session_timeout_minutes,
+    minSessionTimeoutMinutes: settings.min_session_timeout_minutes,
+    maxSessionTimeoutMinutes: settings.max_session_timeout_minutes
   };
 }
 

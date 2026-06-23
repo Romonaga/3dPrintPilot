@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from backend.domains.settings.store import InstanceSettingsStore
 from backend.domains.users.models import User, UserSession
 from backend.domains.users.security import create_session_token, hash_password, hash_session_token, verify_password
 
@@ -115,10 +116,11 @@ class UserStore:
 
     def _create_session_for_user(self, user: User) -> LoginResult:
         token = create_session_token()
+        timeout_minutes = InstanceSettingsStore(self._session).get_session_timeout_minutes()
         session = UserSession(
             user_id=user.id,
             token_hash=hash_session_token(token),
-            expires_at=datetime.now(UTC) + timedelta(days=14),
+            expires_at=datetime.now(UTC) + timedelta(minutes=timeout_minutes),
         )
         self._session.add(session)
         self._session.commit()

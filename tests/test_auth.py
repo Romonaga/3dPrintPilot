@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.main import create_app
+from backend.core.database import get_db_session
 from backend.domains.users.dependencies import get_user_store
 from backend.domains.users.models import User, UserSession
 from backend.domains.users.security import hash_password
@@ -58,6 +60,79 @@ def test_bootstrap_login_me_logout_and_token_hashing():
     assert logout_response.status_code == 204
     after_logout = client.get("/api/auth/me", headers={"Authorization": f"Bearer {login_token}"})
     assert after_logout.json()["authenticated"] is False
+
+
+def test_login_uses_configured_session_timeout():
+    client, SessionLocal = _auth_client()
+
+    client.post("/api/auth/bootstrap", json={"username": "owner", "password": "correct-password"})
+    owner_token = client.post("/api/auth/login", json={"username": "owner", "password": "correct-password"}).json()[
+        "token"
+    ]
+
+    settings_response = client.put(
+        "/api/settings/auth",
+        json={"session_timeout_minutes": 30},
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert settings_response.status_code == 200
+    assert settings_response.json()["session_timeout_minutes"] == 30
+
+    before_login = datetime.now(UTC)
+    login_response = client.post("/api/auth/login", json={"username": "owner", "password": "correct-password"})
+    assert login_response.status_code == 200
+    after_login = datetime.now(UTC)
+
+    expires_at = _parse_iso_datetime(login_response.json()["expires_at"])
+    assert before_login + timedelta(minutes=29) <= expires_at <= after_login + timedelta(minutes=31)
+
+
+def test_expired_sessions_are_rejected_by_status_and_routes():
+    client, SessionLocal = _auth_client()
+
+    token = client.post("/api/auth/bootstrap", json={"username": "owner", "password": "correct-password"}).json()["token"]
+    with SessionLocal() as session:
+        stored_session = session.scalars(select(UserSession)).one()
+        stored_session.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+
+    me_response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me_response.status_code == 200
+    assert me_response.json()["authenticated"] is False
+
+    protected_response = client.get("/api/settings/provider-secrets", headers={"Authorization": f"Bearer {token}"})
+    assert protected_response.status_code == 401
+
+
+def test_auth_settings_require_admin_and_validate_bounds():
+    client, SessionLocal = _auth_client()
+
+    owner_token = client.post("/api/auth/bootstrap", json={"username": "owner", "password": "correct-password"}).json()[
+        "token"
+    ]
+    with SessionLocal() as session:
+        viewer = User(username="viewer", password_hash=hash_password("correct-password"), role="viewer", is_active=True)
+        session.add(viewer)
+        session.commit()
+    viewer_token = client.post("/api/auth/login", json={"username": "viewer", "password": "correct-password"}).json()[
+        "token"
+    ]
+
+    anonymous = client.get("/api/settings/auth")
+    forbidden = client.get("/api/settings/auth", headers={"Authorization": f"Bearer {viewer_token}"})
+    assert anonymous.status_code == 401
+    assert forbidden.status_code == 403
+
+    settings_response = client.get("/api/settings/auth", headers={"Authorization": f"Bearer {owner_token}"})
+    assert settings_response.status_code == 200
+    assert settings_response.json()["session_timeout_minutes"] == 20160
+
+    invalid_response = client.put(
+        "/api/settings/auth",
+        json={"session_timeout_minutes": 4},
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert invalid_response.status_code == 422
 
 
 def test_disabled_users_and_force_password_change_are_enforced():
@@ -250,7 +325,12 @@ def _auth_client() -> tuple[TestClient, sessionmaker[Session]]:
         with SessionLocal() as session:
             yield UserStore(session)
 
+    def db_session_override() -> Generator[Session, None, None]:
+        with SessionLocal() as session:
+            yield session
+
     app.dependency_overrides[get_user_store] = user_store_override
+    app.dependency_overrides[get_db_session] = db_session_override
     return TestClient(app), SessionLocal
 
 
@@ -288,3 +368,22 @@ def _create_sqlite_auth_tables(engine) -> None:
             """
         )
         connection.exec_driver_sql("CREATE INDEX ix_user_sessions_user_id ON user_sessions (user_id)")
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE instance_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                setting_key VARCHAR(120) NOT NULL UNIQUE,
+                setting_value TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+            """
+        )
+        connection.exec_driver_sql("CREATE INDEX ix_instance_settings_setting_key ON instance_settings (setting_key)")
+
+
+def _parse_iso_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)

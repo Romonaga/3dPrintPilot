@@ -14,6 +14,12 @@ class FeatureSettingsResponse(BaseModel):
     local_ai_default_model: str
 
 
+class AuthSettingsResponse(BaseModel):
+    session_timeout_minutes: int
+    min_session_timeout_minutes: int
+    max_session_timeout_minutes: int
+
+
 class ProviderSecretStatusResponse(BaseModel):
     provider: str
     secret_name: str

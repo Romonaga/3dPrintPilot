@@ -131,7 +131,7 @@ export function App() {
         ) : null}
         {isRouteVisited("settings") ? (
           <div hidden={activeRoute !== "settings"}>
-            <SettingsPage />
+            <SettingsPage user={auth.user} />
           </div>
         ) : null}
       </Suspense>

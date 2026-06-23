@@ -47,8 +47,23 @@ function authenticatedFetch(input: RequestInfo | URL): Promise<Response> {
   if (url === "/api/resources/status") {
     return Promise.resolve(new Response(JSON.stringify(sampleResourceStatus()), { status: 200 }));
   }
+  if (url === "/api/settings/auth") {
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          session_timeout_minutes: 20160,
+          min_session_timeout_minutes: 5,
+          max_session_timeout_minutes: 43200
+        }),
+        { status: 200 }
+      )
+    );
+  }
   if (url === "/api/site-scanning/adapters") {
     return Promise.resolve(new Response(JSON.stringify(sampleSiteAdapters()), { status: 200 }));
+  }
+  if (url === "/api/site-scanning/auth-profiles") {
+    return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
   }
   if (url === "/api/models/imports/source-files/scans") {
     return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -460,7 +475,7 @@ describe("App", () => {
   });
 
   it("links model source accounts with browser capture without collecting Google passwords", async () => {
-    mockApiFetch((input) => {
+    mockApiFetch((input, init) => {
       const url = String(input);
       if (url === "/api/resources/status") {
         return authenticatedFetch(input);
@@ -484,6 +499,30 @@ describe("App", () => {
       }
       if (url === "/api/settings/provider-secrets") {
         return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      if (url === "/api/settings/auth") {
+        if (init?.method === "PUT") {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                session_timeout_minutes: JSON.parse(String(init.body)).session_timeout_minutes,
+                min_session_timeout_minutes: 5,
+                max_session_timeout_minutes: 43200
+              }),
+              { status: 200 }
+            )
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              session_timeout_minutes: 20160,
+              min_session_timeout_minutes: 5,
+              max_session_timeout_minutes: 43200
+            }),
+            { status: 200 }
+          )
+        );
       }
       if (url === "/api/site-scanning/adapters") {
         return Promise.resolve(
@@ -1115,7 +1154,7 @@ describe("App", () => {
   });
 
   it("lazy-loads the settings page for encrypted provider secrets", async () => {
-    mockApiFetch((input) => {
+    mockApiFetch((input, init) => {
       const url = String(input);
       if (url.includes("/api/settings/features")) {
         return Promise.resolve(
@@ -1133,6 +1172,33 @@ describe("App", () => {
             { status: 200 }
           )
         );
+      }
+      if (url === "/api/settings/auth") {
+        if (init?.method === "PUT") {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                session_timeout_minutes: JSON.parse(String(init.body)).session_timeout_minutes,
+                min_session_timeout_minutes: 5,
+                max_session_timeout_minutes: 43200
+              }),
+              { status: 200 }
+            )
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              session_timeout_minutes: 120,
+              min_session_timeout_minutes: 5,
+              max_session_timeout_minutes: 43200
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/site-scanning/adapters" || url === "/api/site-scanning/auth-profiles") {
+        return authenticatedFetch(input);
       }
       return Promise.resolve(
         new Response(
@@ -1158,6 +1224,21 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "Provider Secrets" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "AI Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Session Timeout" })).toBeInTheDocument();
+    const timeoutInput = await screen.findByLabelText("Minutes");
+    expect(timeoutInput).toHaveValue(120);
+    await user.clear(timeoutInput);
+    await user.type(timeoutInput, "90");
+    await user.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/settings/auth",
+        expect.objectContaining({
+          body: JSON.stringify({ session_timeout_minutes: 90 }),
+          method: "PUT"
+        })
+      )
+    );
     expect(await screen.findByText("Fallback disabled")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "OpenAI API Token" })).toBeInTheDocument();
     expect(screen.getByLabelText("New value")).toHaveAttribute("type", "password");

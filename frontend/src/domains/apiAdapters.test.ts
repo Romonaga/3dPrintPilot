@@ -17,9 +17,11 @@ import {
 import {
   captureSourceAuthBrowserLink,
   deleteSourceAuthProfile,
+  getAuthSettings,
   getSourceAuthBrowserLinkStatus,
   getFeatureSettings,
   listModelSourceSites,
+  saveAuthSettings,
   saveProviderSecret,
   saveSourceAuthProfile,
   startSourceAuthBrowserLink,
@@ -284,6 +286,23 @@ describe("domain API adapters", () => {
       local_ai_default_model: "qwen"
     });
     expect((await getFeatureSettings()).openAiFallbackEnabled).toBe(true);
+
+    mockJson({
+      session_timeout_minutes: 120,
+      min_session_timeout_minutes: 5,
+      max_session_timeout_minutes: 43200
+    });
+    expect((await getAuthSettings()).sessionTimeoutMinutes).toBe(120);
+
+    mockJson({
+      session_timeout_minutes: 60,
+      min_session_timeout_minutes: 5,
+      max_session_timeout_minutes: 43200
+    });
+    expect((await saveAuthSettings(60)).sessionTimeoutMinutes).toBe(60);
+    const [, authInit] =
+      vi.mocked(fetch).mock.calls.find(([url, init]) => url === "/api/settings/auth" && init?.method === "PUT") ?? [];
+    expect(JSON.parse(String(authInit?.body))).toEqual({ session_timeout_minutes: 60 });
 
     mockJson({
       provider: "openai",

@@ -19,6 +19,12 @@ export type FeatureSettings = {
   localAiDefaultModel: string;
 };
 
+export type AuthSettings = {
+  sessionTimeoutMinutes: number;
+  minSessionTimeoutMinutes: number;
+  maxSessionTimeoutMinutes: number;
+};
+
 export type SourceAuthProfileStatus = {
   siteKey: string;
   displayName: string;
