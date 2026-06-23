@@ -25,3 +25,15 @@ class ProviderSecret(Base):
         UniqueConstraint("provider", "secret_name", name="uq_provider_secrets_provider_secret_name"),
         Index("ix_provider_secrets_provider", "provider"),
     )
+
+
+class InstanceSetting(Base):
+    __tablename__ = "instance_settings"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    setting_key: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    setting_value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (Index("ix_instance_settings_setting_key", "setting_key"),)

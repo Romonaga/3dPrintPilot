@@ -1,12 +1,14 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock,
   Download,
   ExternalLink,
   Globe2,
   KeyRound,
   Link2,
   RefreshCw,
+  Save,
   Trash2
 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
@@ -14,18 +16,28 @@ import { Spinner } from "../../../components/Spinner";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { downloadOperationsBackup } from "../../operations/api";
 import { ResourceControlsPanel } from "../../resources/components/ResourceControlsPanel";
-import { getFeatureSettings } from "../api/settingsApi";
+import { getAuthSettings, getFeatureSettings, saveAuthSettings } from "../api/settingsApi";
 import { useModelSourceAuth } from "../hooks/useModelSourceAuth";
 import { useProviderSecrets } from "../hooks/useProviderSecrets";
-import { type FeatureSettings, type ModelSourceSiteStatus, type ProviderSecretStatus } from "../types";
+import { type AuthSettings, type FeatureSettings, type ModelSourceSiteStatus, type ProviderSecretStatus } from "../types";
+import { type AuthUser } from "../../auth/types";
 
-export default function SettingsPage() {
+type SettingsPageProps = {
+  user: AuthUser;
+};
+
+export default function SettingsPage({ user }: SettingsPageProps) {
   const { secrets, isLoading, isSaving, error, reload, saveSecret, removeSecret } = useProviderSecrets();
   const sourceAuth = useModelSourceAuth();
   const [features, setFeatures] = useState<FeatureSettings | null>(null);
   const [featureError, setFeatureError] = useState<string | null>(null);
+  const [authSettings, setAuthSettings] = useState<AuthSettings | null>(null);
+  const [authSettingsValue, setAuthSettingsValue] = useState("");
+  const [authSettingsError, setAuthSettingsError] = useState<string | null>(null);
+  const [isSavingAuthSettings, setIsSavingAuthSettings] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const canManageAuthSettings = user.role === "owner" || user.role === "admin";
 
   useEffect(() => {
     let active = true;
@@ -46,6 +58,29 @@ export default function SettingsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!canManageAuthSettings) {
+      return;
+    }
+    let active = true;
+    getAuthSettings()
+      .then((settings) => {
+        if (active) {
+          setAuthSettings(settings);
+          setAuthSettingsValue(String(settings.sessionTimeoutMinutes));
+          setAuthSettingsError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setAuthSettingsError(err instanceof Error ? err.message : "Auth settings failed");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [canManageAuthSettings]);
+
   async function handleBackupExport() {
     setIsExporting(true);
     try {
@@ -58,9 +93,68 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleAuthSettingsSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!authSettings) {
+      return;
+    }
+    const nextTimeout = Number(authSettingsValue);
+    if (!Number.isInteger(nextTimeout)) {
+      setAuthSettingsError("Session timeout must be a whole number of minutes");
+      return;
+    }
+    setIsSavingAuthSettings(true);
+    setAuthSettingsError(null);
+    try {
+      const updated = await saveAuthSettings(nextTimeout);
+      setAuthSettings(updated);
+      setAuthSettingsValue(String(updated.sessionTimeoutMinutes));
+    } catch (err) {
+      setAuthSettingsError(err instanceof Error ? err.message : "Auth settings save failed");
+    } finally {
+      setIsSavingAuthSettings(false);
+    }
+  }
+
   return (
     <section className="settings-page">
       <ResourceControlsPanel />
+      {canManageAuthSettings ? (
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <h2>Session Timeout</h2>
+              {authSettingsError ? <p className="form-error">{authSettingsError}</p> : null}
+            </div>
+            {authSettings ? (
+              <StatusBadge
+                icon={Clock}
+                label={`${authSettings.sessionTimeoutMinutes} min`}
+                tone="muted"
+              />
+            ) : null}
+          </div>
+          {authSettings ? (
+            <form className="secret-form auth-settings-form" onSubmit={handleAuthSettingsSubmit}>
+              <label className="field-label">
+                Minutes
+                <input
+                  max={authSettings.maxSessionTimeoutMinutes}
+                  min={authSettings.minSessionTimeoutMinutes}
+                  onChange={(event) => setAuthSettingsValue(event.target.value)}
+                  step={1}
+                  type="number"
+                  value={authSettingsValue}
+                />
+              </label>
+              <button className="primary-action icon-action" disabled={isSavingAuthSettings} type="submit">
+                {isSavingAuthSettings ? <Spinner size={15} /> : <Save size={15} aria-hidden="true" />}
+                <span>{isSavingAuthSettings ? "Saving" : "Save"}</span>
+              </button>
+            </form>
+          ) : null}
+        </article>
+      ) : null}
       <article className="panel">
         <div className="panel-header">
           <div>

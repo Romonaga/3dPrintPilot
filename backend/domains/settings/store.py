@@ -7,7 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core.secrets import SecretCipher
-from backend.domains.settings.models import ProviderSecret
+from backend.domains.settings.models import InstanceSetting, ProviderSecret
+
+AUTH_SESSION_TIMEOUT_SETTING_KEY = "auth.session_timeout_minutes"
+DEFAULT_SESSION_TIMEOUT_MINUTES = 14 * 24 * 60
+MIN_SESSION_TIMEOUT_MINUTES = 5
+MAX_SESSION_TIMEOUT_MINUTES = 30 * 24 * 60
 
 
 @dataclass(frozen=True)
@@ -16,6 +21,11 @@ class KnownProviderSecret:
     secret_name: str
     label: str
     purpose: str
+
+
+@dataclass(frozen=True)
+class AuthSettings:
+    session_timeout_minutes: int
 
 
 KNOWN_PROVIDER_SECRETS = (
@@ -100,6 +110,45 @@ class ProviderSecretStore:
         return True
 
 
+class InstanceSettingsStore:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get_auth_settings(self) -> AuthSettings:
+        return AuthSettings(session_timeout_minutes=self.get_session_timeout_minutes())
+
+    def update_auth_settings(self, session_timeout_minutes: int) -> AuthSettings:
+        timeout = validate_session_timeout_minutes(session_timeout_minutes)
+        self._upsert_setting(AUTH_SESSION_TIMEOUT_SETTING_KEY, str(timeout))
+        self._session.commit()
+        return AuthSettings(session_timeout_minutes=timeout)
+
+    def get_session_timeout_minutes(self) -> int:
+        setting = self._get_setting(AUTH_SESSION_TIMEOUT_SETTING_KEY)
+        if setting is None:
+            return DEFAULT_SESSION_TIMEOUT_MINUTES
+        try:
+            return validate_session_timeout_minutes(int(setting.setting_value))
+        except ValueError:
+            return DEFAULT_SESSION_TIMEOUT_MINUTES
+
+    def _get_setting(self, setting_key: str) -> InstanceSetting | None:
+        return self._session.scalars(
+            select(InstanceSetting).where(InstanceSetting.setting_key == setting_key)
+        ).one_or_none()
+
+    def _upsert_setting(self, setting_key: str, setting_value: str) -> InstanceSetting:
+        now = datetime.now(UTC)
+        setting = self._get_setting(setting_key)
+        if setting is None:
+            setting = InstanceSetting(setting_key=setting_key, setting_value=setting_value, updated_at=now)
+            self._session.add(setting)
+        else:
+            setting.setting_value = setting_value
+            setting.updated_at = now
+        return setting
+
+
 def _normalize_secret_id(provider: str, secret_name: str) -> tuple[str, str]:
     return provider.strip().lower(), secret_name.strip().lower()
 
@@ -113,3 +162,12 @@ def mask_secret(record: ProviderSecret | None) -> str | None:
     if record is None:
         return None
     return f"****{record.last_four}"
+
+
+def validate_session_timeout_minutes(value: int) -> int:
+    if value < MIN_SESSION_TIMEOUT_MINUTES or value > MAX_SESSION_TIMEOUT_MINUTES:
+        raise ValueError(
+            "Session timeout must be between "
+            f"{MIN_SESSION_TIMEOUT_MINUTES} and {MAX_SESSION_TIMEOUT_MINUTES} minutes"
+        )
+    return value

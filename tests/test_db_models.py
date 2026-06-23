@@ -6,7 +6,7 @@ from backend.domains.compatibility.models import CompatibilityCheck, Compatibili
 from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry, SourceProjectScan, SourceProjectScanFile
 from backend.domains.printers.models import NetworkScanResult
 from backend.domains.resources.models import BackgroundJob, ResourceSample
-from backend.domains.settings.models import ProviderSecret
+from backend.domains.settings.models import InstanceSetting, ProviderSecret
 from backend.domains.site_scanning.models import ModelSiteAdapter, ModelSiteScanResult, ModelSiteScanRun, SiteAuthProfile
 from backend.domains.users.models import User, UserSession
 
@@ -28,6 +28,7 @@ def test_foundation_models_are_registered_by_domain():
     assert ResourceSample.__tablename__ in table_names
     assert BackgroundJob.__tablename__ in table_names
     assert ProviderSecret.__tablename__ in table_names
+    assert InstanceSetting.__tablename__ in table_names
     assert ModelSiteAdapter.__tablename__ in table_names
     assert ModelSiteScanRun.__tablename__ in table_names
     assert ModelSiteScanResult.__tablename__ in table_names
@@ -51,6 +52,13 @@ def test_provider_secret_stores_encrypted_value_metadata():
     assert "encryption_key_id" in columns
     assert "secret_fingerprint" in columns
     assert "last_four" in columns
+
+
+def test_instance_settings_store_auth_timeout_metadata():
+    columns = InstanceSetting.__table__.columns
+
+    assert "setting_key" in columns
+    assert "setting_value" in columns
 
 
 def test_site_scan_run_has_chartable_status_and_timing_columns():
