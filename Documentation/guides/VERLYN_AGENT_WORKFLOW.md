@@ -135,6 +135,14 @@ Creation and activation are separate. A new change starts as draft. Activate it
 before implementation so Verlyn can bind the work branch and enforce the normal
 workflow trail.
 
+Draft means planning only. While a change is draft, agents may read files,
+inspect run/change state, and flesh out work items through Verlyn, but must not
+modify files, run write-formatters, generate source artifacts, or apply patches.
+The edit boundary is `verlyn changes activate <change-id>` followed by
+`verlyn workflow assert-edit-route --json` returning `allowed: true` for the
+same change. If that assertion fails, stop and repair the route instead of
+continuing on `main` or an unbound branch.
+
 `verlyn changes create` also seeds required starter work items. These are
 workflow tickets, not finished task plans. Read them with
 `verlyn work-items list <change-id>`, then flesh them out for the specific
@@ -199,7 +207,7 @@ provider tokens, or delivery gate bypasses.
 1. Read the governed files and inspect active change details from Verlyn.
 2. Run the required startup commands.
 3. Do not edit until the repo is authorized for the authenticated user and the applicable Verlyn change is active.
-4. If no change applies, record an explicit direct-work reason before editing.
+4. If no change applies, record an explicit direct-work reason before editing; do not use direct-work as a shortcut when a relevant change exists but is still draft.
 5. Create or update change and work-item records through the installed `verlyn` CLI.
 6. Do the implementation and verification.
 7. Update work items, review notes, and risks through Verlyn.

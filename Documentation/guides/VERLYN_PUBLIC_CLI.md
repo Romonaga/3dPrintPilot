@@ -177,7 +177,7 @@ verlyn changes next
 - `changes update` changes metadata such as proposal sections, acceptance
   criteria, priority, dependencies, and owner.
 - `changes activate` starts implementation and binds or creates the governed
-  work branch. Do this before editing code for a change.
+  work branch. Do this before editing files for a change.
 - `changes refresh-branch` repairs or refreshes the bound local work branch.
 - `changes next` asks Verlyn for the next unblocked change in the current chain.
 
@@ -190,6 +190,13 @@ validation, review, or handoff. Verlyn always includes `Review findings` and
 mandatory human review applies. Use it to check for hallucinated behavior,
 scope drift, unrelated edits, and mismatches between the implementation and
 the change ticket/work items before delivery:
+
+Draft change work is planning only. It is acceptable to inspect files and
+update the change/work-item records while a change is draft, but do not write
+files, run commands that modify the checkout, or generate source artifacts
+until `verlyn changes activate <change-id>` has created or bound the work
+branch and `verlyn workflow assert-edit-route --json` reports `allowed: true`
+for that active change.
 
 | Change type | Seeded first work items |
 |---|---|
