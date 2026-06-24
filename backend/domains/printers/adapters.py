@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
@@ -35,6 +35,24 @@ class MoonrakerJobStatus:
     message: str | None
     raw_status: dict[str, Any]
     observed_at: datetime
+    bed_temperature: "MoonrakerTemperature | None" = None
+    toolheads: tuple["MoonrakerToolheadTelemetry", ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class MoonrakerTemperature:
+    current_c: float | None
+    target_c: float | None
+    power: float | None = None
+
+
+@dataclass(frozen=True)
+class MoonrakerToolheadTelemetry:
+    name: str
+    label: str
+    index: int
+    current_temperature: MoonrakerTemperature | None
+    color: str | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +68,63 @@ class UnsupportedPrinterControlError(ValueError):
 
 class InvalidPrintFileError(ValueError):
     pass
+
+
+class PrinterEngine:
+    engine_id = "base"
+    display_name = "Base printer engine"
+    description = "Base printer engine contract."
+
+    def supports(self, printer: Printer) -> bool:
+        _ = printer
+        return False
+
+    def fetch_job_status(self, printer: Printer, timeout_seconds: float = 2.0) -> MoonrakerJobStatus:
+        _ = printer, timeout_seconds
+        raise UnsupportedPrinterControlError("Job telemetry is not available for this printer")
+
+
+class MoonrakerPrinterEngine(PrinterEngine):
+    engine_id = "moonraker"
+    display_name = "Moonraker"
+    description = "Moonraker/Klipper-compatible printer telemetry and control engine."
+
+    def supports(self, printer: Printer) -> bool:
+        adapter_type = printer.adapter_type or infer_adapter_type(None, printer.printer_type)
+        return adapter_type == self.engine_id
+
+    def fetch_job_status(self, printer: Printer, timeout_seconds: float = 2.0) -> MoonrakerJobStatus:
+        _require_moonraker_control(printer)
+        base_url = _base_url(printer)
+        with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
+            payload = MoonrakerTelemetryEngine(client, base_url).fetch_job_status_payload()
+        return parse_moonraker_job_status(payload, capabilities=printer.capabilities or {})
+
+
+PRINTER_ENGINES: tuple[PrinterEngine, ...] = (MoonrakerPrinterEngine(),)
+
+
+def refresh_engine_catalog() -> tuple[PrinterEngine, ...]:
+    return PRINTER_ENGINES
+
+
+def engine_catalog() -> list[dict[str, Any]]:
+    return [
+        {
+            "engine_id": engine.engine_id,
+            "display_name": engine.display_name,
+            "description": engine.description,
+            "capabilities": capabilities_for_service_type(engine.engine_id),
+        }
+        for engine in refresh_engine_catalog()
+    ]
+
+
+def engine_for_printer(printer: Printer) -> PrinterEngine | None:
+    for engine in refresh_engine_catalog():
+        if engine.supports(printer):
+            return engine
+    return None
 
 
 def infer_adapter_type(service_type: str | None, printer_type: str | None = None) -> str | None:
@@ -169,15 +244,33 @@ def _fetch_moonraker_status(printer: Printer, timeout_seconds: float) -> Printer
 
 
 def fetch_moonraker_job_status(printer: Printer, timeout_seconds: float = 2.0) -> MoonrakerJobStatus:
-    _require_moonraker_control(printer)
-    base_url = _base_url(printer)
-    query = "print_stats&virtual_sdcard&display_status&extruder&heater_bed"
-    with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
-        payload = client.get(f"{base_url}/printer/objects/query?{query}").json()
-    return parse_moonraker_job_status(payload)
+    engine = engine_for_printer(printer)
+    if not isinstance(engine, MoonrakerPrinterEngine):
+        raise UnsupportedPrinterControlError("Moonraker file and job controls are not available for this printer")
+    return engine.fetch_job_status(printer, timeout_seconds=timeout_seconds)
 
 
-def parse_moonraker_job_status(payload: dict[str, Any]) -> MoonrakerJobStatus:
+class MoonrakerTelemetryEngine:
+    def __init__(self, client: httpx.Client, base_url: str) -> None:
+        self.client = client
+        self.base_url = base_url
+
+    def fetch_job_status_payload(self) -> dict[str, Any]:
+        extruder_names = self._available_extruder_names()
+        query_objects = ["print_stats", "virtual_sdcard", "display_status", "heater_bed", "configfile", *extruder_names]
+        query = "&".join(dict.fromkeys(query_objects))
+        return self.client.get(f"{self.base_url}/printer/objects/query?{query}").json()
+
+    def _available_extruder_names(self) -> tuple[str, ...]:
+        try:
+            payload = self.client.get(f"{self.base_url}/printer/objects/list").json()
+        except httpx.HTTPError:
+            return ("extruder",)
+        names = _moonraker_extruder_names_from_object_list(payload)
+        return names or ("extruder",)
+
+
+def parse_moonraker_job_status(payload: dict[str, Any], capabilities: dict[str, Any] | None = None) -> MoonrakerJobStatus:
     result = payload.get("result", payload)
     status = result.get("status", result) if isinstance(result, dict) else {}
     print_stats = status.get("print_stats", {}) if isinstance(status, dict) else {}
@@ -190,6 +283,8 @@ def parse_moonraker_job_status(payload: dict[str, Any]) -> MoonrakerJobStatus:
         filename=_string_or_none(print_stats.get("filename") or virtual_sdcard.get("file_path")),
         progress=progress,
         message=_string_or_none(print_stats.get("message")),
+        bed_temperature=_moonraker_temperature(status.get("heater_bed") if isinstance(status, dict) else None),
+        toolheads=_moonraker_toolhead_telemetry(status, capabilities or {}),
         raw_status=payload,
         observed_at=datetime.now(UTC),
     )
@@ -278,6 +373,108 @@ def _moonraker_print_action(printer: Printer, action: str, timeout_seconds: floa
     with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
         payload = client.post(f"{base_url}/printer/print/{action}").json()
     return MoonrakerActionResult(action=action, accepted=True, raw_response=payload)
+
+
+def _moonraker_extruder_names_from_object_list(payload: dict[str, Any]) -> tuple[str, ...]:
+    result = payload.get("result", payload)
+    objects = result.get("objects", result) if isinstance(result, dict) else result
+    if not isinstance(objects, list):
+        return ()
+    names = [name for name in objects if isinstance(name, str) and _is_moonraker_extruder_name(name)]
+    return tuple(sorted(set(names), key=_moonraker_extruder_sort_key))
+
+
+def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str, Any]) -> tuple[MoonrakerToolheadTelemetry, ...]:
+    if not isinstance(status, dict):
+        return ()
+    configfile = status.get("configfile", {})
+    settings = {}
+    if isinstance(configfile, dict):
+        settings = configfile.get("settings") or configfile.get("config") or {}
+    if not isinstance(settings, dict):
+        settings = {}
+    capability_toolheads = capabilities.get("toolheads")
+    capability_colors = _capability_tool_colors(capability_toolheads)
+    names = sorted(
+        {key for key in status if _is_moonraker_extruder_name(key)} | {key for key in settings if _is_moonraker_extruder_name(key)},
+        key=_moonraker_extruder_sort_key,
+    )
+    toolheads = []
+    for name in names:
+        index = _moonraker_extruder_index(name)
+        payload = status.get(name) if isinstance(status.get(name), dict) else {}
+        config = settings.get(name) if isinstance(settings.get(name), dict) else {}
+        toolheads.append(
+            MoonrakerToolheadTelemetry(
+                name=name,
+                label=f"T{index}",
+                index=index,
+                current_temperature=_moonraker_temperature(payload),
+                color=_moonraker_color(payload, config, capability_colors.get(index)),
+            )
+        )
+    return tuple(toolheads)
+
+
+def _moonraker_temperature(payload: Any) -> MoonrakerTemperature | None:
+    if not isinstance(payload, dict):
+        return None
+    current = _float_or_none(payload.get("temperature"))
+    target = _float_or_none(payload.get("target"))
+    power = _float_or_none(payload.get("power"))
+    if current is None and target is None and power is None:
+        return None
+    return MoonrakerTemperature(current_c=current, target_c=target, power=power)
+
+
+def _moonraker_color(payload: dict[str, Any], config: dict[str, Any], fallback: str | None = None) -> str | None:
+    for source in (payload, config):
+        color = _color_from_mapping(source)
+        if color:
+            return color
+    return fallback
+
+
+def _color_from_mapping(source: dict[str, Any]) -> str | None:
+    for key in ("filament_color", "material_color", "spool_color", "color", "colour"):
+        color = _string_or_none(source.get(key))
+        if color:
+            return color
+    for nested_key in ("filament", "material", "spool"):
+        nested = source.get(nested_key)
+        if isinstance(nested, dict):
+            color = _color_from_mapping(nested)
+            if color:
+                return color
+    return None
+
+
+def _capability_tool_colors(toolheads: Any) -> dict[int, str]:
+    if not isinstance(toolheads, list):
+        return {}
+    colors: dict[int, str] = {}
+    for item in toolheads:
+        if not isinstance(item, dict):
+            continue
+        index = _int_or_none(item.get("index"))
+        color = _color_from_mapping(item)
+        if index is not None and color:
+            colors[index] = color
+    return colors
+
+
+def _is_moonraker_extruder_name(name: str) -> bool:
+    return name == "extruder" or (name.startswith("extruder") and name[8:].isdigit())
+
+
+def _moonraker_extruder_index(name: str) -> int:
+    if name == "extruder":
+        return 0
+    return _int_or_none(name[8:]) or 0
+
+
+def _moonraker_extruder_sort_key(name: str) -> tuple[int, str]:
+    return (_moonraker_extruder_index(name), name)
 
 
 def _validate_sliced_filename(filename: str) -> str:

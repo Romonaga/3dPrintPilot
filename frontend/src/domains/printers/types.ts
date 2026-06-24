@@ -23,8 +23,24 @@ export type PrinterJobStatus = {
   filename: string | null;
   progress: number | null;
   message: string | null;
+  bedTemperature: PrinterTemperature | null;
+  toolheads: PrinterToolheadTelemetry[];
   rawStatus: Record<string, unknown>;
   observedAt: string;
+};
+
+export type PrinterTemperature = {
+  currentC: number | null;
+  targetC: number | null;
+  power: number | null;
+};
+
+export type PrinterToolheadTelemetry = {
+  name: string;
+  label: string;
+  index: number;
+  currentTemperature: PrinterTemperature | null;
+  color: string | null;
 };
 
 export type PrinterFile = {
@@ -39,6 +55,13 @@ export type PrinterActionResult = {
   action: string;
   accepted: boolean;
   rawResponse: unknown;
+};
+
+export type PrinterEngine = {
+  engineId: string;
+  displayName: string;
+  description: string;
+  capabilities: Record<string, unknown>;
 };
 
 export type DiscoveredPrinter = {

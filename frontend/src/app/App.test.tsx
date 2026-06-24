@@ -181,6 +181,7 @@ describe("App", () => {
   });
 
   it("shows machine state and meaningful print progress on dashboard printer cards", async () => {
+    const user = userEvent.setup();
     const fetchMock = mockApiFetch((input) => {
       const url = String(input);
       if (url === "/api/printers") {
@@ -261,12 +262,32 @@ describe("App", () => {
               filename: "benchy.gcode",
               progress: 0.42,
               message: "Printing",
+              bed_temperature: { current_c: 60, target_c: 65, power: 0.4 },
+              toolheads: [
+                {
+                  name: "extruder",
+                  label: "T0",
+                  index: 0,
+                  current_temperature: { current_c: 210, target_c: 215, power: 0.33 },
+                  color: "#ff0000"
+                },
+                {
+                  name: "extruder1",
+                  label: "T1",
+                  index: 1,
+                  current_temperature: { current_c: 35, target_c: 0, power: null },
+                  color: null
+                }
+              ],
               raw_status: {},
               observed_at: "2026-06-22T15:00:00Z"
             }),
             { status: 200 }
           )
         );
+      }
+      if (url === "/api/printers/4/files") {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
       if (url === "/api/printers/5/job-status") {
         return Promise.resolve(
@@ -301,6 +322,14 @@ describe("App", () => {
     expect(screen.getByText("Print telemetry unavailable")).toBeInTheDocument();
     expect(screen.queryByText("0%")).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalledWith("/api/printers/7/job-status");
+
+    await user.click(screen.getByRole("button", { name: "Show controls for Snapmaker U1" }));
+
+    expect(await screen.findByLabelText("Moonraker telemetry")).toBeInTheDocument();
+    expect(screen.getByText("60 C / 65 C")).toBeInTheDocument();
+    expect(screen.getByText("210 C / 215 C")).toBeInTheDocument();
+    expect(screen.getByText("#ff0000")).toBeInTheDocument();
+    expect(screen.getByText("Color unknown")).toBeInTheDocument();
   });
 
   it("toggles dark mode from the app shell", async () => {

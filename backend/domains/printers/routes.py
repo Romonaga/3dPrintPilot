@@ -8,10 +8,12 @@ from backend.domains.printers.adapters import (
     InvalidPrintFileError,
     UnsupportedPrinterControlError,
     cancel_moonraker_print,
+    engine_catalog,
     fetch_moonraker_job_status,
     fetch_read_only_status,
     list_moonraker_files,
     pause_moonraker_print,
+    refresh_engine_catalog,
     resume_moonraker_print,
     start_moonraker_print,
     upload_moonraker_file,
@@ -29,12 +31,15 @@ from backend.domains.printers.schemas.response import (
     DiscoveredPrinterResponse,
     PrinterActionResponse,
     PrinterEndpointGroupResponse,
+    PrinterEngineResponse,
     PrinterFileResponse,
     PrinterJobStatusResponse,
     PrinterResponse,
     PrinterScanResponse,
     PrinterScanSummaryResponse,
     PrinterStatusResponse,
+    PrinterTemperatureResponse,
+    PrinterToolheadTelemetryResponse,
 )
 from backend.domains.printers.service import merge_known_printer_discoveries, scan_lan_for_printers
 from backend.domains.printers.store import PrinterStore
@@ -72,6 +77,21 @@ def create_printer(
         build_volume_z_mm=request.build_volume_z_mm,
     )
     return _printer_response(printer)
+
+
+@router.get("/engines", response_model=list[PrinterEngineResponse])
+def list_printer_engines(
+    _user=Depends(require_roles("viewer")),
+) -> list[PrinterEngineResponse]:
+    return [PrinterEngineResponse(**engine) for engine in engine_catalog()]
+
+
+@router.post("/engines/refresh", response_model=list[PrinterEngineResponse])
+def refresh_printer_engines(
+    _user=Depends(require_roles("admin")),
+) -> list[PrinterEngineResponse]:
+    refresh_engine_catalog()
+    return [PrinterEngineResponse(**engine) for engine in engine_catalog()]
 
 
 @router.put("/{printer_id}", response_model=PrinterResponse)
@@ -155,6 +175,17 @@ def read_printer_job_status(
         filename=status.filename,
         progress=status.progress,
         message=status.message,
+        bed_temperature=_temperature_response(status.bed_temperature),
+        toolheads=[
+            PrinterToolheadTelemetryResponse(
+                name=toolhead.name,
+                label=toolhead.label,
+                index=toolhead.index,
+                current_temperature=_temperature_response(toolhead.current_temperature),
+                color=toolhead.color,
+            )
+            for toolhead in status.toolheads
+        ],
         raw_status=status.raw_status,
         observed_at=status.observed_at.isoformat(),
     )
@@ -285,6 +316,16 @@ def _action_response(printer_id: int, result) -> PrinterActionResponse:
         action=result.action,
         accepted=result.accepted,
         raw_response=result.raw_response,
+    )
+
+
+def _temperature_response(temperature) -> PrinterTemperatureResponse | None:
+    if temperature is None:
+        return None
+    return PrinterTemperatureResponse(
+        current_c=temperature.current_c,
+        target_c=temperature.target_c,
+        power=temperature.power,
     )
 
 

@@ -1,6 +1,7 @@
-import { Radar, Trash2 } from "lucide-react";
+import { Radar, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
+import { refreshPrinterEngines } from "../api/printersApi";
 import { PrinterCapabilitySummary } from "../components/PrinterCapabilitySummary";
 import { discoveredPrinterKey, type PrintersState } from "../hooks/usePrinters";
 
@@ -24,6 +25,8 @@ export default function PrintersPage({
 }: PrintersPageProps) {
   const consumedScanRequestId = useRef<number | null>(null);
   const [contextMenu, setContextMenu] = useState<PrinterContextMenuState | null>(null);
+  const [engineRefreshPending, setEngineRefreshPending] = useState(false);
+  const [engineRefreshMessage, setEngineRefreshMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (autoStartScanRequestId === null || consumedScanRequestId.current === autoStartScanRequestId) {
@@ -65,17 +68,42 @@ export default function PrintersPage({
     }
   }, [contextMenu, printers.printers]);
 
+  async function handleEngineRefresh() {
+    setEngineRefreshPending(true);
+    setEngineRefreshMessage(null);
+    try {
+      const engines = await refreshPrinterEngines();
+      setEngineRefreshMessage(`Engine catalog refreshed: ${engines.length} active`);
+    } catch (refreshError) {
+      setEngineRefreshMessage(refreshError instanceof Error ? refreshError.message : "Engine catalog refresh failed");
+    } finally {
+      setEngineRefreshPending(false);
+    }
+  }
+
   return (
     <section className="printers-page" aria-label="Printers">
       <section className="panel printer-actions-panel" aria-labelledby="printer-actions-title">
         <div className="panel-header">
           <h2 id="printer-actions-title">Printer Actions</h2>
-          <button className="primary-action icon-action" type="button" onClick={printers.runScan} disabled={printers.isScanning}>
-            {printers.isScanning ? <Spinner size={16} /> : <Radar size={16} aria-hidden="true" />}
-            <span>{printers.isScanning ? "Scanning" : "Scan LAN"}</span>
-          </button>
+          <div className="printer-actions-header-buttons">
+            <button
+              className="text-button icon-action"
+              disabled={engineRefreshPending}
+              onClick={() => void handleEngineRefresh()}
+              type="button"
+            >
+              {engineRefreshPending ? <Spinner size={16} /> : <RefreshCw size={16} aria-hidden="true" />}
+              <span>Refresh engines</span>
+            </button>
+            <button className="primary-action icon-action" type="button" onClick={printers.runScan} disabled={printers.isScanning}>
+              {printers.isScanning ? <Spinner size={16} /> : <Radar size={16} aria-hidden="true" />}
+              <span>{printers.isScanning ? "Scanning" : "Scan LAN"}</span>
+            </button>
+          </div>
         </div>
         {printers.error ? <p className="error-text">{printers.error}</p> : null}
+        {engineRefreshMessage ? <p className="muted-copy">{engineRefreshMessage}</p> : null}
         <div className="printer-scan-settings">
           <label className="field-label">
             <span>Method</span>
