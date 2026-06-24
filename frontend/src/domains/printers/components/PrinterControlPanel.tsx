@@ -312,6 +312,7 @@ function PrinterTelemetrySummary({ status }: { status: PrinterJobStatus }) {
 }
 
 function ToolheadTelemetryItem({ toolhead }: { toolhead: PrinterToolheadTelemetry }) {
+  const materialLabel = formatToolheadMaterial(toolhead);
   return (
     <div className="printer-telemetry-item">
       <span className="printer-toolhead-label">
@@ -324,6 +325,7 @@ function ToolheadTelemetryItem({ toolhead }: { toolhead: PrinterToolheadTelemetr
       </span>
       <strong>{formatTemperature(toolhead.currentTemperature)}</strong>
       <small>{toolhead.color ?? "Color unknown"}</small>
+      {materialLabel ? <small>{materialLabel}</small> : null}
     </div>
   );
 }
@@ -360,6 +362,11 @@ function formatTemperature(temperature: PrinterTemperature | null) {
   const current = temperature.currentC === null ? "--" : `${Math.round(temperature.currentC)} C`;
   const target = temperature.targetC === null ? "--" : `${Math.round(temperature.targetC)} C`;
   return `${current} / ${target}`;
+}
+
+function formatToolheadMaterial(toolhead: PrinterToolheadTelemetry) {
+  const parts = [toolhead.material, toolhead.vendor, toolhead.subtype].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(" / ") : null;
 }
 
 function formatFileDetails(file: PrinterFile) {

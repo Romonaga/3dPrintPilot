@@ -78,6 +78,15 @@ class MoonrakerCapabilityDiagnostics:
     observed_at: datetime
 
 
+@dataclass(frozen=True)
+class SnapmakerU1FilamentSlot:
+    index: int
+    color: str | None = None
+    material: str | None = None
+    vendor: str | None = None
+    subtype: str | None = None
+
+
 class UnsupportedPrinterControlError(ValueError):
     pass
 
@@ -319,18 +328,36 @@ class MoonrakerTelemetryEngine:
         self.base_url = base_url
 
     def fetch_job_status_payload(self) -> dict[str, Any]:
-        extruder_names = self._available_extruder_names()
-        query_objects = ["print_stats", "virtual_sdcard", "display_status", "heater_bed", "configfile", *extruder_names]
-        query = "&".join(dict.fromkeys(query_objects))
+        object_names = self._available_object_names()
+        extruder_names = _moonraker_extruder_names_from_object_names(object_names) or ("extruder",)
+        snapmaker_objects = tuple(
+            name
+            for name in (
+                "filament_detect",
+                "filament_feed left",
+                "filament_feed right",
+                "gcode_macro _FILAMENT_FEED_VARIABLE",
+            )
+            if name in object_names
+        )
+        query_objects = [
+            "print_stats",
+            "virtual_sdcard",
+            "display_status",
+            "heater_bed",
+            "configfile",
+            *extruder_names,
+            *snapmaker_objects,
+        ]
+        query = "&".join(quote(name, safe="") for name in dict.fromkeys(query_objects))
         return self.client.get(f"{self.base_url}/printer/objects/query?{query}").json()
 
-    def _available_extruder_names(self) -> tuple[str, ...]:
+    def _available_object_names(self) -> tuple[str, ...]:
         try:
             payload = self.client.get(f"{self.base_url}/printer/objects/list").json()
         except httpx.HTTPError:
-            return ("extruder",)
-        names = _moonraker_extruder_names_from_object_list(payload)
-        return names or ("extruder",)
+            return ()
+        return _moonraker_object_names_from_object_list(payload)
 
 
 def parse_moonraker_job_status(payload: dict[str, Any], capabilities: dict[str, Any] | None = None) -> MoonrakerJobStatus:
@@ -445,11 +472,19 @@ def _moonraker_print_action(printer: Printer, action: str, timeout_seconds: floa
 
 
 def _moonraker_extruder_names_from_object_list(payload: dict[str, Any]) -> tuple[str, ...]:
+    return _moonraker_extruder_names_from_object_names(_moonraker_object_names_from_object_list(payload))
+
+
+def _moonraker_object_names_from_object_list(payload: dict[str, Any]) -> tuple[str, ...]:
     result = payload.get("result", payload)
     objects = result.get("objects", result) if isinstance(result, dict) else result
     if not isinstance(objects, list):
         return ()
-    names = [name for name in objects if isinstance(name, str) and _is_moonraker_extruder_name(name)]
+    return tuple(name for name in objects if isinstance(name, str))
+
+
+def _moonraker_extruder_names_from_object_names(objects: tuple[str, ...]) -> tuple[str, ...]:
+    names = [name for name in objects if _is_moonraker_extruder_name(name)]
     return tuple(sorted(set(names), key=_moonraker_extruder_sort_key))
 
 
@@ -505,6 +540,7 @@ def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str
         settings = {}
     capability_toolheads = capabilities.get("toolheads")
     capability_colors = _capability_tool_colors(capability_toolheads)
+    snapmaker_slots = _snapmaker_u1_filament_slots(status)
     names = sorted(
         {key for key in status if _is_moonraker_extruder_name(key)} | {key for key in settings if _is_moonraker_extruder_name(key)},
         key=_moonraker_extruder_sort_key,
@@ -514,7 +550,8 @@ def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str
         index = _moonraker_extruder_index(name)
         payload = status.get(name) if isinstance(status.get(name), dict) else {}
         config = settings.get(name) if isinstance(settings.get(name), dict) else {}
-        color, color_source = _moonraker_color_with_source(payload, config, capability_colors.get(index))
+        snapmaker_slot = snapmaker_slots.get(index)
+        color, color_source = _moonraker_toolhead_color(payload, config, snapmaker_slot, capability_colors.get(index))
         toolheads.append(
             MoonrakerToolheadTelemetry(
                 name=name,
@@ -523,6 +560,10 @@ def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str
                 current_temperature=_moonraker_temperature(payload),
                 color=color,
                 color_source=color_source,
+                material=snapmaker_slot.material if snapmaker_slot else None,
+                material_source="vendor_object" if snapmaker_slot and snapmaker_slot.material else None,
+                vendor=snapmaker_slot.vendor if snapmaker_slot else None,
+                subtype=snapmaker_slot.subtype if snapmaker_slot else None,
             )
         )
     return tuple(toolheads)
@@ -542,6 +583,22 @@ def _moonraker_temperature(payload: Any) -> MoonrakerTemperature | None:
 def _moonraker_color(payload: dict[str, Any], config: dict[str, Any], fallback: str | None = None) -> str | None:
     color, _source = _moonraker_color_with_source(payload, config, fallback)
     return color
+
+
+def _moonraker_toolhead_color(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    vendor_slot: SnapmakerU1FilamentSlot | None,
+    capability_fallback: str | None,
+) -> tuple[str | None, str | None]:
+    color, source = _moonraker_color_with_source(payload, config)
+    if color:
+        return color, source
+    if vendor_slot and vendor_slot.color:
+        return vendor_slot.color, "vendor_object"
+    if capability_fallback:
+        return capability_fallback, "saved_capabilities"
+    return None, None
 
 
 def _moonraker_color_with_source(
@@ -584,6 +641,40 @@ def _capability_tool_colors(toolheads: Any) -> dict[int, str]:
         if index is not None and color:
             colors[index] = color
     return colors
+
+
+def _snapmaker_u1_filament_slots(status: dict[str, Any]) -> dict[int, SnapmakerU1FilamentSlot]:
+    filament_detect = status.get("filament_detect") if isinstance(status, dict) else None
+    info_items = filament_detect.get("info") if isinstance(filament_detect, dict) else None
+    if not isinstance(info_items, list):
+        return {}
+    slots: dict[int, SnapmakerU1FilamentSlot] = {}
+    for index, item in enumerate(info_items):
+        if not isinstance(item, dict) or _snapmaker_filament_is_empty(item):
+            continue
+        slots[index] = SnapmakerU1FilamentSlot(
+            index=index,
+            color=_snapmaker_color(item),
+            material=_string_or_none(item.get("MAIN_TYPE")),
+            vendor=_string_or_none(item.get("VENDOR")) or _string_or_none(item.get("MANUFACTURER")),
+            subtype=_string_or_none(item.get("SUB_TYPE")),
+        )
+    return slots
+
+
+def _snapmaker_filament_is_empty(item: dict[str, Any]) -> bool:
+    material = (_string_or_none(item.get("MAIN_TYPE")) or "").upper()
+    vendor = (_string_or_none(item.get("VENDOR")) or "").upper()
+    manufacturer = (_string_or_none(item.get("MANUFACTURER")) or "").upper()
+    return material in {"", "NONE"} and vendor in {"", "NONE"} and manufacturer in {"", "NONE"}
+
+
+def _snapmaker_color(item: dict[str, Any]) -> str | None:
+    for key in ("RGB_1", "ARGB_COLOR"):
+        value = _int_or_none(item.get(key))
+        if value is not None:
+            return f"#{value & 0xFFFFFF:06x}"
+    return None
 
 
 def _is_moonraker_extruder_name(name: str) -> bool:

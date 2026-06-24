@@ -269,14 +269,24 @@ describe("App", () => {
                   label: "T0",
                   index: 0,
                   current_temperature: { current_c: 210, target_c: 215, power: 0.33 },
-                  color: "#ff0000"
+                  color: "#ff0000",
+                  color_source: "vendor_object",
+                  material: "PLA",
+                  material_source: "vendor_object",
+                  vendor: "Snapmaker",
+                  subtype: "SnapSpeed"
                 },
                 {
                   name: "extruder1",
                   label: "T1",
                   index: 1,
                   current_temperature: { current_c: 35, target_c: 0, power: null },
-                  color: null
+                  color: null,
+                  color_source: null,
+                  material: null,
+                  material_source: null,
+                  vendor: null,
+                  subtype: null
                 }
               ],
               raw_status: {},
@@ -346,6 +356,7 @@ describe("App", () => {
     expect(screen.getByText("60 C / 65 C")).toBeInTheDocument();
     expect(screen.getByText("210 C / 215 C")).toBeInTheDocument();
     expect(screen.getByText("#ff0000")).toBeInTheDocument();
+    expect(screen.getByText("PLA / Snapmaker / SnapSpeed")).toBeInTheDocument();
     expect(screen.getByText("Color unknown")).toBeInTheDocument();
     expect(screen.getByText("0 extension agents")).toBeInTheDocument();
     expect(screen.getByText("Spoolman unavailable")).toBeInTheDocument();
