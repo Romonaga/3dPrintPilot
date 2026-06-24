@@ -13,6 +13,8 @@ from backend.domains.printers.adapters import (
     capabilities_for_service_type,
     cancel_moonraker_print,
     engine_catalog,
+    fetch_read_only_status,
+    infer_adapter_type,
     list_moonraker_files,
     parse_moonraker_capability_diagnostics,
     parse_moonraker_job_status,
@@ -83,6 +85,16 @@ class FakeLegacyMoonrakerPrinter(FakeMoonrakerPrinter):
         "safe_endpoints": ["/server/info", "/printer/info", "/printer/objects/list"],
         "control_enabled": False,
     }
+
+
+class FakeBambuMqttPrinter(FakePrinter):
+    name = "Bambu A1"
+    host = "192.168.1.53"
+    port = 8883
+    protocol = "mqtts"
+    printer_type = "mqtt_probe:bambu_mqtt"
+    adapter_type = "bambu_mqtt"
+    capabilities = capabilities_for_service_type("mqtt_probe:bambu_mqtt")
 
 
 class FakePrinterStore:
@@ -515,6 +527,42 @@ def test_printer_engine_catalog_can_refresh_without_restarting_web():
         "extension_agent",
         "saved_capabilities",
     ]
+    assert any(engine["engine_id"] == "bambu_mqtt" for engine in refresh_response.json())
+
+
+def test_bambu_mqtt_engine_catalog_and_status_are_read_only():
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakeBambuMqttPrinter())
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    engines_response = client.get("/api/printers/engines")
+    status_response = client.get("/api/printers/12/status")
+
+    bambu_engine = next(engine for engine in engines_response.json() if engine["engine_id"] == "bambu_mqtt")
+    assert infer_adapter_type("mqtt_probe:bambu_mqtt") == "bambu_mqtt"
+    assert bambu_engine["capabilities"]["control_enabled"] is False
+    assert bambu_engine["capabilities"]["credential_required"] is True
+    assert bambu_engine["capabilities"]["pushall_min_interval_seconds"] == 300
+    assert status_response.status_code == 200
+    assert status_response.json()["adapter_type"] == "bambu_mqtt"
+    assert status_response.json()["state"] == "credentials_required"
+    assert status_response.json()["raw_status"]["control_enabled"] is False
+
+
+def test_bambu_mqtt_status_reports_configured_foundation_without_live_telemetry():
+    printer = FakeBambuMqttPrinter()
+    printer.credential_secret_name = "printer-12-bambu-lan"
+    printer.capabilities = {**printer.capabilities, "device_id": "00M00A000000000", "control_enabled": True}
+
+    status = fetch_read_only_status(printer)
+
+    assert status.adapter_type == "bambu_mqtt"
+    assert status.state == "telemetry_pending"
+    assert status.raw_status["credential_configured"] is True
+    assert status.raw_status["device_id_configured"] is True
+    assert status.capabilities["control_enabled"] is False
+    assert status.capabilities["telemetry_source_priority"] == ["bambu_mqtt_report", "saved_capabilities"]
 
 
 def test_moonraker_capability_diagnostics_parses_optional_integrations():
