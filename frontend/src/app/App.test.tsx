@@ -903,6 +903,85 @@ describe("App", () => {
     expect(fetchMock).not.toHaveBeenCalledWith("/api/printers/scan", expect.anything());
   });
 
+  it("shows Bambu MQTT telemetry from saved printer refresh without scanning", async () => {
+    const fetchMock = mockApiFetch((input) => {
+      const url = String(input);
+      if (url === "/api/printers") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: 8,
+                name: "Bambu A1",
+                host: "192.168.1.53",
+                port: 8883,
+                protocol: "mqtts",
+                printer_type: "mqtt_probe:bambu_mqtt",
+                state: "confirmed",
+                identity_key: "bambu:00M00A000000000",
+                adapter_type: "bambu_mqtt",
+                capabilities: { adapter: "bambu_mqtt" },
+                credential_configured: true,
+                last_status: {},
+                last_status_at: null,
+                build_volume_x_mm: null,
+                build_volume_y_mm: null,
+                build_volume_z_mm: null
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/printers/8/status") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              printer_id: 8,
+              adapter_type: "bambu_mqtt",
+              state: "printing",
+              capabilities: { adapter: "bambu_mqtt", credential_required: true },
+              raw_status: {
+                source: "bambu_mqtt",
+                job: { state: "printing", filename: "benchy.3mf", progress: 42 },
+                temperatures: {
+                  nozzle_current_c: 219.5,
+                  nozzle_target_c: 220,
+                  bed_current_c: 59.1,
+                  bed_target_c: 60
+                },
+                ams: {
+                  active_tray: "1",
+                  trays: [
+                    { id: "0", active: false, color: "#00aaff", material: "PLA" },
+                    { id: "1", active: true, color: "#ff3300", material: "PLA", subtype: "Bambu PLA Matte" }
+                  ]
+                },
+                errors: { hms: [] },
+                control_enabled: false
+              },
+              observed_at: "2026-06-24T17:50:00Z"
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Printers" }));
+    await user.click(await screen.findByLabelText("Refresh Bambu A1"));
+
+    expect(await screen.findByText("Job: printing (42%)")).toBeInTheDocument();
+    expect(screen.getByText("Nozzle 220C/220C / Bed 59C/60C")).toBeInTheDocument();
+    expect(screen.getByText("AMS T1 active: PLA / Bambu PLA Matte #ff3300")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/printers/8/status", expect.anything());
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/printers/8/job-status", expect.anything());
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/printers/scan", expect.anything());
+  });
+
   it("starts a LAN scan from the dashboard Scan LAN action", async () => {
     const fetchMock = mockApiFetch((input, init) => {
       const url = String(input);
