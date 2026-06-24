@@ -53,6 +53,11 @@ class MoonrakerToolheadTelemetry:
     index: int
     current_temperature: MoonrakerTemperature | None
     color: str | None = None
+    color_source: str | None = None
+    material: str | None = None
+    material_source: str | None = None
+    vendor: str | None = None
+    subtype: str | None = None
 
 
 @dataclass(frozen=True)
@@ -168,6 +173,13 @@ def capabilities_for_service_type(service_type: str | None) -> dict[str, Any]:
             "allowed_file_extensions": [".gcode", ".gcode.gz"],
             "allowed_job_actions": ["start", "pause", "resume", "cancel"],
             "raw_gcode_console": False,
+            "telemetry_source_priority": [
+                "moonraker_object",
+                "vendor_object",
+                "spoolman",
+                "extension_agent",
+                "saved_capabilities",
+            ],
         }
     return {"adapter": "unknown", "read_only_status": False, "control_enabled": False}
 
@@ -404,13 +416,15 @@ def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str
         index = _moonraker_extruder_index(name)
         payload = status.get(name) if isinstance(status.get(name), dict) else {}
         config = settings.get(name) if isinstance(settings.get(name), dict) else {}
+        color, color_source = _moonraker_color_with_source(payload, config, capability_colors.get(index))
         toolheads.append(
             MoonrakerToolheadTelemetry(
                 name=name,
                 label=f"T{index}",
                 index=index,
                 current_temperature=_moonraker_temperature(payload),
-                color=_moonraker_color(payload, config, capability_colors.get(index)),
+                color=color,
+                color_source=color_source,
             )
         )
     return tuple(toolheads)
@@ -428,11 +442,22 @@ def _moonraker_temperature(payload: Any) -> MoonrakerTemperature | None:
 
 
 def _moonraker_color(payload: dict[str, Any], config: dict[str, Any], fallback: str | None = None) -> str | None:
+    color, _source = _moonraker_color_with_source(payload, config, fallback)
+    return color
+
+
+def _moonraker_color_with_source(
+    payload: dict[str, Any],
+    config: dict[str, Any],
+    fallback: str | None = None,
+) -> tuple[str | None, str | None]:
     for source in (payload, config):
         color = _color_from_mapping(source)
         if color:
-            return color
-    return fallback
+            return color, "moonraker_object" if source is payload else "moonraker_config"
+    if fallback:
+        return fallback, "saved_capabilities"
+    return None, None
 
 
 def _color_from_mapping(source: dict[str, Any]) -> str | None:

@@ -96,6 +96,11 @@ type ApiPrinterToolheadTelemetry = {
   index: number;
   current_temperature: ApiPrinterTemperature | null;
   color: string | null;
+  color_source?: string | null;
+  material?: string | null;
+  material_source?: string | null;
+  vendor?: string | null;
+  subtype?: string | null;
 };
 
 type ApiPrinterFile = {
@@ -385,7 +390,12 @@ function fromApiPrinterJobStatus(status: ApiPrinterJobStatus): PrinterJobStatus 
       label: toolhead.label,
       index: toolhead.index,
       currentTemperature: toolhead.current_temperature ? fromApiPrinterTemperature(toolhead.current_temperature) : null,
-      color: toolhead.color
+      color: toolhead.color,
+      colorSource: toolhead.color_source ?? null,
+      material: toolhead.material ?? null,
+      materialSource: toolhead.material_source ?? null,
+      vendor: toolhead.vendor ?? null,
+      subtype: toolhead.subtype ?? null
     })),
     rawStatus: status.raw_status,
     observedAt: status.observed_at

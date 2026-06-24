@@ -68,6 +68,11 @@ class PrinterToolheadTelemetryResponse(BaseModel):
     index: int
     current_temperature: PrinterTemperatureResponse | None = None
     color: str | None = None
+    color_source: str | None = None
+    material: str | None = None
+    material_source: str | None = None
+    vendor: str | None = None
+    subtype: str | None = None
 
 
 class PrinterJobStatusResponse(BaseModel):

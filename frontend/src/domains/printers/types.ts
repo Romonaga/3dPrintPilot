@@ -41,6 +41,11 @@ export type PrinterToolheadTelemetry = {
   index: number;
   currentTemperature: PrinterTemperature | null;
   color: string | null;
+  colorSource: string | null;
+  material: string | null;
+  materialSource: string | null;
+  vendor: string | null;
+  subtype: string | null;
 };
 
 export type PrinterFile = {
