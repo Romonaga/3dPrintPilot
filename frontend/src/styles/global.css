@@ -993,6 +993,34 @@ h3 {
   margin-top: 6px;
 }
 
+.printer-refresh-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.printer-refresh-summary span {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
+.printer-refresh-error {
+  margin-top: 8px;
+  color: var(--warn-text);
+  font-weight: 700;
+}
+
+.printer-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .endpoint-list {
   display: grid;
   gap: 6px;

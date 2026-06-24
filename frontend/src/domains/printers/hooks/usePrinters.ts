@@ -1,10 +1,21 @@
 import { useEffect, useState } from "react";
-import { confirmDiscoveredPrinter, deletePrinter, listPrinters, scanPrinters } from "../api/printersApi";
+import {
+  confirmDiscoveredPrinter,
+  deletePrinter,
+  getPrinterCapabilityDiagnostics,
+  getPrinterJobStatus,
+  getPrinterStatus,
+  listPrinters,
+  scanPrinters
+} from "../api/printersApi";
 import {
   type DiscoveredPrinter,
   type Printer,
+  type PrinterCapabilityDiagnostics,
+  type PrinterJobStatus,
   type PrinterScanResult,
-  type PrinterScanSettings
+  type PrinterScanSettings,
+  type PrinterStatus
 } from "../types";
 
 const defaultScanSettings: PrinterScanSettings = {
@@ -20,8 +31,18 @@ type UsePrintersOptions = {
   enabled?: boolean;
 };
 
+export type PrinterRefreshInfo = {
+  status: PrinterStatus;
+  jobStatus: PrinterJobStatus | null;
+  capabilityDiagnostics: PrinterCapabilityDiagnostics | null;
+  refreshedAt: string;
+};
+
 export function usePrinters({ enabled = true }: UsePrintersOptions = {}) {
   const [printers, setPrinters] = useState<Printer[]>([]);
+  const [printerRefreshInfo, setPrinterRefreshInfo] = useState<Record<number, PrinterRefreshInfo>>({});
+  const [printerRefreshErrors, setPrinterRefreshErrors] = useState<Record<number, string>>({});
+  const [refreshingPrinterIds, setRefreshingPrinterIds] = useState<Set<number>>(() => new Set());
   const [scanResult, setScanResult] = useState<PrinterScanResult | null>(null);
   const [scanSettings, setScanSettings] = useState<PrinterScanSettings>(defaultScanSettings);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +59,66 @@ export function usePrinters({ enabled = true }: UsePrintersOptions = {}) {
       setError(loadError instanceof Error ? loadError.message : "Printer list failed");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function refreshPrinterInfo(printerId: number) {
+    const printer = printers.find((item) => item.id === printerId);
+    if (!printer) {
+      return;
+    }
+    setRefreshingPrinterIds((current) => new Set(current).add(printerId));
+    setPrinterRefreshErrors((current) => removeRecordKey(current, printerId));
+    try {
+      const status = await getPrinterStatus(printerId);
+      const refreshedAt = new Date().toISOString();
+      const supportsMoonraker = supportsMoonrakerRefresh(printer, status);
+      const [jobResult, diagnosticsResult] = supportsMoonraker
+        ? await Promise.allSettled([getPrinterJobStatus(printerId), getPrinterCapabilityDiagnostics(printerId)])
+        : [null, null];
+      const jobStatus = jobResult && jobResult.status === "fulfilled" ? jobResult.value : null;
+      const capabilityDiagnostics = diagnosticsResult && diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value : null;
+
+      setPrinters((current) =>
+        current.map((item) =>
+          item.id === printerId
+            ? {
+                ...item,
+                state: status.state,
+                adapterType: status.adapterType,
+                capabilities: { ...item.capabilities, ...status.capabilities },
+                lastStatus: status.rawStatus,
+                lastStatusAt: status.observedAt
+              }
+            : item
+        )
+      );
+      setPrinterRefreshInfo((current) => ({
+        ...current,
+        [printerId]: { status, jobStatus, capabilityDiagnostics, refreshedAt }
+      }));
+
+      const partialErrors = [
+        jobResult && jobResult.status === "rejected" ? "job telemetry" : null,
+        diagnosticsResult && diagnosticsResult.status === "rejected" ? "capability diagnostics" : null
+      ].filter((item): item is string => item !== null);
+      if (partialErrors.length > 0) {
+        setPrinterRefreshErrors((current) => ({
+          ...current,
+          [printerId]: `Refreshed status; ${partialErrors.join(" and ")} unavailable`
+        }));
+      }
+    } catch (refreshError) {
+      setPrinterRefreshErrors((current) => ({
+        ...current,
+        [printerId]: refreshError instanceof Error ? refreshError.message : "Printer refresh failed"
+      }));
+    } finally {
+      setRefreshingPrinterIds((current) => {
+        const next = new Set(current);
+        next.delete(printerId);
+        return next;
+      });
     }
   }
 
@@ -80,6 +161,9 @@ export function usePrinters({ enabled = true }: UsePrintersOptions = {}) {
   useEffect(() => {
     if (!enabled) {
       setPrinters([]);
+      setPrinterRefreshInfo({});
+      setPrinterRefreshErrors({});
+      setRefreshingPrinterIds(new Set());
       setScanResult(null);
       setError(null);
       setIsLoading(false);
@@ -97,8 +181,12 @@ export function usePrinters({ enabled = true }: UsePrintersOptions = {}) {
     isAdding: addingAction !== null,
     isLoading,
     isScanning,
+    printerRefreshErrors,
+    printerRefreshInfo,
     printers,
+    refreshPrinterInfo,
     refreshPrinters,
+    refreshingPrinterIds,
     removePrinter,
     runScan,
     scanSettings,
@@ -157,4 +245,16 @@ function discoveryMatchesPrinter(discovered: DiscoveredPrinter, confirmed: Print
     discovered.port === confirmed.port &&
     discovered.protocol === confirmed.protocol
   );
+}
+
+function supportsMoonrakerRefresh(printer: Printer, status: PrinterStatus) {
+  const printerCapabilityAdapter = typeof printer.capabilities.adapter === "string" ? printer.capabilities.adapter : "";
+  const statusCapabilityAdapter = typeof status.capabilities.adapter === "string" ? status.capabilities.adapter : "";
+  const haystack = `${printer.adapterType ?? ""} ${printer.printerType} ${status.adapterType} ${printerCapabilityAdapter} ${statusCapabilityAdapter}`.toLowerCase();
+  return ["moonraker", "klipper", "snapmaker", "creality"].some((marker) => haystack.includes(marker));
+}
+
+function removeRecordKey<T>(record: Record<number, T>, key: number) {
+  const { [key]: _removed, ...rest } = record;
+  return rest;
 }

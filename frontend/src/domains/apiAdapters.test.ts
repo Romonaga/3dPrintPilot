@@ -7,6 +7,7 @@ import {
   cancelPrinterPrint,
   getPrinterCapabilityDiagnostics,
   getPrinterJobStatus,
+  getPrinterStatus,
   listPrinterEngines,
   listPrinterFiles,
   pausePrinterPrint,
@@ -303,6 +304,28 @@ describe("domain API adapters", () => {
 
     const [url] = vi.mocked(fetch).mock.calls[0];
     expect(url).toBe("/api/printers/4/capability-diagnostics");
+  });
+
+  it("maps printer status refresh responses", async () => {
+    mockJson({
+      printer_id: 4,
+      adapter_type: "moonraker",
+      state: "ready",
+      capabilities: { adapter: "moonraker", moonraker_version: "v0.9.0" },
+      raw_status: { server: { result: { klippy_state: "ready" } } },
+      observed_at: "2026-06-24T17:40:00Z"
+    });
+
+    await expect(getPrinterStatus(4)).resolves.toMatchObject({
+      printerId: 4,
+      adapterType: "moonraker",
+      state: "ready",
+      capabilities: { adapter: "moonraker", moonraker_version: "v0.9.0" },
+      rawStatus: { server: { result: { klippy_state: "ready" } } }
+    });
+
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("/api/printers/4/status");
   });
 
   it("maps printer engine catalog list and refresh endpoints", async () => {

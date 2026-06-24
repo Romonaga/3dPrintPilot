@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
 import { refreshPrinterEngines } from "../api/printersApi";
 import { PrinterCapabilitySummary } from "../components/PrinterCapabilitySummary";
-import { discoveredPrinterKey, type PrintersState } from "../hooks/usePrinters";
+import { discoveredPrinterKey, type PrinterRefreshInfo, type PrintersState } from "../hooks/usePrinters";
 
 type PrintersPageProps = {
   autoStartScanRequestId?: number | null;
@@ -183,49 +183,68 @@ export default function PrintersPage({
           <span className="status-badge muted">{printers.isLoading ? "Loading" : `${printers.printers.length} saved`}</span>
         </div>
         <div className="printer-list">
-          {printers.printers.map((printer) => (
-            <article
-              aria-label={`Saved printer ${printer.name}`}
-              className="printer-row printer-known-row"
-              key={printer.id}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                setContextMenu({
-                  printerId: printer.id,
-                  printerName: printer.name,
-                  x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
-                  y: Math.max(8, Math.min(event.clientY, window.innerHeight - 96))
-                });
-              }}
-            >
-              <div className="printer-row-main">
-                <div>
-                  <h3>{printer.name}</h3>
-                  <p>
-                    {printer.protocol}://{printer.host}:{printer.port}
-                  </p>
-                  <p>{formatBuildVolume(printer.buildVolumeXmm, printer.buildVolumeYmm, printer.buildVolumeZmm)}</p>
-                  <PrinterCapabilitySummary
-                    ariaLabel={`Capabilities for ${printer.name}`}
-                    emptyLabel="Capabilities unknown"
-                    printer={printer}
-                  />
+          {printers.printers.map((printer) => {
+            const refreshInfo = printers.printerRefreshInfo[printer.id] ?? null;
+            const refreshError = printers.printerRefreshErrors[printer.id] ?? null;
+            const isRefreshing = printers.refreshingPrinterIds.has(printer.id);
+            return (
+              <article
+                aria-label={`Saved printer ${printer.name}`}
+                className="printer-row printer-known-row"
+                key={printer.id}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setContextMenu({
+                    printerId: printer.id,
+                    printerName: printer.name,
+                    x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
+                    y: Math.max(8, Math.min(event.clientY, window.innerHeight - 96))
+                  });
+                }}
+              >
+                <div className="printer-row-main">
+                  <div>
+                    <h3>{printer.name}</h3>
+                    <p>
+                      {printer.protocol}://{printer.host}:{printer.port}
+                    </p>
+                    <p>{formatBuildVolume(printer.buildVolumeXmm, printer.buildVolumeYmm, printer.buildVolumeZmm)}</p>
+                    <PrinterCapabilitySummary
+                      ariaLabel={`Capabilities for ${printer.name}`}
+                      emptyLabel="Capabilities unknown"
+                      printer={printer}
+                    />
+                    {refreshInfo ? <PrinterRefreshSummary refreshInfo={refreshInfo} /> : null}
+                    {refreshError ? <p className="printer-refresh-error">{refreshError}</p> : null}
+                  </div>
+                  <div className="row-meta">
+                    <span>{printer.printerType}</span>
+                    <strong>{refreshInfo?.status.state ?? printer.state}</strong>
+                    <div className="printer-card-actions">
+                      <button
+                        aria-label={`Refresh ${printer.name}`}
+                        className="icon-only-button"
+                        disabled={isRefreshing}
+                        onClick={() => void printers.refreshPrinterInfo(printer.id)}
+                        title="Refresh printer info"
+                        type="button"
+                      >
+                        {isRefreshing ? <Spinner size={14} /> : <RefreshCw size={16} aria-hidden="true" />}
+                      </button>
+                      <button
+                        aria-label={`Remove ${printer.name}`}
+                        className="icon-only-button"
+                        type="button"
+                        onClick={() => void printers.removePrinter(printer.id)}
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="row-meta">
-                  <span>{printer.printerType}</span>
-                  <strong>{printer.state}</strong>
-                  <button
-                    aria-label={`Remove ${printer.name}`}
-                    className="icon-only-button"
-                    type="button"
-                    onClick={() => void printers.removePrinter(printer.id)}
-                  >
-                    <Trash2 size={16} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
           {!printers.isLoading && printers.printers.length === 0 ? <p className="empty-text">No saved printers yet.</p> : null}
         </div>
       </section>
@@ -371,6 +390,68 @@ export default function PrintersPage({
 
 function formatEndpoint(protocol: string, host: string, port: number) {
   return `${protocol}://${host}:${port}`;
+}
+
+function PrinterRefreshSummary({ refreshInfo }: { refreshInfo: PrinterRefreshInfo }) {
+  const jobLabel = formatJobLabel(refreshInfo);
+  const filamentLabels = formatFilamentLabels(refreshInfo);
+  const diagnosticLabel = formatDiagnosticLabel(refreshInfo);
+  return (
+    <div className="printer-refresh-summary" aria-label="Refreshed printer info">
+      <span>State: {refreshInfo.status.state}</span>
+      {jobLabel ? <span>{jobLabel}</span> : null}
+      {filamentLabels.map((label) => (
+        <span key={label}>{label}</span>
+      ))}
+      {diagnosticLabel ? <span>{diagnosticLabel}</span> : null}
+    </div>
+  );
+}
+
+function formatJobLabel(refreshInfo: PrinterRefreshInfo) {
+  const jobStatus = refreshInfo.jobStatus;
+  if (!jobStatus) {
+    return null;
+  }
+  const progress = formatProgressPercent(jobStatus.progress);
+  const filename = jobStatus.filename ? ` - ${jobStatus.filename}` : "";
+  return progress === null ? `Job: ${jobStatus.state}${filename}` : `Job: ${jobStatus.state}${filename} (${progress}%)`;
+}
+
+function formatFilamentLabels(refreshInfo: PrinterRefreshInfo) {
+  return (refreshInfo.jobStatus?.toolheads ?? [])
+    .map((toolhead) => {
+      const material = [toolhead.material, toolhead.vendor, toolhead.subtype].filter(Boolean).join(" / ");
+      if (material && toolhead.color) {
+        return `${toolhead.label}: ${material} ${toolhead.color}`;
+      }
+      if (material) {
+        return `${toolhead.label}: ${material}`;
+      }
+      if (toolhead.color) {
+        return `${toolhead.label}: ${toolhead.color}`;
+      }
+      return null;
+    })
+    .filter((label): label is string => label !== null);
+}
+
+function formatDiagnosticLabel(refreshInfo: PrinterRefreshInfo) {
+  const diagnostics = refreshInfo.capabilityDiagnostics;
+  if (!diagnostics) {
+    return null;
+  }
+  const agentCount = diagnostics.extensionAgents.length;
+  const spoolman = diagnostics.spoolmanAvailable ? "Spoolman available" : "Spoolman unavailable";
+  return `${agentCount} extension agents / ${spoolman}`;
+}
+
+function formatProgressPercent(progress: number | null | undefined) {
+  if (typeof progress !== "number" || !Number.isFinite(progress)) {
+    return null;
+  }
+  const normalized = progress <= 1 ? progress * 100 : progress;
+  return Math.max(0, Math.min(100, Math.round(normalized)));
 }
 
 function formatPorts(ports: number[]) {
