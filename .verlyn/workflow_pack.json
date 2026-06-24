@@ -1,16 +1,16 @@
 {
   "product": "Verlyn",
-  "workflow_pack_version": "2026.06.22.1",
+  "workflow_pack_version": "2026.06.24.1",
   "repo_name": "3dprintpilot",
   "install_mode": "governance",
   "installed_at": "2026-06-18T17:17:08.937383+00:00",
-  "refreshed_at": "2026-06-23T12:33:05.263138+00:00",
+  "refreshed_at": "2026-06-24T01:39:24.166877+00:00",
   "governance_pack": {
     "name": "verlyn-standard",
-    "version": "2026.06.22.1",
-    "manifest_hash": "97f126e5e673082c8bcb866300bb151f49417af2fe17e12ae151638e5cde9fbc",
+    "version": "2026.06.24.1",
+    "manifest_hash": "0d0ac24775d0c472f447139c75c37e7533fbd2e5a6a000b486bccdc69041d933",
     "source": "verlyn_api",
-    "refreshed_at": "2026-06-23T12:33:05.263138+00:00",
+    "refreshed_at": "2026-06-24T01:39:24.166877+00:00",
     "repo_owned_paths": [
       "RULES.md"
     ],
@@ -164,5 +164,5 @@
       }
     }
   },
-  "manifest_hash": "97f126e5e673082c8bcb866300bb151f49417af2fe17e12ae151638e5cde9fbc"
+  "manifest_hash": "0d0ac24775d0c472f447139c75c37e7533fbd2e5a6a000b486bccdc69041d933"
 }
