@@ -68,6 +68,14 @@ class MoonrakerActionResult:
 
 
 @dataclass(frozen=True)
+class MoonrakerExtensionResult:
+    agent: str
+    method: str
+    accepted: bool
+    raw_response: Any
+
+
+@dataclass(frozen=True)
 class MoonrakerCapabilityDiagnostics:
     adapter_type: str
     extension_agents_available: bool
@@ -99,6 +107,10 @@ class UnsupportedPrinterControlError(ValueError):
 
 
 class InvalidPrintFileError(ValueError):
+    pass
+
+
+class ExtensionMethodNotAllowedError(ValueError):
     pass
 
 
@@ -308,6 +320,25 @@ def fetch_moonraker_capability_diagnostics(
         spoolman_payload=spoolman_payload,
         probe_errors=errors,
     )
+
+
+def request_moonraker_extension(
+    printer: Printer,
+    agent: str,
+    method: str,
+    arguments: dict[str, Any] | None = None,
+    timeout_seconds: float = 5.0,
+) -> MoonrakerExtensionResult:
+    _require_moonraker_adapter(printer)
+    if not _moonraker_extension_method_allowed(printer.capabilities or {}, agent, method):
+        raise ExtensionMethodNotAllowedError("Moonraker extension method is not allowlisted for this printer")
+    base_url = _base_url(printer)
+    with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
+        payload = client.post(
+            f"{base_url}/server/extensions/request",
+            json={"agent": agent, "method": method, "arguments": arguments or {}},
+        ).json()
+    return MoonrakerExtensionResult(agent=agent, method=method, accepted=True, raw_response=payload)
 
 
 def parse_moonraker_capability_diagnostics(
@@ -607,6 +638,18 @@ def _spoolman_color(filament: dict[str, Any]) -> str | None:
     if len(normalized) != 6:
         return None
     return f"#{normalized.lower()}"
+
+
+def _moonraker_extension_method_allowed(capabilities: dict[str, Any], agent: str, method: str) -> bool:
+    allowed_methods = capabilities.get("moonraker_extension_methods")
+    if not isinstance(allowed_methods, list):
+        return False
+    for item in allowed_methods:
+        if not isinstance(item, dict):
+            continue
+        if _string_or_none(item.get("agent")) == agent and _string_or_none(item.get("method")) == method:
+            return True
+    return False
 
 
 def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str, Any]) -> tuple[MoonrakerToolheadTelemetry, ...]:

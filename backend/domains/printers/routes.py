@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.database import get_db_session
 from backend.domains.printers.adapters import (
+    ExtensionMethodNotAllowedError,
     InvalidPrintFileError,
     UnsupportedPrinterControlError,
     cancel_moonraker_print,
@@ -15,6 +16,7 @@ from backend.domains.printers.adapters import (
     list_moonraker_files,
     pause_moonraker_print,
     refresh_engine_catalog,
+    request_moonraker_extension,
     resume_moonraker_print,
     start_moonraker_print,
     upload_moonraker_file,
@@ -24,6 +26,7 @@ from backend.domains.printers.identity import is_stable_printer_identity, printe
 from backend.domains.printers.schemas.request import (
     ConfirmDiscoveredPrinterRequest,
     CreatePrinterRequest,
+    PrinterExtensionRequest,
     PrintFileRequest,
     PrinterScanRequest,
     UpdatePrinterRequest,
@@ -34,6 +37,7 @@ from backend.domains.printers.schemas.response import (
     PrinterCapabilityDiagnosticsResponse,
     PrinterEndpointGroupResponse,
     PrinterEngineResponse,
+    PrinterExtensionResponse,
     PrinterFileResponse,
     PrinterJobStatusResponse,
     PrinterResponse,
@@ -218,6 +222,34 @@ def read_printer_capability_diagnostics(
         spoolman_status=diagnostics.spoolman_status,
         probe_errors=diagnostics.probe_errors,
         observed_at=diagnostics.observed_at.isoformat(),
+    )
+
+
+@router.post("/{printer_id}/extensions/request", response_model=PrinterExtensionResponse)
+def request_printer_extension(
+    printer_id: int,
+    request: PrinterExtensionRequest,
+    _user=Depends(require_roles("admin")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterExtensionResponse:
+    printer = _get_printer_or_404(store, printer_id)
+    try:
+        result = request_moonraker_extension(
+            printer,
+            agent=request.agent,
+            method=request.method,
+            arguments=request.arguments,
+        )
+    except ExtensionMethodNotAllowedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except UnsupportedPrinterControlError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return PrinterExtensionResponse(
+        printer_id=printer.id,
+        agent=result.agent,
+        method=result.method,
+        accepted=result.accepted,
+        raw_response=result.raw_response,
     )
 
 

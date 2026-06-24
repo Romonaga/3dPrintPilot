@@ -112,6 +112,14 @@ class PrinterActionResponse(BaseModel):
     raw_response: dict | str | list | None = None
 
 
+class PrinterExtensionResponse(BaseModel):
+    printer_id: int
+    agent: str
+    method: str
+    accepted: bool
+    raw_response: dict | str | list | None = None
+
+
 class PrinterScanSummaryResponse(BaseModel):
     scan_run_id: int | None = None
     status: str
