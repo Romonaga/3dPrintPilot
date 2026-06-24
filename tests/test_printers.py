@@ -462,6 +462,38 @@ def test_moonraker_job_status_maps_snapmaker_u1_filament_slots():
     assert [toolhead.subtype for toolhead in status.toolheads] == [None, "SnapSpeed", "SnapSpeed", "SnapSpeed"]
 
 
+def test_moonraker_job_status_uses_spoolman_for_single_toolhead_metadata():
+    status = parse_moonraker_job_status(
+        {
+            "result": {
+                "status": {
+                    "print_stats": {"state": "standby"},
+                    "extruder": {"temperature": 28.0, "target": 0.0},
+                    "spoolman": {"spoolman_connected": True, "spool_id": 2},
+                    "spoolman_active_spool": {
+                        "response": {
+                            "id": 2,
+                            "filament": {
+                                "material": "PLA",
+                                "vendor": {"name": "Fusion"},
+                                "color_hex": "BD0B0B",
+                            },
+                        },
+                        "error": None,
+                    },
+                }
+            }
+        }
+    )
+
+    assert len(status.toolheads) == 1
+    assert status.toolheads[0].color == "#bd0b0b"
+    assert status.toolheads[0].color_source == "spoolman"
+    assert status.toolheads[0].material == "PLA"
+    assert status.toolheads[0].material_source == "spoolman"
+    assert status.toolheads[0].vendor == "Fusion"
+
+
 def test_printer_engine_catalog_can_refresh_without_restarting_web():
     app = create_app()
     app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakeMoonrakerPrinter())

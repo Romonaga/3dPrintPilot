@@ -87,6 +87,13 @@ class SnapmakerU1FilamentSlot:
     subtype: str | None = None
 
 
+@dataclass(frozen=True)
+class SpoolmanFilamentMetadata:
+    color: str | None = None
+    material: str | None = None
+    vendor: str | None = None
+
+
 class UnsupportedPrinterControlError(ValueError):
     pass
 
@@ -350,7 +357,9 @@ class MoonrakerTelemetryEngine:
             *snapmaker_objects,
         ]
         query = "&".join(quote(name, safe="") for name in dict.fromkeys(query_objects))
-        return self.client.get(f"{self.base_url}/printer/objects/query?{query}").json()
+        payload = self.client.get(f"{self.base_url}/printer/objects/query?{query}").json()
+        self._attach_spoolman_payload(payload)
+        return payload
 
     def _available_object_names(self) -> tuple[str, ...]:
         try:
@@ -358,6 +367,30 @@ class MoonrakerTelemetryEngine:
         except httpx.HTTPError:
             return ()
         return _moonraker_object_names_from_object_list(payload)
+
+    def _attach_spoolman_payload(self, payload: dict[str, Any]) -> None:
+        spoolman_payload, spoolman_error = _optional_moonraker_json(self.client, f"{self.base_url}/server/spoolman/status")
+        if spoolman_error or not isinstance(spoolman_payload, dict):
+            return
+        status = _moonraker_query_status(payload)
+        spoolman_status = _moonraker_spoolman_status(spoolman_payload)
+        if not isinstance(status, dict) or spoolman_status is None:
+            return
+        status["spoolman"] = spoolman_status
+        spool_id = _int_or_none(spoolman_status.get("spool_id"))
+        if spool_id is None:
+            return
+        active_spool_payload, active_spool_error = _optional_moonraker_post_json(
+            self.client,
+            f"{self.base_url}/server/spoolman/proxy",
+            {
+                "use_v2_response": True,
+                "request_method": "GET",
+                "path": f"/v1/spool/{spool_id}",
+            },
+        )
+        if active_spool_error is None and isinstance(active_spool_payload, dict):
+            status["spoolman_active_spool"] = active_spool_payload
 
 
 def parse_moonraker_job_status(payload: dict[str, Any], capabilities: dict[str, Any] | None = None) -> MoonrakerJobStatus:
@@ -501,6 +534,25 @@ def _optional_moonraker_json(client: httpx.Client, url: str) -> tuple[dict[str, 
     return payload if isinstance(payload, dict) else None, None
 
 
+def _optional_moonraker_post_json(client: httpx.Client, url: str, payload: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        response = client.post(url, json=payload)
+        response_payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        return None, "unreachable"
+    if response.status_code == 404:
+        return response_payload if isinstance(response_payload, dict) else None, "not_configured"
+    if response.status_code >= 400:
+        return response_payload if isinstance(response_payload, dict) else None, f"http_{response.status_code}"
+    return response_payload if isinstance(response_payload, dict) else None, None
+
+
+def _moonraker_query_status(payload: dict[str, Any]) -> dict[str, Any] | None:
+    result = payload.get("result", payload)
+    status = result.get("status", result) if isinstance(result, dict) else None
+    return status if isinstance(status, dict) else None
+
+
 def _moonraker_extension_agents(payload: dict[str, Any] | None) -> tuple[dict[str, Any], ...]:
     if not isinstance(payload, dict):
         return ()
@@ -529,6 +581,34 @@ def _moonraker_spoolman_status(payload: dict[str, Any] | None) -> dict[str, Any]
     return result
 
 
+def _spoolman_filament_metadata(status: dict[str, Any]) -> SpoolmanFilamentMetadata | None:
+    active_spool = status.get("spoolman_active_spool") if isinstance(status, dict) else None
+    if not isinstance(active_spool, dict):
+        return None
+    response = active_spool.get("response", active_spool)
+    if not isinstance(response, dict):
+        return None
+    filament = response.get("filament")
+    if not isinstance(filament, dict):
+        return None
+    vendor = filament.get("vendor")
+    return SpoolmanFilamentMetadata(
+        color=_spoolman_color(filament),
+        material=_string_or_none(filament.get("material")),
+        vendor=_string_or_none(vendor.get("name")) if isinstance(vendor, dict) else _string_or_none(vendor),
+    )
+
+
+def _spoolman_color(filament: dict[str, Any]) -> str | None:
+    color = _string_or_none(filament.get("color_hex"))
+    if not color:
+        return None
+    normalized = color.lstrip("#").strip()
+    if len(normalized) != 6:
+        return None
+    return f"#{normalized.lower()}"
+
+
 def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str, Any]) -> tuple[MoonrakerToolheadTelemetry, ...]:
     if not isinstance(status, dict):
         return ()
@@ -541,6 +621,7 @@ def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str
     capability_toolheads = capabilities.get("toolheads")
     capability_colors = _capability_tool_colors(capability_toolheads)
     snapmaker_slots = _snapmaker_u1_filament_slots(status)
+    spoolman_metadata = _spoolman_filament_metadata(status)
     names = sorted(
         {key for key in status if _is_moonraker_extruder_name(key)} | {key for key in settings if _is_moonraker_extruder_name(key)},
         key=_moonraker_extruder_sort_key,
@@ -551,7 +632,11 @@ def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str
         payload = status.get(name) if isinstance(status.get(name), dict) else {}
         config = settings.get(name) if isinstance(settings.get(name), dict) else {}
         snapmaker_slot = snapmaker_slots.get(index)
-        color, color_source = _moonraker_toolhead_color(payload, config, snapmaker_slot, capability_colors.get(index))
+        spoolman_slot = spoolman_metadata if len(names) == 1 else None
+        color, color_source = _moonraker_toolhead_color(payload, config, snapmaker_slot, spoolman_slot, capability_colors.get(index))
+        material = snapmaker_slot.material if snapmaker_slot else spoolman_slot.material if spoolman_slot else None
+        material_source = "vendor_object" if snapmaker_slot and snapmaker_slot.material else "spoolman" if spoolman_slot and spoolman_slot.material else None
+        vendor = snapmaker_slot.vendor if snapmaker_slot else spoolman_slot.vendor if spoolman_slot else None
         toolheads.append(
             MoonrakerToolheadTelemetry(
                 name=name,
@@ -560,9 +645,9 @@ def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str
                 current_temperature=_moonraker_temperature(payload),
                 color=color,
                 color_source=color_source,
-                material=snapmaker_slot.material if snapmaker_slot else None,
-                material_source="vendor_object" if snapmaker_slot and snapmaker_slot.material else None,
-                vendor=snapmaker_slot.vendor if snapmaker_slot else None,
+                material=material,
+                material_source=material_source,
+                vendor=vendor,
                 subtype=snapmaker_slot.subtype if snapmaker_slot else None,
             )
         )
@@ -589,6 +674,7 @@ def _moonraker_toolhead_color(
     payload: dict[str, Any],
     config: dict[str, Any],
     vendor_slot: SnapmakerU1FilamentSlot | None,
+    spoolman_metadata: SpoolmanFilamentMetadata | None,
     capability_fallback: str | None,
 ) -> tuple[str | None, str | None]:
     color, source = _moonraker_color_with_source(payload, config)
@@ -596,6 +682,8 @@ def _moonraker_toolhead_color(
         return color, source
     if vendor_slot and vendor_slot.color:
         return vendor_slot.color, "vendor_object"
+    if spoolman_metadata and spoolman_metadata.color:
+        return spoolman_metadata.color, "spoolman"
     if capability_fallback:
         return capability_fallback, "saved_capabilities"
     return None, None
