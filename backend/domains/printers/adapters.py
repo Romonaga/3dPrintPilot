@@ -67,6 +67,17 @@ class MoonrakerActionResult:
     raw_response: Any
 
 
+@dataclass(frozen=True)
+class MoonrakerCapabilityDiagnostics:
+    adapter_type: str
+    extension_agents_available: bool
+    extension_agents: tuple[dict[str, Any], ...]
+    spoolman_available: bool
+    spoolman_status: dict[str, Any] | None
+    probe_errors: dict[str, str]
+    observed_at: datetime
+
+
 class UnsupportedPrinterControlError(ValueError):
     pass
 
@@ -262,6 +273,46 @@ def fetch_moonraker_job_status(printer: Printer, timeout_seconds: float = 2.0) -
     return engine.fetch_job_status(printer, timeout_seconds=timeout_seconds)
 
 
+def fetch_moonraker_capability_diagnostics(
+    printer: Printer,
+    timeout_seconds: float = 2.0,
+) -> MoonrakerCapabilityDiagnostics:
+    _require_moonraker_adapter(printer)
+    base_url = _base_url(printer)
+    with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
+        extensions_payload, extensions_error = _optional_moonraker_json(client, f"{base_url}/server/extensions/list")
+        spoolman_payload, spoolman_error = _optional_moonraker_json(client, f"{base_url}/server/spoolman/status")
+    errors = {}
+    if extensions_error:
+        errors["extensions"] = extensions_error
+    if spoolman_error:
+        errors["spoolman"] = spoolman_error
+    return parse_moonraker_capability_diagnostics(
+        extensions_payload=extensions_payload,
+        spoolman_payload=spoolman_payload,
+        probe_errors=errors,
+    )
+
+
+def parse_moonraker_capability_diagnostics(
+    extensions_payload: dict[str, Any] | None = None,
+    spoolman_payload: dict[str, Any] | None = None,
+    probe_errors: dict[str, str] | None = None,
+) -> MoonrakerCapabilityDiagnostics:
+    errors = dict(probe_errors or {})
+    extension_agents = _moonraker_extension_agents(extensions_payload)
+    spoolman_status = _moonraker_spoolman_status(spoolman_payload)
+    return MoonrakerCapabilityDiagnostics(
+        adapter_type="moonraker",
+        extension_agents_available=bool(extension_agents),
+        extension_agents=extension_agents,
+        spoolman_available=spoolman_status is not None and "spoolman" not in errors,
+        spoolman_status=spoolman_status,
+        probe_errors=errors,
+        observed_at=datetime.now(UTC),
+    )
+
+
 class MoonrakerTelemetryEngine:
     def __init__(self, client: httpx.Client, base_url: str) -> None:
         self.client = client
@@ -371,11 +422,17 @@ def _base_url(printer: Printer) -> str:
 
 
 def _require_moonraker_control(printer: Printer) -> None:
-    adapter_type = printer.adapter_type or infer_adapter_type(None, printer.printer_type)
+    _require_moonraker_adapter(printer)
     stored_capabilities = printer.capabilities or {}
     inferred_capabilities = capabilities_for_service_type(printer.printer_type)
     control_enabled = bool(inferred_capabilities.get("control_enabled") or stored_capabilities.get("control_enabled"))
-    if adapter_type != "moonraker" or not control_enabled:
+    if not control_enabled:
+        raise UnsupportedPrinterControlError("Moonraker file and job controls are not available for this printer")
+
+
+def _require_moonraker_adapter(printer: Printer) -> None:
+    adapter_type = printer.adapter_type or infer_adapter_type(None, printer.printer_type)
+    if adapter_type != "moonraker":
         raise UnsupportedPrinterControlError("Moonraker file and job controls are not available for this printer")
 
 
@@ -394,6 +451,47 @@ def _moonraker_extruder_names_from_object_list(payload: dict[str, Any]) -> tuple
         return ()
     names = [name for name in objects if isinstance(name, str) and _is_moonraker_extruder_name(name)]
     return tuple(sorted(set(names), key=_moonraker_extruder_sort_key))
+
+
+def _optional_moonraker_json(client: httpx.Client, url: str) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        response = client.get(url)
+        payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        return None, "unreachable"
+    if response.status_code == 404:
+        return payload if isinstance(payload, dict) else None, "not_configured"
+    if response.status_code >= 400:
+        return payload if isinstance(payload, dict) else None, f"http_{response.status_code}"
+    return payload if isinstance(payload, dict) else None, None
+
+
+def _moonraker_extension_agents(payload: dict[str, Any] | None) -> tuple[dict[str, Any], ...]:
+    if not isinstance(payload, dict):
+        return ()
+    result = payload.get("result", payload)
+    agents = result.get("agents") if isinstance(result, dict) else None
+    if not isinstance(agents, list):
+        return ()
+    return tuple(
+        {
+            "name": _string_or_none(agent.get("name")),
+            "version": _string_or_none(agent.get("version")),
+            "type": _string_or_none(agent.get("type")),
+            "url": _string_or_none(agent.get("url")),
+        }
+        for agent in agents
+        if isinstance(agent, dict) and _string_or_none(agent.get("name"))
+    )
+
+
+def _moonraker_spoolman_status(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    result = payload.get("result", payload)
+    if not isinstance(result, dict) or "error" in result:
+        return None
+    return result
 
 
 def _moonraker_toolhead_telemetry(status: dict[str, Any], capabilities: dict[str, Any]) -> tuple[MoonrakerToolheadTelemetry, ...]:

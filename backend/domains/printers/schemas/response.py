@@ -87,6 +87,17 @@ class PrinterJobStatusResponse(BaseModel):
     observed_at: str
 
 
+class PrinterCapabilityDiagnosticsResponse(BaseModel):
+    printer_id: int
+    adapter_type: str
+    extension_agents_available: bool
+    extension_agents: list[dict] = Field(default_factory=list)
+    spoolman_available: bool
+    spoolman_status: dict | None = None
+    probe_errors: dict[str, str] = Field(default_factory=dict)
+    observed_at: str
+
+
 class PrinterFileResponse(BaseModel):
     path: str
     size: int | None = None

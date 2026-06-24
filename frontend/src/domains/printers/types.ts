@@ -29,6 +29,17 @@ export type PrinterJobStatus = {
   observedAt: string;
 };
 
+export type PrinterCapabilityDiagnostics = {
+  printerId: number;
+  adapterType: string;
+  extensionAgentsAvailable: boolean;
+  extensionAgents: Array<Record<string, unknown>>;
+  spoolmanAvailable: boolean;
+  spoolmanStatus: Record<string, unknown> | null;
+  probeErrors: Record<string, string>;
+  observedAt: string;
+};
+
 export type PrinterTemperature = {
   currentC: number | null;
   targetC: number | null;
