@@ -538,7 +538,46 @@ def test_printer_engine_catalog_can_refresh_without_restarting_web():
         "extension_agent",
         "saved_capabilities",
     ]
+    assert refresh_response.json()[0]["capabilities"]["integration_layers"] == {
+        "engine": "moonraker",
+        "maker_adapter": "generic_moonraker",
+        "model_profile": None,
+    }
     assert any(engine["engine_id"] == "bambu_mqtt" for engine in refresh_response.json())
+
+
+def test_printer_capabilities_expose_integration_layers():
+    generic_moonraker = capabilities_for_service_type("http_probe:moonraker")
+    snapmaker_u1 = capabilities_for_service_type("http_probe:snapmaker_moonraker")
+    creality = capabilities_for_service_type("http_probe:creality_moonraker")
+    bambu = capabilities_for_service_type("mqtt_probe:bambu_mqtt")
+    unknown = capabilities_for_service_type("http_probe:unknown")
+
+    assert generic_moonraker["integration_layers"] == {
+        "engine": "moonraker",
+        "maker_adapter": "generic_moonraker",
+        "model_profile": None,
+    }
+    assert snapmaker_u1["integration_layers"] == {
+        "engine": "moonraker",
+        "maker_adapter": "snapmaker_moonraker",
+        "model_profile": "snapmaker_u1",
+    }
+    assert creality["integration_layers"] == {
+        "engine": "moonraker",
+        "maker_adapter": "creality_moonraker",
+        "model_profile": None,
+    }
+    assert bambu["integration_layers"] == {
+        "engine": "bambu_mqtt",
+        "maker_adapter": "bambu_lan_mqtt",
+        "model_profile": None,
+    }
+    assert unknown["integration_layers"] == {
+        "engine": "unknown",
+        "maker_adapter": None,
+        "model_profile": None,
+    }
 
 
 def test_bambu_mqtt_engine_catalog_and_status_are_read_only():

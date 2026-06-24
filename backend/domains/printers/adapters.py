@@ -200,6 +200,7 @@ def capabilities_for_service_type(service_type: str | None) -> dict[str, Any]:
     if adapter_type == "octoprint":
         return {
             "adapter": "octoprint",
+            "integration_layers": _integration_layers_for_service_type(service_type, adapter_type),
             "read_only_status": True,
             "safe_endpoints": ["/api/version", "/api/printer"],
             "control_enabled": False,
@@ -207,6 +208,7 @@ def capabilities_for_service_type(service_type: str | None) -> dict[str, Any]:
     if adapter_type == "moonraker":
         return {
             "adapter": "moonraker",
+            "integration_layers": _integration_layers_for_service_type(service_type, adapter_type),
             "read_only_status": True,
             "safe_endpoints": [
                 "/server/info",
@@ -238,6 +240,7 @@ def capabilities_for_service_type(service_type: str | None) -> dict[str, Any]:
     if adapter_type == "bambu_mqtt":
         return {
             "adapter": "bambu_mqtt",
+            "integration_layers": _integration_layers_for_service_type(service_type, adapter_type),
             "read_only_status": True,
             "control_enabled": False,
             "protocol": "mqtts",
@@ -254,7 +257,30 @@ def capabilities_for_service_type(service_type: str | None) -> dict[str, Any]:
                 "saved_capabilities",
             ],
         }
-    return {"adapter": "unknown", "read_only_status": False, "control_enabled": False}
+    return {
+        "adapter": "unknown",
+        "integration_layers": _integration_layers_for_service_type(service_type, adapter_type),
+        "read_only_status": False,
+        "control_enabled": False,
+    }
+
+
+def _integration_layers_for_service_type(service_type: str | None, adapter_type: str | None) -> dict[str, str | None]:
+    haystack = (service_type or "").lower()
+    if adapter_type == "moonraker":
+        maker_adapter = "generic_moonraker"
+        model_profile = None
+        if "snapmaker" in haystack:
+            maker_adapter = "snapmaker_moonraker"
+            model_profile = "snapmaker_u1" if "u1" in haystack or "snapmaker_moonraker" in haystack else None
+        elif "creality" in haystack:
+            maker_adapter = "creality_moonraker"
+        return {"engine": "moonraker", "maker_adapter": maker_adapter, "model_profile": model_profile}
+    if adapter_type == "bambu_mqtt":
+        return {"engine": "bambu_mqtt", "maker_adapter": "bambu_lan_mqtt", "model_profile": None}
+    if adapter_type == "octoprint":
+        return {"engine": "octoprint", "maker_adapter": "generic_octoprint", "model_profile": None}
+    return {"engine": "unknown", "maker_adapter": None, "model_profile": None}
 
 
 def fetch_read_only_status(printer: Printer, api_key: str | None = None, timeout_seconds: float = 2.0) -> PrinterStatus:
