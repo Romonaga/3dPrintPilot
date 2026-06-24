@@ -145,7 +145,17 @@ class MoonrakerPrinterEngine(PrinterEngine):
         return parse_moonraker_job_status(payload, capabilities=printer.capabilities or {})
 
 
-PRINTER_ENGINES: tuple[PrinterEngine, ...] = (MoonrakerPrinterEngine(),)
+class BambuMqttPrinterEngine(PrinterEngine):
+    engine_id = "bambu_mqtt"
+    display_name = "Bambu LAN MQTT"
+    description = "Bambu LAN/Developer mode read-only MQTT telemetry engine."
+
+    def supports(self, printer: Printer) -> bool:
+        adapter_type = printer.adapter_type or infer_adapter_type(None, printer.printer_type)
+        return adapter_type == self.engine_id
+
+
+PRINTER_ENGINES: tuple[PrinterEngine, ...] = (MoonrakerPrinterEngine(), BambuMqttPrinterEngine())
 
 
 def refresh_engine_catalog() -> tuple[PrinterEngine, ...]:
@@ -175,6 +185,8 @@ def infer_adapter_type(service_type: str | None, printer_type: str | None = None
     haystack = f"{service_type or ''} {printer_type or ''}".lower()
     if "octoprint" in haystack:
         return "octoprint"
+    if "bambu_mqtt" in haystack or ("bambu" in haystack and "mqtt" in haystack):
+        return "bambu_mqtt"
     if any(marker in haystack for marker in ("moonraker", "klipper", "mainsail", "fluidd", "snapmaker", "creality")):
         return "moonraker"
     return None
@@ -220,6 +232,25 @@ def capabilities_for_service_type(service_type: str | None) -> dict[str, Any]:
                 "saved_capabilities",
             ],
         }
+    if adapter_type == "bambu_mqtt":
+        return {
+            "adapter": "bambu_mqtt",
+            "read_only_status": True,
+            "control_enabled": False,
+            "protocol": "mqtts",
+            "default_port": 8883,
+            "credential_required": True,
+            "required_credentials": ["lan_access_code", "device_id"],
+            "safe_topics": ["device/{device_id}/report", "device/{device_id}/request"],
+            "safe_methods": ["pushing.pushall"],
+            "pushall_min_interval_seconds": 300,
+            "raw_gcode_console": False,
+            "local_mode_tradeoff": "LAN or Developer mode may limit Bambu Handy or cloud workflows on some firmware.",
+            "telemetry_source_priority": [
+                "bambu_mqtt_report",
+                "saved_capabilities",
+            ],
+        }
     return {"adapter": "unknown", "read_only_status": False, "control_enabled": False}
 
 
@@ -229,6 +260,8 @@ def fetch_read_only_status(printer: Printer, api_key: str | None = None, timeout
         return _fetch_octoprint_status(printer, api_key=api_key, timeout_seconds=timeout_seconds)
     if adapter_type == "moonraker":
         return _fetch_moonraker_status(printer, timeout_seconds=timeout_seconds)
+    if adapter_type == "bambu_mqtt":
+        return _fetch_bambu_mqtt_status(printer)
     return PrinterStatus(
         adapter_type=adapter_type or "unknown",
         state="unsupported",
@@ -236,6 +269,47 @@ def fetch_read_only_status(printer: Printer, api_key: str | None = None, timeout
         raw_status={"error": "No read-only adapter is available for this printer"},
         observed_at=datetime.now(UTC),
     )
+
+
+def _fetch_bambu_mqtt_status(printer: Printer) -> PrinterStatus:
+    capabilities = capabilities_for_service_type("bambu_mqtt") | (printer.capabilities or {})
+    capabilities["control_enabled"] = False
+    capabilities["raw_gcode_console"] = False
+    credential_configured = getattr(printer, "credential_secret_name", None) is not None
+    device_id = _bambu_device_id(printer, capabilities)
+    if not credential_configured:
+        state = "credentials_required"
+        message = "Bambu LAN MQTT telemetry requires the printer LAN access code before status can be read."
+    elif not device_id:
+        state = "device_id_required"
+        message = "Bambu LAN MQTT telemetry requires a device ID or serial topic before status can be read."
+    else:
+        state = "telemetry_pending"
+        message = "Bambu LAN MQTT engine is configured; live telemetry parsing is handled by the next change."
+    return PrinterStatus(
+        adapter_type="bambu_mqtt",
+        state=state,
+        capabilities=capabilities,
+        raw_status={
+            "source": "bambu_mqtt_engine_foundation",
+            "message": message,
+            "credential_configured": credential_configured,
+            "device_id_configured": bool(device_id),
+            "control_enabled": False,
+        },
+        observed_at=datetime.now(UTC),
+    )
+
+
+def _bambu_device_id(printer: Printer, capabilities: dict[str, Any]) -> str | None:
+    for key in ("device_id", "serial", "printer_serial"):
+        value = capabilities.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    identity_key = getattr(printer, "identity_key", None)
+    if isinstance(identity_key, str) and identity_key.startswith("bambu:"):
+        return identity_key.split(":", 1)[1].strip() or None
+    return None
 
 
 def parse_octoprint_status(version_payload: dict[str, Any], printer_payload: dict[str, Any] | None = None) -> PrinterStatus:
