@@ -584,6 +584,60 @@ def test_printer_capability_diagnostics_route_serializes_probe_results(monkeypat
     assert body["probe_errors"] == {"spoolman": "not_configured"}
 
 
+def test_printer_extension_request_route_requires_allowlisted_method(monkeypatch):
+    class FakeExtensionPrinter(FakeMoonrakerPrinter):
+        capabilities = {
+            **FakeMoonrakerPrinter.capabilities,
+            "moonraker_extension_methods": [{"agent": "moonagent", "method": "moonagent.status"}],
+        }
+
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakeExtensionPrinter())
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    def fake_request(printer, agent, method, arguments=None):
+        from backend.domains.printers.adapters import MoonrakerExtensionResult
+
+        assert printer.id == 12
+        assert agent == "moonagent"
+        assert method == "moonagent.status"
+        assert arguments == {"detail": True}
+        return MoonrakerExtensionResult(
+            agent=agent,
+            method=method,
+            accepted=True,
+            raw_response={"result": {"ok": True}},
+        )
+
+    monkeypatch.setattr("backend.domains.printers.routes.request_moonraker_extension", fake_request)
+
+    response = client.post(
+        "/api/printers/12/extensions/request",
+        json={"agent": "moonagent", "method": "moonagent.status", "arguments": {"detail": True}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["agent"] == "moonagent"
+    assert response.json()["method"] == "moonagent.status"
+    assert response.json()["raw_response"] == {"result": {"ok": True}}
+
+
+def test_printer_extension_request_route_rejects_non_allowlisted_method():
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakeMoonrakerPrinter())
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/printers/12/extensions/request",
+        json={"agent": "moonagent", "method": "moonagent.status", "arguments": {}},
+    )
+
+    assert response.status_code == 403
+    assert "allowlisted" in response.json()["detail"]
+
+
 def test_moonraker_routes_reject_unsupported_printers():
     app = create_app()
     app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakePrinter())

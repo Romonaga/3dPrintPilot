@@ -51,3 +51,9 @@ class PrinterScanRequest(BaseModel):
 
 class PrintFileRequest(BaseModel):
     filename: str = Field(..., min_length=1, max_length=512)
+
+
+class PrinterExtensionRequest(BaseModel):
+    agent: str = Field(..., min_length=1, max_length=120)
+    method: str = Field(..., min_length=1, max_length=200)
+    arguments: dict = Field(default_factory=dict)
