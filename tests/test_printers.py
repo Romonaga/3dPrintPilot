@@ -370,6 +370,10 @@ def test_printer_job_status_response_includes_moonraker_telemetry(monkeypatch):
                     current_temperature=MoonrakerTemperature(current_c=210.0, target_c=215.0),
                     color="#ff0000",
                     color_source="moonraker_object",
+                    material="PLA",
+                    material_source="vendor_object",
+                    vendor="Snapmaker",
+                    subtype="SnapSpeed",
                 ),
             ),
         )
@@ -385,6 +389,77 @@ def test_printer_job_status_response_includes_moonraker_telemetry(monkeypatch):
     assert body["toolheads"][0]["current_temperature"]["current_c"] == 210.0
     assert body["toolheads"][0]["color"] == "#ff0000"
     assert body["toolheads"][0]["color_source"] == "moonraker_object"
+    assert body["toolheads"][0]["material"] == "PLA"
+    assert body["toolheads"][0]["material_source"] == "vendor_object"
+    assert body["toolheads"][0]["vendor"] == "Snapmaker"
+    assert body["toolheads"][0]["subtype"] == "SnapSpeed"
+
+
+def test_moonraker_job_status_maps_snapmaker_u1_filament_slots():
+    status = parse_moonraker_job_status(
+        {
+            "result": {
+                "status": {
+                    "print_stats": {"state": "standby"},
+                    "extruder": {"temperature": 28.0, "target": 0.0},
+                    "extruder1": {"temperature": 28.0, "target": 0.0},
+                    "extruder2": {"temperature": 29.0, "target": 0.0},
+                    "extruder3": {"temperature": 29.0, "target": 0.0},
+                    "filament_detect": {
+                        "info": [
+                            {
+                                "MAIN_TYPE": "NONE",
+                                "MANUFACTURER": "NONE",
+                                "VENDOR": "NONE",
+                                "ARGB_COLOR": 4294967295,
+                                "RGB_1": 16777215,
+                            },
+                            {
+                                "MAIN_TYPE": "PLA",
+                                "MANUFACTURER": "Polymaker",
+                                "VENDOR": "Snapmaker",
+                                "SUB_TYPE": "SnapSpeed",
+                                "ARGB_COLOR": 4278716941,
+                                "RGB_1": 526861,
+                            },
+                            {
+                                "MAIN_TYPE": "PLA",
+                                "MANUFACTURER": "Polymaker",
+                                "VENDOR": "Snapmaker",
+                                "SUB_TYPE": "SnapSpeed",
+                                "ARGB_COLOR": 4293058267,
+                                "RGB_1": 14868187,
+                            },
+                            {
+                                "MAIN_TYPE": "PLA",
+                                "MANUFACTURER": "Polymaker",
+                                "VENDOR": "Snapmaker",
+                                "SUB_TYPE": "SnapSpeed",
+                                "ARGB_COLOR": 4293340957,
+                                "RGB_1": 15150877,
+                            },
+                        ]
+                    },
+                    "filament_feed left": {
+                        "extruder0": {"filament_detected": True},
+                        "extruder1": {"filament_detected": True},
+                    },
+                    "filament_feed right": {
+                        "extruder2": {"filament_detected": True},
+                        "extruder3": {"filament_detected": True},
+                    },
+                    "gcode_macro _FILAMENT_FEED_VARIABLE": {"module_sequence": ["left", "left", "right", "right"]},
+                }
+            }
+        }
+    )
+
+    assert [toolhead.label for toolhead in status.toolheads] == ["T0", "T1", "T2", "T3"]
+    assert [toolhead.color for toolhead in status.toolheads] == [None, "#080a0d", "#e2dedb", "#e72f1d"]
+    assert [toolhead.color_source for toolhead in status.toolheads] == [None, "vendor_object", "vendor_object", "vendor_object"]
+    assert [toolhead.material for toolhead in status.toolheads] == [None, "PLA", "PLA", "PLA"]
+    assert [toolhead.vendor for toolhead in status.toolheads] == [None, "Snapmaker", "Snapmaker", "Snapmaker"]
+    assert [toolhead.subtype for toolhead in status.toolheads] == [None, "SnapSpeed", "SnapSpeed", "SnapSpeed"]
 
 
 def test_printer_engine_catalog_can_refresh_without_restarting_web():
