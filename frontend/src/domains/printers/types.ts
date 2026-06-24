@@ -40,6 +40,15 @@ export type PrinterCapabilityDiagnostics = {
   observedAt: string;
 };
 
+export type PrinterStatus = {
+  printerId: number;
+  adapterType: string;
+  state: string;
+  capabilities: Record<string, unknown>;
+  rawStatus: Record<string, unknown>;
+  observedAt: string;
+};
+
 export type PrinterTemperature = {
   currentC: number | null;
   targetC: number | null;

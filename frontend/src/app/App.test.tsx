@@ -794,6 +794,115 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: "Add Printer" })).not.toBeInTheDocument();
   });
 
+  it("refreshes a saved printer card without running a LAN scan", async () => {
+    const fetchMock = mockApiFetch((input) => {
+      const url = String(input);
+      if (url === "/api/printers") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: 4,
+                name: "Snapmaker U1",
+                host: "192.168.1.44",
+                port: 7125,
+                protocol: "http",
+                printer_type: "snapmaker_moonraker",
+                state: "confirmed",
+                identity_key: "moonraker:snapmaker:machine_id:u1",
+                adapter_type: "moonraker",
+                capabilities: { adapter: "moonraker", toolhead_count: 4, color_count: 4 },
+                credential_configured: false,
+                last_status: {},
+                last_status_at: null,
+                build_volume_x_mm: 320,
+                build_volume_y_mm: 320,
+                build_volume_z_mm: 320
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/printers/4/status") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              printer_id: 4,
+              adapter_type: "moonraker",
+              state: "ready",
+              capabilities: { adapter: "moonraker", moonraker_version: "v0.9.0" },
+              raw_status: { server: { result: { klippy_state: "ready" } } },
+              observed_at: "2026-06-24T17:40:00Z"
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/printers/4/job-status") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              printer_id: 4,
+              state: "standby",
+              filename: null,
+              progress: 0,
+              message: null,
+              bed_temperature: { current_c: 27, target_c: 0, power: 0 },
+              toolheads: [
+                {
+                  name: "extruder1",
+                  label: "T1",
+                  index: 1,
+                  current_temperature: { current_c: 28, target_c: 0, power: 0 },
+                  color: "#080a0d",
+                  color_source: "vendor_object",
+                  material: "PLA",
+                  material_source: "vendor_object",
+                  vendor: "Snapmaker",
+                  subtype: "SnapSpeed"
+                }
+              ],
+              raw_status: {},
+              observed_at: "2026-06-24T17:40:00Z"
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      if (url === "/api/printers/4/capability-diagnostics") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              printer_id: 4,
+              adapter_type: "moonraker",
+              extension_agents_available: false,
+              extension_agents: [],
+              spoolman_available: false,
+              spoolman_status: null,
+              probe_errors: { spoolman: "not_configured" },
+              observed_at: "2026-06-24T17:40:00Z"
+            }),
+            { status: 200 }
+          )
+        );
+      }
+      return authenticatedFetch(input);
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Printers" }));
+    await user.click(await screen.findByRole("button", { name: "Refresh Snapmaker U1" }));
+
+    expect(await screen.findByText("State: ready")).toBeInTheDocument();
+    expect(screen.getByText("Job: standby (0%)")).toBeInTheDocument();
+    expect(screen.getByText("T1: PLA / Snapmaker / SnapSpeed #080a0d")).toBeInTheDocument();
+    expect(screen.getByText("0 extension agents / Spoolman unavailable")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/printers/4/status", expect.anything());
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/printers/scan", expect.anything());
+  });
+
   it("starts a LAN scan from the dashboard Scan LAN action", async () => {
     const fetchMock = mockApiFetch((input, init) => {
       const url = String(input);

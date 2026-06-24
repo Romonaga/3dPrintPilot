@@ -8,7 +8,8 @@ import {
   type PrinterFile,
   type PrinterJobStatus,
   type PrinterScanResult,
-  type PrinterScanSettings
+  type PrinterScanSettings,
+  type PrinterStatus
 } from "../types";
 import { apiFetch } from "../../../lib/apiFetch";
 
@@ -85,6 +86,15 @@ type ApiPrinterJobStatus = {
   observed_at: string;
 };
 
+type ApiPrinterStatus = {
+  printer_id: number;
+  adapter_type: string;
+  state: string;
+  capabilities: Record<string, unknown>;
+  raw_status: Record<string, unknown>;
+  observed_at: string;
+};
+
 type ApiPrinterCapabilityDiagnostics = {
   printer_id: number;
   adapter_type: string;
@@ -151,6 +161,14 @@ export async function getPrinterJobStatus(printerId: number): Promise<PrinterJob
     throw new Error(`Printer job status failed with HTTP ${response.status}`);
   }
   return fromApiPrinterJobStatus(await response.json());
+}
+
+export async function getPrinterStatus(printerId: number): Promise<PrinterStatus> {
+  const response = await apiFetch(`/api/printers/${printerId}/status`);
+  if (!response.ok) {
+    throw new Error(`Printer status failed with HTTP ${response.status}`);
+  }
+  return fromApiPrinterStatus(await response.json());
 }
 
 export async function getPrinterCapabilityDiagnostics(printerId: number): Promise<PrinterCapabilityDiagnostics> {
@@ -417,6 +435,17 @@ function fromApiPrinterJobStatus(status: ApiPrinterJobStatus): PrinterJobStatus 
       vendor: toolhead.vendor ?? null,
       subtype: toolhead.subtype ?? null
     })),
+    rawStatus: status.raw_status,
+    observedAt: status.observed_at
+  };
+}
+
+function fromApiPrinterStatus(status: ApiPrinterStatus): PrinterStatus {
+  return {
+    printerId: status.printer_id,
+    adapterType: status.adapter_type,
+    state: status.state,
+    capabilities: status.capabilities,
     rawStatus: status.raw_status,
     observedAt: status.observed_at
   };
