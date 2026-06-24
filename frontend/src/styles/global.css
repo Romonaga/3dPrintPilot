@@ -767,6 +767,13 @@ h3 {
   padding-top: 14px;
 }
 
+.printer-actions-header-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .printer-control-header {
   display: flex;
   align-items: center;
@@ -802,6 +809,52 @@ h3 {
   min-width: 0;
   height: 10px;
   accent-color: var(--brand);
+}
+
+.printer-telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.printer-telemetry-item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.printer-telemetry-item span,
+.printer-telemetry-item small {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.printer-telemetry-item strong {
+  color: var(--heading);
+  font-size: 13px;
+}
+
+.printer-toolhead-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.printer-color-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+}
+
+.printer-color-swatch.unknown {
+  background: var(--surface-subtle);
 }
 
 .printer-file-grid,
@@ -1518,6 +1571,7 @@ dd {
   .printer-file-grid,
   .printer-upload-row,
   .printer-file-row,
+  .printer-telemetry-grid,
   .source-file-row {
     grid-template-columns: 1fr;
   }

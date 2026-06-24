@@ -12,7 +12,9 @@ from backend.domains.printers.adapters import (
     MoonrakerFile,
     capabilities_for_service_type,
     cancel_moonraker_print,
+    engine_catalog,
     list_moonraker_files,
+    parse_moonraker_job_status,
     parse_moonraker_status,
     parse_octoprint_status,
     pause_moonraker_print,
@@ -301,6 +303,95 @@ def test_moonraker_file_and_print_routes_call_safe_adapter_functions(monkeypatch
     assert start_response.json()["action"] == "start"
     assert pause_response.json()["action"] == "pause"
     assert ("upload", "cube.gcode", b"G1 X1", "application/octet-stream") in calls
+
+
+def test_moonraker_job_status_normalizes_thermals_and_tool_colors():
+    status = parse_moonraker_job_status(
+        {
+            "result": {
+                "status": {
+                    "print_stats": {"state": "printing", "filename": "cube.gcode", "message": "Printing"},
+                    "virtual_sdcard": {"progress": 0.5},
+                    "heater_bed": {"temperature": 61.2, "target": 65.0, "power": 0.4},
+                    "extruder": {"temperature": 211.4, "target": 215.0, "power": 0.33, "filament_color": "#ff0000"},
+                    "extruder1": {"temperature": 209.8, "target": 215.0, "material": {"color": "#00ff00"}},
+                    "extruder2": {"temperature": 35.0, "target": 0.0},
+                    "extruder3": {"temperature": 34.5, "target": 0.0},
+                }
+            }
+        },
+        capabilities={"toolheads": [{"index": 2, "color": "#0000ff"}, {"index": 3, "filament_color": "#ffffff"}]},
+    )
+
+    assert status.state == "printing"
+    assert status.filename == "cube.gcode"
+    assert status.progress == 0.5
+    assert status.bed_temperature is not None
+    assert status.bed_temperature.current_c == 61.2
+    assert status.bed_temperature.target_c == 65.0
+    assert [toolhead.label for toolhead in status.toolheads] == ["T0", "T1", "T2", "T3"]
+    assert status.toolheads[0].current_temperature is not None
+    assert status.toolheads[0].current_temperature.current_c == 211.4
+    assert [toolhead.color for toolhead in status.toolheads] == ["#ff0000", "#00ff00", "#0000ff", "#ffffff"]
+
+
+def test_printer_job_status_response_includes_moonraker_telemetry(monkeypatch):
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakeMoonrakerPrinter())
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    def fake_job_status(printer):
+        from datetime import UTC, datetime
+
+        from backend.domains.printers.adapters import MoonrakerJobStatus, MoonrakerTemperature, MoonrakerToolheadTelemetry
+
+        assert printer.id == 12
+        return MoonrakerJobStatus(
+            state="printing",
+            filename="cube.gcode",
+            progress=0.25,
+            message=None,
+            raw_status={"result": {"status": {}}},
+            observed_at=datetime.now(UTC),
+            bed_temperature=MoonrakerTemperature(current_c=60.0, target_c=65.0),
+            toolheads=(
+                MoonrakerToolheadTelemetry(
+                    name="extruder",
+                    label="T0",
+                    index=0,
+                    current_temperature=MoonrakerTemperature(current_c=210.0, target_c=215.0),
+                    color="#ff0000",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr("backend.domains.printers.routes.fetch_moonraker_job_status", fake_job_status)
+
+    response = client.get("/api/printers/12/job-status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["bed_temperature"] == {"current_c": 60.0, "target_c": 65.0, "power": None}
+    assert body["toolheads"][0]["label"] == "T0"
+    assert body["toolheads"][0]["current_temperature"]["current_c"] == 210.0
+    assert body["toolheads"][0]["color"] == "#ff0000"
+
+
+def test_printer_engine_catalog_can_refresh_without_restarting_web():
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakeMoonrakerPrinter())
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    list_response = client.get("/api/printers/engines")
+    refresh_response = client.post("/api/printers/engines/refresh")
+
+    assert any(engine["engine_id"] == "moonraker" for engine in engine_catalog())
+    assert list_response.status_code == 200
+    assert refresh_response.status_code == 200
+    assert refresh_response.json()[0]["engine_id"] == "moonraker"
+    assert refresh_response.json()[0]["capabilities"]["control_enabled"] is True
 
 
 def test_moonraker_routes_reject_unsupported_printers():

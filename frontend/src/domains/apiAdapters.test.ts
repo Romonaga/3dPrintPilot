@@ -6,8 +6,10 @@ import { downloadOperationsBackup } from "./operations/api";
 import {
   cancelPrinterPrint,
   getPrinterJobStatus,
+  listPrinterEngines,
   listPrinterFiles,
   pausePrinterPrint,
+  refreshPrinterEngines,
   resumePrinterPrint,
   scanPrinters,
   confirmDiscoveredPrinter,
@@ -212,10 +214,31 @@ describe("domain API adapters", () => {
       filename: "benchy.gcode",
       progress: 0.42,
       message: "Printing",
+      bed_temperature: { current_c: 60, target_c: 65, power: 0.4 },
+      toolheads: [
+        {
+          name: "extruder",
+          label: "T0",
+          index: 0,
+          current_temperature: { current_c: 210, target_c: 215, power: 0.33 },
+          color: "#ff0000"
+        }
+      ],
       raw_status: { print_stats: { state: "printing" } },
       observed_at: "2026-06-21T16:00:00Z"
     });
-    await expect(getPrinterJobStatus(4)).resolves.toMatchObject({ printerId: 4, progress: 0.42 });
+    await expect(getPrinterJobStatus(4)).resolves.toMatchObject({
+      printerId: 4,
+      progress: 0.42,
+      bedTemperature: { currentC: 60, targetC: 65, power: 0.4 },
+      toolheads: [
+        {
+          label: "T0",
+          currentTemperature: { currentC: 210, targetC: 215, power: 0.33 },
+          color: "#ff0000"
+        }
+      ]
+    });
 
     mockJson([{ path: "benchy.gcode", size: 2048, modified: 1782067200, permissions: "rw" }]);
     await expect(listPrinterFiles(4)).resolves.toEqual([
@@ -243,6 +266,33 @@ describe("domain API adapters", () => {
     await expect(resumePrinterPrint(4)).resolves.toMatchObject({ action: "resume" });
     mockJson({ printer_id: 4, action: "cancel", accepted: true, raw_response: {} });
     await expect(cancelPrinterPrint(4)).resolves.toMatchObject({ action: "cancel" });
+  });
+
+  it("maps printer engine catalog list and refresh endpoints", async () => {
+    const enginePayload = [
+      {
+        engine_id: "moonraker",
+        display_name: "Moonraker",
+        description: "Moonraker/Klipper-compatible printer telemetry and control engine.",
+        capabilities: { control_enabled: true }
+      }
+    ];
+
+    mockJson(enginePayload);
+    await expect(listPrinterEngines()).resolves.toEqual([
+      {
+        engineId: "moonraker",
+        displayName: "Moonraker",
+        description: "Moonraker/Klipper-compatible printer telemetry and control engine.",
+        capabilities: { control_enabled: true }
+      }
+    ]);
+
+    mockJson(enginePayload);
+    await expect(refreshPrinterEngines()).resolves.toMatchObject([{ engineId: "moonraker" }]);
+    const [refreshUrl, refreshInit] = vi.mocked(fetch).mock.calls[1];
+    expect(refreshUrl).toBe("/api/printers/engines/refresh");
+    expect(refreshInit?.method).toBe("POST");
   });
 
   it("maps compatibility checks and rejects backend failures", async () => {

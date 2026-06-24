@@ -3,6 +3,7 @@ import {
   type DiscoveredPrinter,
   type Printer,
   type PrinterActionResult,
+  type PrinterEngine,
   type PrinterFile,
   type PrinterJobStatus,
   type PrinterScanResult,
@@ -77,8 +78,24 @@ type ApiPrinterJobStatus = {
   filename: string | null;
   progress: number | null;
   message: string | null;
+  bed_temperature?: ApiPrinterTemperature | null;
+  toolheads?: ApiPrinterToolheadTelemetry[];
   raw_status: Record<string, unknown>;
   observed_at: string;
+};
+
+type ApiPrinterTemperature = {
+  current_c: number | null;
+  target_c: number | null;
+  power: number | null;
+};
+
+type ApiPrinterToolheadTelemetry = {
+  name: string;
+  label: string;
+  index: number;
+  current_temperature: ApiPrinterTemperature | null;
+  color: string | null;
 };
 
 type ApiPrinterFile = {
@@ -93,6 +110,13 @@ type ApiPrinterActionResult = {
   action: string;
   accepted: boolean;
   raw_response: unknown;
+};
+
+type ApiPrinterEngine = {
+  engine_id: string;
+  display_name: string;
+  description: string;
+  capabilities: Record<string, unknown>;
 };
 
 export async function listPrinters(): Promise<Printer[]> {
@@ -110,6 +134,24 @@ export async function getPrinterJobStatus(printerId: number): Promise<PrinterJob
     throw new Error(`Printer job status failed with HTTP ${response.status}`);
   }
   return fromApiPrinterJobStatus(await response.json());
+}
+
+export async function listPrinterEngines(): Promise<PrinterEngine[]> {
+  const response = await apiFetch("/api/printers/engines");
+  if (!response.ok) {
+    throw new Error(`Printer engine list failed with HTTP ${response.status}`);
+  }
+  const engines = (await response.json()) as ApiPrinterEngine[];
+  return engines.map(fromApiPrinterEngine);
+}
+
+export async function refreshPrinterEngines(): Promise<PrinterEngine[]> {
+  const response = await apiFetch("/api/printers/engines/refresh", { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`Printer engine refresh failed with HTTP ${response.status}`);
+  }
+  const engines = (await response.json()) as ApiPrinterEngine[];
+  return engines.map(fromApiPrinterEngine);
 }
 
 export async function listPrinterFiles(printerId: number): Promise<PrinterFile[]> {
@@ -337,8 +379,33 @@ function fromApiPrinterJobStatus(status: ApiPrinterJobStatus): PrinterJobStatus 
     filename: status.filename,
     progress: status.progress,
     message: status.message,
+    bedTemperature: status.bed_temperature ? fromApiPrinterTemperature(status.bed_temperature) : null,
+    toolheads: (status.toolheads ?? []).map((toolhead) => ({
+      name: toolhead.name,
+      label: toolhead.label,
+      index: toolhead.index,
+      currentTemperature: toolhead.current_temperature ? fromApiPrinterTemperature(toolhead.current_temperature) : null,
+      color: toolhead.color
+    })),
     rawStatus: status.raw_status,
     observedAt: status.observed_at
+  };
+}
+
+function fromApiPrinterEngine(engine: ApiPrinterEngine): PrinterEngine {
+  return {
+    engineId: engine.engine_id,
+    displayName: engine.display_name,
+    description: engine.description,
+    capabilities: engine.capabilities
+  };
+}
+
+function fromApiPrinterTemperature(temperature: ApiPrinterTemperature) {
+  return {
+    currentC: temperature.current_c,
+    targetC: temperature.target_c,
+    power: temperature.power
   };
 }
 

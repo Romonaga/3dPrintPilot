@@ -49,12 +49,35 @@ class PrinterStatusResponse(BaseModel):
     observed_at: str
 
 
+class PrinterEngineResponse(BaseModel):
+    engine_id: str
+    display_name: str
+    description: str
+    capabilities: dict = Field(default_factory=dict)
+
+
+class PrinterTemperatureResponse(BaseModel):
+    current_c: float | None = None
+    target_c: float | None = None
+    power: float | None = None
+
+
+class PrinterToolheadTelemetryResponse(BaseModel):
+    name: str
+    label: str
+    index: int
+    current_temperature: PrinterTemperatureResponse | None = None
+    color: str | None = None
+
+
 class PrinterJobStatusResponse(BaseModel):
     printer_id: int
     state: str
     filename: str | None = None
     progress: float | None = None
     message: str | None = None
+    bed_temperature: "PrinterTemperatureResponse | None" = None
+    toolheads: list["PrinterToolheadTelemetryResponse"] = Field(default_factory=list)
     raw_status: dict = Field(default_factory=dict)
     observed_at: str
 

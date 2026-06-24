@@ -10,7 +10,7 @@ import {
   startPrinterFile,
   uploadPrinterFile
 } from "../api/printersApi";
-import { type Printer, type PrinterFile, type PrinterJobStatus } from "../types";
+import { type Printer, type PrinterFile, type PrinterJobStatus, type PrinterTemperature, type PrinterToolheadTelemetry } from "../types";
 
 type PrinterControlPanelProps = {
   printer: Printer;
@@ -164,6 +164,8 @@ export function PrinterControlPanel({ printer }: PrinterControlPanelProps) {
         <span>{progressPercent === null ? "Progress unknown" : `${progressPercent}%`}</span>
       </div>
 
+      {jobStatus ? <PrinterTelemetrySummary status={jobStatus} /> : null}
+
       <div className="printer-file-grid">
         <label className="field-label">
           <span>Sliced file</span>
@@ -260,6 +262,44 @@ export function PrinterControlPanel({ printer }: PrinterControlPanelProps) {
   );
 }
 
+function PrinterTelemetrySummary({ status }: { status: PrinterJobStatus }) {
+  const hasBed = status.bedTemperature !== null;
+  const hasToolheads = status.toolheads.length > 0;
+  if (!hasBed && !hasToolheads) {
+    return null;
+  }
+  return (
+    <div className="printer-telemetry-grid" aria-label="Moonraker telemetry">
+      {hasBed ? (
+        <div className="printer-telemetry-item">
+          <span>Bed</span>
+          <strong>{formatTemperature(status.bedTemperature)}</strong>
+        </div>
+      ) : null}
+      {status.toolheads.map((toolhead) => (
+        <ToolheadTelemetryItem toolhead={toolhead} key={toolhead.name} />
+      ))}
+    </div>
+  );
+}
+
+function ToolheadTelemetryItem({ toolhead }: { toolhead: PrinterToolheadTelemetry }) {
+  return (
+    <div className="printer-telemetry-item">
+      <span className="printer-toolhead-label">
+        <span
+          aria-hidden="true"
+          className={toolhead.color ? "printer-color-swatch" : "printer-color-swatch unknown"}
+          style={toolhead.color ? { backgroundColor: toolhead.color } : undefined}
+        />
+        {toolhead.label}
+      </span>
+      <strong>{formatTemperature(toolhead.currentTemperature)}</strong>
+      <small>{toolhead.color ?? "Color unknown"}</small>
+    </div>
+  );
+}
+
 export function supportsMoonrakerControl(printer: Printer) {
   const capabilities = printer.capabilities ?? {};
   const capabilityAdapter = typeof capabilities.adapter === "string" ? capabilities.adapter : "";
@@ -283,6 +323,15 @@ function formatProgressPercent(progress: number | null | undefined) {
 function formatJobSummary(status: PrinterJobStatus) {
   const filename = status.filename ? ` - ${status.filename}` : "";
   return `${status.state}${filename}`;
+}
+
+function formatTemperature(temperature: PrinterTemperature | null) {
+  if (!temperature || (temperature.currentC === null && temperature.targetC === null)) {
+    return "Temp unknown";
+  }
+  const current = temperature.currentC === null ? "--" : `${Math.round(temperature.currentC)} C`;
+  const target = temperature.targetC === null ? "--" : `${Math.round(temperature.targetC)} C`;
+  return `${current} / ${target}`;
 }
 
 function formatFileDetails(file: PrinterFile) {
