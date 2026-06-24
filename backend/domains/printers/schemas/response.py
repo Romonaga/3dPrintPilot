@@ -120,6 +120,12 @@ class PrinterExtensionResponse(BaseModel):
     raw_response: dict | str | list | None = None
 
 
+class PrinterCredentialResponse(BaseModel):
+    printer_id: int
+    credential_configured: bool
+    device_id_configured: bool
+
+
 class PrinterScanSummaryResponse(BaseModel):
     scan_run_id: int | None = None
     status: str
