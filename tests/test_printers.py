@@ -26,7 +26,7 @@ from backend.domains.printers.adapters import (
 from backend.domains.printers.entities import DiscoveredPrinter, PrinterScanResult, PrinterScanStatus, PrinterScanSummary
 from backend.domains.printers.identity import moonraker_identity_key
 from backend.domains.printers.models import NetworkScanResult, NetworkScanRun, Printer
-from backend.domains.printers.routes import get_printer_store
+from backend.domains.printers.routes import _endpoint_capabilities, get_printer_store
 from backend.domains.printers.service import (
     _detect_moonraker,
     _detect_generic_http,
@@ -1342,6 +1342,25 @@ def test_mqtt_probe_labels_confirmed_bambu_mqtt_port(monkeypatch):
     assert printer.service_type == "mqtt_probe:bambu_mqtt"
     assert printer.confidence == 90
     assert "MQTT over TLS CONNACK" in printer.evidence[0]
+
+
+def test_bambu_mqtt_capabilities_explain_lan_onboarding_tradeoffs():
+    endpoint = DiscoveredPrinter(
+        name="Bambu Lab MQTT broker at 192.168.1.53:8883",
+        host="192.168.1.53",
+        port=8883,
+        protocol="mqtts",
+        service_type="mqtt_probe:bambu_mqtt",
+        confidence=90,
+        evidence=("MQTT over TLS CONNACK received; no publish/control commands sent",),
+    )
+
+    capabilities = _endpoint_capabilities(endpoint)
+
+    assert "Bambu LAN MQTT" in capabilities
+    assert "Scan-only discovery without access code" in capabilities
+    assert "Full telemetry requires LAN access code" in capabilities
+    assert "LAN/Developer mode may limit Bambu Handy or cloud workflows" in capabilities
 
 
 def test_http_probe_uses_tls_verification_for_https(monkeypatch):

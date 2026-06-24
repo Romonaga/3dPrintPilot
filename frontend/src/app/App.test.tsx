@@ -948,6 +948,8 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "Discovered Devices" })).toBeInTheDocument();
     expect(screen.getByText("Bambu Lab MQTT/LAN mode")).toBeInTheDocument();
+    expect(screen.getByText(/Bambu discovery: scan-only visibility works without credentials/)).toBeInTheDocument();
+    expect(screen.getByText(/may limit Bambu Handy or cloud workflows/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/printers/scan",
       expect.objectContaining({ method: "POST" })
@@ -1050,10 +1052,12 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Printers" }));
+    expect(screen.getByText(/Bambu LAN: scan-only visibility works without credentials/)).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Scan LAN" }));
 
     expect(await screen.findByRole("heading", { name: "Discovered Devices" })).toBeInTheDocument();
     expect(screen.getAllByText("Bambu A1").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Bambu discovery: scan-only visibility works without credentials/)).toBeInTheDocument();
     expect(screen.getByText("Known")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
   });
