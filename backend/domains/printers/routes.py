@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db_session
+from backend.core.secrets import get_secret_cipher
 from backend.domains.printers.adapters import (
     ExtensionMethodNotAllowedError,
     InvalidPrintFileError,
@@ -21,9 +22,15 @@ from backend.domains.printers.adapters import (
     start_moonraker_print,
     upload_moonraker_file,
 )
+from backend.domains.printers.credentials import (
+    configure_bambu_lan_credentials,
+    delete_bambu_lan_credentials,
+    get_bambu_lan_access_code,
+)
 from backend.domains.printers.entities import PrinterScanResult
 from backend.domains.printers.identity import is_stable_printer_identity, printer_identity_key
 from backend.domains.printers.schemas.request import (
+    BambuLanCredentialsRequest,
     ConfirmDiscoveredPrinterRequest,
     CreatePrinterRequest,
     PrinterExtensionRequest,
@@ -35,6 +42,7 @@ from backend.domains.printers.schemas.response import (
     DiscoveredPrinterResponse,
     PrinterActionResponse,
     PrinterCapabilityDiagnosticsResponse,
+    PrinterCredentialResponse,
     PrinterEndpointGroupResponse,
     PrinterEngineResponse,
     PrinterExtensionResponse,
@@ -151,9 +159,13 @@ def read_printer_status(
     printer_id: int,
     _user=Depends(require_roles("viewer")),
     store: PrinterStore = Depends(get_printer_store),
+    session: Session = Depends(get_db_session),
 ) -> PrinterStatusResponse:
     printer = _get_printer_or_404(store, printer_id)
-    status = fetch_read_only_status(printer)
+    access_code = None
+    if getattr(printer, "adapter_type", None) == "bambu_mqtt" and getattr(printer, "credential_secret_name", None):
+        access_code = get_bambu_lan_access_code(session, get_secret_cipher(), printer)
+    status = fetch_read_only_status(printer, api_key=access_code)
     return PrinterStatusResponse(
         printer_id=printer.id,
         adapter_type=status.adapter_type,
@@ -161,6 +173,50 @@ def read_printer_status(
         capabilities=status.capabilities,
         raw_status=status.raw_status,
         observed_at=status.observed_at.isoformat(),
+    )
+
+
+@router.put("/{printer_id}/credentials/bambu-lan", response_model=PrinterCredentialResponse)
+def configure_printer_bambu_lan_credentials(
+    printer_id: int,
+    request: BambuLanCredentialsRequest,
+    _user=Depends(require_roles("admin")),
+    store: PrinterStore = Depends(get_printer_store),
+    session: Session = Depends(get_db_session),
+) -> PrinterCredentialResponse:
+    printer = _get_printer_or_404(store, printer_id)
+    if getattr(printer, "adapter_type", None) != "bambu_mqtt":
+        raise HTTPException(status_code=409, detail="Bambu LAN credentials are only supported for Bambu MQTT printers")
+    try:
+        updated = configure_bambu_lan_credentials(
+            session,
+            get_secret_cipher(),
+            printer,
+            access_code=request.access_code,
+            device_id=request.device_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PrinterCredentialResponse(
+        printer_id=updated.id,
+        credential_configured=True,
+        device_id_configured=bool((updated.capabilities or {}).get("device_id")),
+    )
+
+
+@router.delete("/{printer_id}/credentials/bambu-lan", response_model=PrinterCredentialResponse)
+def delete_printer_bambu_lan_credentials(
+    printer_id: int,
+    _user=Depends(require_roles("admin")),
+    store: PrinterStore = Depends(get_printer_store),
+    session: Session = Depends(get_db_session),
+) -> PrinterCredentialResponse:
+    printer = _get_printer_or_404(store, printer_id)
+    delete_bambu_lan_credentials(session, printer)
+    return PrinterCredentialResponse(
+        printer_id=printer.id,
+        credential_configured=False,
+        device_id_configured=False,
     )
 
 

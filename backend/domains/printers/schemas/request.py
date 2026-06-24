@@ -57,3 +57,8 @@ class PrinterExtensionRequest(BaseModel):
     agent: str = Field(..., min_length=1, max_length=120)
     method: str = Field(..., min_length=1, max_length=200)
     arguments: dict = Field(default_factory=dict)
+
+
+class BambuLanCredentialsRequest(BaseModel):
+    access_code: str = Field(..., min_length=1, max_length=120)
+    device_id: str = Field(..., min_length=1, max_length=120)

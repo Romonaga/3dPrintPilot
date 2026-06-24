@@ -4,8 +4,12 @@ from time import monotonic, sleep
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from backend.app.main import create_app
+from backend.core.secrets import SecretCipher
+from backend.domains.printers import adapters as printer_adapters
 from backend.domains.printers.adapters import (
     InvalidPrintFileError,
     MoonrakerActionResult,
@@ -17,6 +21,7 @@ from backend.domains.printers.adapters import (
     infer_adapter_type,
     list_moonraker_files,
     parse_moonraker_capability_diagnostics,
+    parse_bambu_mqtt_status,
     parse_moonraker_job_status,
     parse_moonraker_status,
     parse_octoprint_status,
@@ -24,6 +29,11 @@ from backend.domains.printers.adapters import (
     resume_moonraker_print,
     start_moonraker_print,
     upload_moonraker_file,
+)
+from backend.domains.printers.credentials import (
+    configure_bambu_lan_credentials,
+    delete_bambu_lan_credentials,
+    get_bambu_lan_access_code,
 )
 from backend.domains.printers.entities import DiscoveredPrinter, PrinterScanResult, PrinterScanStatus, PrinterScanSummary
 from backend.domains.printers.identity import moonraker_identity_key
@@ -45,6 +55,7 @@ from backend.domains.printers.service import (
     scan_lan_for_printers,
 )
 from backend.domains.printers.store import PrinterStore
+from backend.domains.settings.models import ProviderSecret
 from backend.db.base import Base
 from tests.helpers import allow_anonymous_until_bootstrap
 
@@ -550,7 +561,7 @@ def test_bambu_mqtt_engine_catalog_and_status_are_read_only():
     assert status_response.json()["raw_status"]["control_enabled"] is False
 
 
-def test_bambu_mqtt_status_reports_configured_foundation_without_live_telemetry():
+def test_bambu_mqtt_status_remains_read_only_when_live_access_code_is_missing():
     printer = FakeBambuMqttPrinter()
     printer.credential_secret_name = "printer-12-bambu-lan"
     printer.capabilities = {**printer.capabilities, "device_id": "00M00A000000000", "control_enabled": True}
@@ -558,11 +569,159 @@ def test_bambu_mqtt_status_reports_configured_foundation_without_live_telemetry(
     status = fetch_read_only_status(printer)
 
     assert status.adapter_type == "bambu_mqtt"
-    assert status.state == "telemetry_pending"
+    assert status.state == "telemetry_unavailable"
     assert status.raw_status["credential_configured"] is True
     assert status.raw_status["device_id_configured"] is True
     assert status.capabilities["control_enabled"] is False
     assert status.capabilities["telemetry_source_priority"] == ["bambu_mqtt_report", "saved_capabilities"]
+
+
+def test_bambu_mqtt_status_normalizes_report_without_exposing_access_code(monkeypatch):
+    printer = FakeBambuMqttPrinter()
+    printer.credential_secret_name = "printer-12-bambu-lan"
+    printer.capabilities = {**printer.capabilities, "device_id": "00M00A000000000"}
+    calls = []
+
+    def fake_report(printer_arg, device_id, access_code, timeout_seconds=2.0):
+        calls.append((printer_arg.id, device_id, access_code, timeout_seconds))
+        return _bambu_report_payload()
+
+    monkeypatch.setattr(printer_adapters, "fetch_bambu_mqtt_report", fake_report)
+
+    status = fetch_read_only_status(printer, api_key="12345678", timeout_seconds=1.5)
+
+    assert calls == [(printer.id, "00M00A000000000", "12345678", 1.5)]
+    assert status.state == "printing"
+    assert status.raw_status["job"]["progress"] == 42.0
+    assert status.raw_status["temperatures"]["nozzle_current_c"] == 219.5
+    assert status.raw_status["ams"]["active_tray"] == "1"
+    assert status.raw_status["ams"]["trays"][1]["active"] is True
+    assert status.raw_status["ams"]["trays"][1]["color"] == "#ff3300"
+    assert "12345678" not in str(status.raw_status)
+    assert status.raw_status["control_enabled"] is False
+
+
+def test_bambu_mqtt_report_parser_maps_job_temperatures_ams_and_errors():
+    status = parse_bambu_mqtt_status(_bambu_report_payload())
+
+    assert status.state == "printing"
+    assert status.raw_status["job"]["filename"] == "benchy.3mf"
+    assert status.raw_status["job"]["remaining_minutes"] == 33.0
+    assert status.raw_status["temperatures"]["bed_target_c"] == 60.0
+    assert status.raw_status["ams"]["trays"][0]["material"] == "PLA"
+    assert status.raw_status["ams"]["trays"][1]["subtype"] == "Bambu PLA Matte"
+    assert status.raw_status["errors"]["hms"] == [{"code": "0300_4000"}]
+
+
+def test_bambu_lan_credentials_are_encrypted_and_printer_scoped():
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    _create_sqlite_printer_credential_tables(engine)
+    SessionLocal = sessionmaker(bind=engine, future=True)
+    cipher = SecretCipher("2bfxMfuhQ9gjY4BfevPBknojr1mweViuOa3UccQuXIk=")
+    with SessionLocal() as session:
+        printer = Printer(
+            id=42,
+            name="Bambu A1",
+            host="192.168.1.53",
+            port=8883,
+            protocol="mqtts",
+            printer_type="mqtt_probe:bambu_mqtt",
+            state="confirmed",
+            adapter_type="bambu_mqtt",
+            capabilities=capabilities_for_service_type("mqtt_probe:bambu_mqtt"),
+        )
+        session.add(printer)
+        session.commit()
+
+        updated = configure_bambu_lan_credentials(session, cipher, printer, "12345678", "00M00A000000000")
+
+        assert updated.credential_secret_name == "printer_42_bambu_lan"
+        assert updated.capabilities["device_id"] == "00M00A000000000"
+        assert get_bambu_lan_access_code(session, cipher, updated) == "12345678"
+        secret_record = session.query(ProviderSecret).one()
+        assert "12345678" not in secret_record.encrypted_value
+        assert secret_record.last_four == "5678"
+
+        assert delete_bambu_lan_credentials(session, updated) is True
+        assert updated.credential_secret_name is None
+        assert get_bambu_lan_access_code(session, cipher, updated) is None
+
+
+def _create_sqlite_printer_credential_tables(engine) -> None:
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE printers (
+                id INTEGER PRIMARY KEY,
+                owner_user_id INTEGER,
+                name VARCHAR(160) NOT NULL,
+                host VARCHAR(255) NOT NULL,
+                port INTEGER NOT NULL,
+                protocol VARCHAR(40) NOT NULL,
+                printer_type VARCHAR(80) NOT NULL,
+                state VARCHAR(40) NOT NULL,
+                identity_key VARCHAR(255),
+                adapter_type VARCHAR(80),
+                capabilities JSON NOT NULL,
+                credential_secret_name VARCHAR(120),
+                last_status JSON NOT NULL DEFAULT '{}',
+                last_status_at DATETIME,
+                build_volume_x_mm INTEGER,
+                build_volume_y_mm INTEGER,
+                build_volume_z_mm INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE provider_secrets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider VARCHAR(40) NOT NULL,
+                secret_name VARCHAR(80) NOT NULL,
+                encrypted_value TEXT NOT NULL,
+                encryption_key_id VARCHAR(64) NOT NULL,
+                secret_fingerprint VARCHAR(64) NOT NULL,
+                last_four VARCHAR(8) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                CONSTRAINT uq_provider_secrets_provider_secret_name UNIQUE (provider, secret_name)
+            )
+            """
+        )
+
+
+def _bambu_report_payload():
+    return {
+        "print": {
+            "gcode_state": "RUNNING",
+            "gcode_file": "benchy.3mf",
+            "mc_percent": 42,
+            "mc_remaining_time": 33,
+            "nozzle_temper": 219.5,
+            "nozzle_target_temper": 220,
+            "bed_temper": 59.1,
+            "bed_target_temper": 60,
+            "ams": {
+                "tray_now": "1",
+                "ams": [
+                    {
+                        "tray": [
+                            {"id": "0", "tray_color": "00AAFFFF", "tray_type": "PLA"},
+                            {
+                                "id": "1",
+                                "tray_color": "FF3300FF",
+                                "tray_type": "PLA",
+                                "tray_sub_brands": "Bambu PLA Matte",
+                            },
+                        ]
+                    }
+                ],
+            },
+            "hms": [{"code": "0300_4000"}],
+        }
+    }
 
 
 def test_moonraker_capability_diagnostics_parses_optional_integrations():
