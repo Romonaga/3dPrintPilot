@@ -183,6 +183,11 @@ def read_printer_job_status(
                 index=toolhead.index,
                 current_temperature=_temperature_response(toolhead.current_temperature),
                 color=toolhead.color,
+                color_source=toolhead.color_source,
+                material=toolhead.material,
+                material_source=toolhead.material_source,
+                vendor=toolhead.vendor,
+                subtype=toolhead.subtype,
             )
             for toolhead in status.toolheads
         ],

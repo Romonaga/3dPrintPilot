@@ -221,7 +221,12 @@ describe("domain API adapters", () => {
           label: "T0",
           index: 0,
           current_temperature: { current_c: 210, target_c: 215, power: 0.33 },
-          color: "#ff0000"
+          color: "#ff0000",
+          color_source: "moonraker_object",
+          material: "PLA",
+          material_source: "vendor_object",
+          vendor: "Snapmaker",
+          subtype: "SnapSpeed"
         }
       ],
       raw_status: { print_stats: { state: "printing" } },
@@ -235,7 +240,12 @@ describe("domain API adapters", () => {
         {
           label: "T0",
           currentTemperature: { currentC: 210, targetC: 215, power: 0.33 },
-          color: "#ff0000"
+          color: "#ff0000",
+          colorSource: "moonraker_object",
+          material: "PLA",
+          materialSource: "vendor_object",
+          vendor: "Snapmaker",
+          subtype: "SnapSpeed"
         }
       ]
     });
@@ -274,7 +284,10 @@ describe("domain API adapters", () => {
         engine_id: "moonraker",
         display_name: "Moonraker",
         description: "Moonraker/Klipper-compatible printer telemetry and control engine.",
-        capabilities: { control_enabled: true }
+        capabilities: {
+          control_enabled: true,
+          telemetry_source_priority: ["moonraker_object", "vendor_object", "spoolman", "extension_agent", "saved_capabilities"]
+        }
       }
     ];
 
@@ -284,7 +297,10 @@ describe("domain API adapters", () => {
         engineId: "moonraker",
         displayName: "Moonraker",
         description: "Moonraker/Klipper-compatible printer telemetry and control engine.",
-        capabilities: { control_enabled: true }
+        capabilities: {
+          control_enabled: true,
+          telemetry_source_priority: ["moonraker_object", "vendor_object", "spoolman", "extension_agent", "saved_capabilities"]
+        }
       }
     ]);
 

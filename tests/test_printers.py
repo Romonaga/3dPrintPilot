@@ -333,6 +333,12 @@ def test_moonraker_job_status_normalizes_thermals_and_tool_colors():
     assert status.toolheads[0].current_temperature is not None
     assert status.toolheads[0].current_temperature.current_c == 211.4
     assert [toolhead.color for toolhead in status.toolheads] == ["#ff0000", "#00ff00", "#0000ff", "#ffffff"]
+    assert [toolhead.color_source for toolhead in status.toolheads] == [
+        "moonraker_object",
+        "moonraker_object",
+        "saved_capabilities",
+        "saved_capabilities",
+    ]
 
 
 def test_printer_job_status_response_includes_moonraker_telemetry(monkeypatch):
@@ -362,6 +368,7 @@ def test_printer_job_status_response_includes_moonraker_telemetry(monkeypatch):
                     index=0,
                     current_temperature=MoonrakerTemperature(current_c=210.0, target_c=215.0),
                     color="#ff0000",
+                    color_source="moonraker_object",
                 ),
             ),
         )
@@ -376,6 +383,7 @@ def test_printer_job_status_response_includes_moonraker_telemetry(monkeypatch):
     assert body["toolheads"][0]["label"] == "T0"
     assert body["toolheads"][0]["current_temperature"]["current_c"] == 210.0
     assert body["toolheads"][0]["color"] == "#ff0000"
+    assert body["toolheads"][0]["color_source"] == "moonraker_object"
 
 
 def test_printer_engine_catalog_can_refresh_without_restarting_web():
@@ -392,6 +400,13 @@ def test_printer_engine_catalog_can_refresh_without_restarting_web():
     assert refresh_response.status_code == 200
     assert refresh_response.json()[0]["engine_id"] == "moonraker"
     assert refresh_response.json()[0]["capabilities"]["control_enabled"] is True
+    assert refresh_response.json()[0]["capabilities"]["telemetry_source_priority"] == [
+        "moonraker_object",
+        "vendor_object",
+        "spoolman",
+        "extension_agent",
+        "saved_capabilities",
+    ]
 
 
 def test_moonraker_routes_reject_unsupported_printers():
