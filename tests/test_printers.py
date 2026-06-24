@@ -14,6 +14,7 @@ from backend.domains.printers.adapters import (
     cancel_moonraker_print,
     engine_catalog,
     list_moonraker_files,
+    parse_moonraker_capability_diagnostics,
     parse_moonraker_job_status,
     parse_moonraker_status,
     parse_octoprint_status,
@@ -407,6 +408,73 @@ def test_printer_engine_catalog_can_refresh_without_restarting_web():
         "extension_agent",
         "saved_capabilities",
     ]
+
+
+def test_moonraker_capability_diagnostics_parses_optional_integrations():
+    diagnostics = parse_moonraker_capability_diagnostics(
+        extensions_payload={
+            "result": {
+                "agents": [
+                    {"name": "moonagent", "version": "0.0.1", "type": "agent", "url": "https://example.test/agent"}
+                ]
+            }
+        },
+        spoolman_payload={"result": {"spoolman_connected": True, "spool_id": 2, "pending_reports": []}},
+    )
+
+    assert diagnostics.extension_agents_available is True
+    assert diagnostics.extension_agents[0]["name"] == "moonagent"
+    assert diagnostics.spoolman_available is True
+    assert diagnostics.spoolman_status == {"spoolman_connected": True, "spool_id": 2, "pending_reports": []}
+    assert diagnostics.probe_errors == {}
+
+
+def test_moonraker_capability_diagnostics_treats_missing_spoolman_as_nonfatal():
+    diagnostics = parse_moonraker_capability_diagnostics(
+        extensions_payload={"result": {"agents": []}},
+        spoolman_payload={"error": {"code": 404, "message": "Not Found"}},
+        probe_errors={"spoolman": "not_configured"},
+    )
+
+    assert diagnostics.extension_agents_available is False
+    assert diagnostics.extension_agents == ()
+    assert diagnostics.spoolman_available is False
+    assert diagnostics.spoolman_status is None
+    assert diagnostics.probe_errors == {"spoolman": "not_configured"}
+
+
+def test_printer_capability_diagnostics_route_serializes_probe_results(monkeypatch):
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakeMoonrakerPrinter())
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    def fake_diagnostics(printer):
+        from datetime import UTC, datetime
+
+        from backend.domains.printers.adapters import MoonrakerCapabilityDiagnostics
+
+        assert printer.id == 12
+        return MoonrakerCapabilityDiagnostics(
+            adapter_type="moonraker",
+            extension_agents_available=True,
+            extension_agents=({"name": "moonagent", "version": "1.0", "type": "agent", "url": "https://example.test"},),
+            spoolman_available=False,
+            spoolman_status=None,
+            probe_errors={"spoolman": "not_configured"},
+            observed_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr("backend.domains.printers.routes.fetch_moonraker_capability_diagnostics", fake_diagnostics)
+
+    response = client.get("/api/printers/12/capability-diagnostics")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["extension_agents_available"] is True
+    assert body["extension_agents"][0]["name"] == "moonagent"
+    assert body["spoolman_available"] is False
+    assert body["probe_errors"] == {"spoolman": "not_configured"}
 
 
 def test_moonraker_routes_reject_unsupported_printers():

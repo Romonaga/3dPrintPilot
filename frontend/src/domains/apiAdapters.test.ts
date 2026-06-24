@@ -5,6 +5,7 @@ import { discoverSourceModelFiles, importDownloadedModelFile, importSourceModelF
 import { downloadOperationsBackup } from "./operations/api";
 import {
   cancelPrinterPrint,
+  getPrinterCapabilityDiagnostics,
   getPrinterJobStatus,
   listPrinterEngines,
   listPrinterFiles,
@@ -276,6 +277,32 @@ describe("domain API adapters", () => {
     await expect(resumePrinterPrint(4)).resolves.toMatchObject({ action: "resume" });
     mockJson({ printer_id: 4, action: "cancel", accepted: true, raw_response: {} });
     await expect(cancelPrinterPrint(4)).resolves.toMatchObject({ action: "cancel" });
+  });
+
+  it("maps Moonraker capability diagnostics", async () => {
+    mockJson({
+      printer_id: 4,
+      adapter_type: "moonraker",
+      extension_agents_available: true,
+      extension_agents: [{ name: "moonagent", version: "1.0", type: "agent", url: "https://example.test" }],
+      spoolman_available: false,
+      spoolman_status: null,
+      probe_errors: { spoolman: "not_configured" },
+      observed_at: "2026-06-21T16:00:00Z"
+    });
+
+    await expect(getPrinterCapabilityDiagnostics(4)).resolves.toMatchObject({
+      printerId: 4,
+      adapterType: "moonraker",
+      extensionAgentsAvailable: true,
+      extensionAgents: [{ name: "moonagent" }],
+      spoolmanAvailable: false,
+      spoolmanStatus: null,
+      probeErrors: { spoolman: "not_configured" }
+    });
+
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("/api/printers/4/capability-diagnostics");
   });
 
   it("maps printer engine catalog list and refresh endpoints", async () => {

@@ -9,6 +9,7 @@ from backend.domains.printers.adapters import (
     UnsupportedPrinterControlError,
     cancel_moonraker_print,
     engine_catalog,
+    fetch_moonraker_capability_diagnostics,
     fetch_moonraker_job_status,
     fetch_read_only_status,
     list_moonraker_files,
@@ -30,6 +31,7 @@ from backend.domains.printers.schemas.request import (
 from backend.domains.printers.schemas.response import (
     DiscoveredPrinterResponse,
     PrinterActionResponse,
+    PrinterCapabilityDiagnosticsResponse,
     PrinterEndpointGroupResponse,
     PrinterEngineResponse,
     PrinterFileResponse,
@@ -193,6 +195,29 @@ def read_printer_job_status(
         ],
         raw_status=status.raw_status,
         observed_at=status.observed_at.isoformat(),
+    )
+
+
+@router.get("/{printer_id}/capability-diagnostics", response_model=PrinterCapabilityDiagnosticsResponse)
+def read_printer_capability_diagnostics(
+    printer_id: int,
+    _user=Depends(require_roles("viewer")),
+    store: PrinterStore = Depends(get_printer_store),
+) -> PrinterCapabilityDiagnosticsResponse:
+    printer = _get_printer_or_404(store, printer_id)
+    try:
+        diagnostics = fetch_moonraker_capability_diagnostics(printer)
+    except UnsupportedPrinterControlError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return PrinterCapabilityDiagnosticsResponse(
+        printer_id=printer.id,
+        adapter_type=diagnostics.adapter_type,
+        extension_agents_available=diagnostics.extension_agents_available,
+        extension_agents=list(diagnostics.extension_agents),
+        spoolman_available=diagnostics.spoolman_available,
+        spoolman_status=diagnostics.spoolman_status,
+        probe_errors=diagnostics.probe_errors,
+        observed_at=diagnostics.observed_at.isoformat(),
     )
 
 

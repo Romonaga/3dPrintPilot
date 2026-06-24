@@ -838,6 +838,21 @@ h3 {
   font-size: 13px;
 }
 
+.printer-capability-diagnostics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.printer-capability-diagnostics span {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--muted-strong);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 7px;
+}
+
 .printer-toolhead-label {
   display: inline-flex;
   align-items: center;

@@ -3,6 +3,7 @@ import {
   type DiscoveredPrinter,
   type Printer,
   type PrinterActionResult,
+  type PrinterCapabilityDiagnostics,
   type PrinterEngine,
   type PrinterFile,
   type PrinterJobStatus,
@@ -84,6 +85,17 @@ type ApiPrinterJobStatus = {
   observed_at: string;
 };
 
+type ApiPrinterCapabilityDiagnostics = {
+  printer_id: number;
+  adapter_type: string;
+  extension_agents_available: boolean;
+  extension_agents?: Array<Record<string, unknown>>;
+  spoolman_available: boolean;
+  spoolman_status?: Record<string, unknown> | null;
+  probe_errors?: Record<string, string>;
+  observed_at: string;
+};
+
 type ApiPrinterTemperature = {
   current_c: number | null;
   target_c: number | null;
@@ -139,6 +151,14 @@ export async function getPrinterJobStatus(printerId: number): Promise<PrinterJob
     throw new Error(`Printer job status failed with HTTP ${response.status}`);
   }
   return fromApiPrinterJobStatus(await response.json());
+}
+
+export async function getPrinterCapabilityDiagnostics(printerId: number): Promise<PrinterCapabilityDiagnostics> {
+  const response = await apiFetch(`/api/printers/${printerId}/capability-diagnostics`);
+  if (!response.ok) {
+    throw new Error(`Printer capability diagnostics failed with HTTP ${response.status}`);
+  }
+  return fromApiPrinterCapabilityDiagnostics(await response.json());
 }
 
 export async function listPrinterEngines(): Promise<PrinterEngine[]> {
@@ -399,6 +419,19 @@ function fromApiPrinterJobStatus(status: ApiPrinterJobStatus): PrinterJobStatus 
     })),
     rawStatus: status.raw_status,
     observedAt: status.observed_at
+  };
+}
+
+function fromApiPrinterCapabilityDiagnostics(diagnostics: ApiPrinterCapabilityDiagnostics): PrinterCapabilityDiagnostics {
+  return {
+    printerId: diagnostics.printer_id,
+    adapterType: diagnostics.adapter_type,
+    extensionAgentsAvailable: diagnostics.extension_agents_available,
+    extensionAgents: diagnostics.extension_agents ?? [],
+    spoolmanAvailable: diagnostics.spoolman_available,
+    spoolmanStatus: diagnostics.spoolman_status ?? null,
+    probeErrors: diagnostics.probe_errors ?? {},
+    observedAt: diagnostics.observed_at
   };
 }
 

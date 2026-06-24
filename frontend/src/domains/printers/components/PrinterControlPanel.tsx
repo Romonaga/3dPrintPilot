@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
 import {
   cancelPrinterPrint,
+  getPrinterCapabilityDiagnostics,
   getPrinterJobStatus,
   listPrinterFiles,
   pausePrinterPrint,
@@ -10,7 +11,14 @@ import {
   startPrinterFile,
   uploadPrinterFile
 } from "../api/printersApi";
-import { type Printer, type PrinterFile, type PrinterJobStatus, type PrinterTemperature, type PrinterToolheadTelemetry } from "../types";
+import {
+  type Printer,
+  type PrinterCapabilityDiagnostics,
+  type PrinterFile,
+  type PrinterJobStatus,
+  type PrinterTemperature,
+  type PrinterToolheadTelemetry
+} from "../types";
 
 type PrinterControlPanelProps = {
   printer: Printer;
@@ -22,6 +30,7 @@ export function PrinterControlPanel({ printer }: PrinterControlPanelProps) {
   const supported = useMemo(() => supportsMoonrakerControl(printer), [printer]);
   const [files, setFiles] = useState<PrinterFile[]>([]);
   const [jobStatus, setJobStatus] = useState<PrinterJobStatus | null>(null);
+  const [capabilityDiagnostics, setCapabilityDiagnostics] = useState<PrinterCapabilityDiagnostics | null>(null);
   const [selectedPath, setSelectedPath] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
@@ -36,9 +45,14 @@ export function PrinterControlPanel({ printer }: PrinterControlPanelProps) {
     setPendingAction((current) => current ?? "refresh");
     setError(null);
     try {
-      const [nextStatus, nextFiles] = await Promise.all([getPrinterJobStatus(printer.id), listPrinterFiles(printer.id)]);
+      const [nextStatus, nextFiles, nextDiagnostics] = await Promise.all([
+        getPrinterJobStatus(printer.id),
+        listPrinterFiles(printer.id),
+        getPrinterCapabilityDiagnostics(printer.id).catch(() => null)
+      ]);
       setJobStatus(nextStatus);
       setFiles(nextFiles);
+      setCapabilityDiagnostics(nextDiagnostics);
       setSelectedPath((current) => {
         if (current && nextFiles.some((file) => file.path === current)) {
           return current;
@@ -55,6 +69,7 @@ export function PrinterControlPanel({ printer }: PrinterControlPanelProps) {
   useEffect(() => {
     setFiles([]);
     setJobStatus(null);
+    setCapabilityDiagnostics(null);
     setSelectedPath("");
     setUploadFile(null);
     setFileInputKey((current) => current + 1);
@@ -165,6 +180,7 @@ export function PrinterControlPanel({ printer }: PrinterControlPanelProps) {
       </div>
 
       {jobStatus ? <PrinterTelemetrySummary status={jobStatus} /> : null}
+      {capabilityDiagnostics ? <PrinterCapabilityDiagnosticsSummary diagnostics={capabilityDiagnostics} /> : null}
 
       <div className="printer-file-grid">
         <label className="field-label">
@@ -258,6 +274,18 @@ export function PrinterControlPanel({ printer }: PrinterControlPanelProps) {
 
       {statusMessage ? <p className="success-text">{statusMessage}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
+    </div>
+  );
+}
+
+function PrinterCapabilityDiagnosticsSummary({ diagnostics }: { diagnostics: PrinterCapabilityDiagnostics }) {
+  const agentCount = diagnostics.extensionAgents.length;
+  const errorCount = Object.keys(diagnostics.probeErrors).length;
+  return (
+    <div className="printer-capability-diagnostics" aria-label="Moonraker capability diagnostics">
+      <span>{agentCount === 1 ? "1 extension agent" : `${agentCount} extension agents`}</span>
+      <span>{diagnostics.spoolmanAvailable ? "Spoolman available" : "Spoolman unavailable"}</span>
+      {errorCount > 0 ? <span>{errorCount === 1 ? "1 optional probe unavailable" : `${errorCount} optional probes unavailable`}</span> : null}
     </div>
   );
 }

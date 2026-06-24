@@ -289,6 +289,23 @@ describe("App", () => {
       if (url === "/api/printers/4/files") {
         return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
+      if (url === "/api/printers/4/capability-diagnostics") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              printer_id: 4,
+              adapter_type: "moonraker",
+              extension_agents_available: false,
+              extension_agents: [],
+              spoolman_available: false,
+              spoolman_status: null,
+              probe_errors: { spoolman: "not_configured" },
+              observed_at: "2026-06-22T15:00:00Z"
+            }),
+            { status: 200 }
+          )
+        );
+      }
       if (url === "/api/printers/5/job-status") {
         return Promise.resolve(
           new Response(
@@ -330,6 +347,8 @@ describe("App", () => {
     expect(screen.getByText("210 C / 215 C")).toBeInTheDocument();
     expect(screen.getByText("#ff0000")).toBeInTheDocument();
     expect(screen.getByText("Color unknown")).toBeInTheDocument();
+    expect(screen.getByText("0 extension agents")).toBeInTheDocument();
+    expect(screen.getByText("Spoolman unavailable")).toBeInTheDocument();
   });
 
   it("toggles dark mode from the app shell", async () => {
