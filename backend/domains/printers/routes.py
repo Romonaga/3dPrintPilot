@@ -610,7 +610,12 @@ def _endpoint_capabilities(endpoint) -> tuple[str, ...]:
     if "moonraker" in service_type or "klipper" in service_type:
         return ("Klipper/Moonraker API", "Live status WebSocket", "Build volume and temperature metadata")
     if "bambu_mqtt" in service_type:
-        return ("Bambu LAN MQTT", "Status telemetry candidate", "Requires local access code for full use")
+        return (
+            "Bambu LAN MQTT",
+            "Scan-only discovery without access code",
+            "Full telemetry requires LAN access code",
+            "LAN/Developer mode may limit Bambu Handy or cloud workflows",
+        )
     if "bambu_camera" in service_type:
         return ("Bambu camera/control TCP port",)
     if "octoprint" in service_type:

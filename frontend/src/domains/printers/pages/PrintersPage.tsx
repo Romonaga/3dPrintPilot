@@ -214,6 +214,7 @@ export default function PrintersPage({
                       emptyLabel="Capabilities unknown"
                       printer={printer}
                     />
+                    {isBambuLanPrinter(printer) ? <BambuLanNotice variant="saved" /> : null}
                     {refreshInfo ? <PrinterRefreshSummary refreshInfo={refreshInfo} /> : null}
                     {refreshError ? <p className="printer-refresh-error">{refreshError}</p> : null}
                   </div>
@@ -305,11 +306,14 @@ export default function PrintersPage({
                       ))}
                     </div>
                     {primaryEndpoint ? (
-                      <PrinterCapabilitySummary
-                        ariaLabel={`Detected hardware capabilities for ${group.host}`}
-                        includeBuildVolume
-                        printer={primaryEndpoint}
-                      />
+                      <>
+                        <PrinterCapabilitySummary
+                          ariaLabel={`Detected hardware capabilities for ${group.host}`}
+                          includeBuildVolume
+                          printer={primaryEndpoint}
+                        />
+                        {isBambuLanPrinter(primaryEndpoint) ? <BambuLanNotice variant="discovered" /> : null}
+                      </>
                     ) : null}
                     <div className="endpoint-list" aria-label={`Detected endpoints for ${group.host}`}>
                       {group.endpoints.map((endpoint) => (
@@ -359,6 +363,7 @@ export default function PrintersPage({
                         includeBuildVolume
                         printer={printer}
                       />
+                      {isBambuLanPrinter(printer) ? <BambuLanNotice variant="discovered" /> : null}
                     </div>
                     <div className="row-meta">
                       <span>{printer.serviceType}</span>
@@ -390,6 +395,16 @@ export default function PrintersPage({
 
 function formatEndpoint(protocol: string, host: string, port: number) {
   return `${protocol}://${host}:${port}`;
+}
+
+function BambuLanNotice({ variant }: { variant: "saved" | "discovered" }) {
+  const prefix = variant === "saved" ? "Bambu LAN" : "Bambu discovery";
+  return (
+    <p className="muted-copy">
+      {prefix}: scan-only visibility works without credentials. Full local MQTT telemetry needs the printer LAN access code
+      and LAN or Developer mode, which may limit Bambu Handy or cloud workflows on some firmware.
+    </p>
+  );
 }
 
 function PrinterRefreshSummary({ refreshInfo }: { refreshInfo: PrinterRefreshInfo }) {
@@ -466,4 +481,10 @@ function formatBuildVolume(x: number | null, y: number | null, z: number | null)
     return "Build volume unknown";
   }
   return `${x} x ${y} x ${z} mm`;
+}
+
+function isBambuLanPrinter(printer: { printerType?: string; serviceType?: string; protocol: string; capabilities?: Record<string, unknown> }) {
+  const adapter = typeof printer.capabilities?.adapter === "string" ? printer.capabilities.adapter : "";
+  const source = `${printer.printerType ?? ""} ${printer.serviceType ?? ""} ${printer.protocol} ${adapter}`.toLowerCase();
+  return source.includes("bambu") || source.includes("mqtt_probe:bambu_mqtt");
 }
