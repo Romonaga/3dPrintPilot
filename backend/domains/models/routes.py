@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
+from dataclasses import dataclass
+from io import BytesIO
+from pathlib import PurePath
+from urllib.parse import quote, urlparse
+from zipfile import BadZipFile, ZipFile
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -11,7 +15,7 @@ from backend.core.secrets import get_secret_cipher
 from backend.domains.models.entities import GeometryParseError
 from backend.domains.models.models import Model, ModelFile, SourceProjectScan, SourceProjectScanFile
 from backend.domains.models.schemas.response import ModelFilePayloadResponse, ModelFileResponse, ModelGeometryResponse, ModelResponse
-from backend.domains.models.service import MAX_UPLOAD_BYTES, analyze_model_bytes, compress_model_payload, safe_filename
+from backend.domains.models.service import MAX_UPLOAD_BYTES, SUPPORTED_EXTENSIONS, analyze_model_bytes, compress_model_payload, safe_filename
 from backend.domains.models.store import ModelStore
 from backend.domains.site_scanning.runners import (
     SourceSiteCapability,
@@ -26,6 +30,16 @@ from backend.domains.users.dependencies import require_roles
 
 router = APIRouter(prefix="/models", tags=["models"])
 source_site_service = SiteScanService()
+MAX_SOURCE_ARCHIVE_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class DownloadedModelCandidate:
+    filename: str
+    content_type: str | None
+    data: bytes
+    source_project_url: str
+    source_file_url: str
 
 
 class DiscoverSourceFilesRequest(BaseModel):
@@ -175,6 +189,7 @@ def import_source_model_files(
     runner = _source_site_runner(request.site_key, SourceSiteCapability.FILE_DOWNLOAD)
     auth_headers = _source_auth_headers(auth_store, request.site_key)
     created_models: list[ModelResponse] = []
+    downloaded_candidates: list[DownloadedModelCandidate] = []
     for file_id in request.file_ids:
         try:
             downloaded = runner.download_project_file(
@@ -183,21 +198,26 @@ def import_source_model_files(
                 auth_headers=auth_headers,
                 max_bytes=MAX_UPLOAD_BYTES,
             )
-            filename = safe_filename(downloaded.filename)
-            analysis = analyze_model_bytes(downloaded.data, filename=filename, content_type=downloaded.content_type)
-            title = _downloaded_model_title(request.title, filename, len(request.file_ids))
-            model = store.save_downloaded_model(
-                title=title,
-                source_project_url=_source_url(downloaded.source_project_url, "source_project_url"),
-                source_file_url=_source_url(downloaded.source_file_url, "source_file_url"),
-                filename=filename,
-                content_type=downloaded.content_type,
-                analysis=analysis,
-                payload=compress_model_payload(downloaded.data),
-                created_by_user_id=getattr(user, "id", None),
-            )
+            downloaded_candidates.extend(_downloaded_model_candidates(downloaded))
         except SourceSiteRunnerError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except GeometryParseError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    for candidate in downloaded_candidates:
+        try:
+            filename = safe_filename(candidate.filename)
+            analysis = analyze_model_bytes(candidate.data, filename=filename, content_type=candidate.content_type)
+            title = _downloaded_model_title(request.title, filename, len(downloaded_candidates))
+            model = store.save_downloaded_model(
+                title=title,
+                source_project_url=_source_url(candidate.source_project_url, "source_project_url"),
+                source_file_url=_source_url(candidate.source_file_url, "source_file_url"),
+                filename=filename,
+                content_type=candidate.content_type,
+                analysis=analysis,
+                payload=compress_model_payload(candidate.data),
+                created_by_user_id=getattr(user, "id", None),
+            )
         except GeometryParseError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         created_models.append(_model_response(model))
@@ -344,6 +364,63 @@ def _source_scan_file_response(file: SourceProjectScanFile) -> SourceModelFileRe
         created_at=file.source_created_at,
         notes=file.notes,
     )
+
+
+def _downloaded_model_candidates(downloaded) -> list[DownloadedModelCandidate]:
+    filename = safe_filename(downloaded.filename)
+    if PurePath(filename).suffix.lower() != ".zip":
+        return [
+            DownloadedModelCandidate(
+                filename=filename,
+                content_type=downloaded.content_type,
+                data=downloaded.data,
+                source_project_url=downloaded.source_project_url,
+                source_file_url=downloaded.source_file_url,
+            )
+        ]
+    return _archive_model_candidates(downloaded)
+
+
+def _archive_model_candidates(downloaded) -> list[DownloadedModelCandidate]:
+    try:
+        with ZipFile(BytesIO(downloaded.data)) as archive:
+            return _archive_model_candidates_from_zip(downloaded, archive)
+    except BadZipFile as exc:
+        raise GeometryParseError("Downloaded archive is not a valid ZIP file.") from exc
+
+
+def _archive_model_candidates_from_zip(downloaded, archive: ZipFile) -> list[DownloadedModelCandidate]:
+    uncompressed_total = sum(item.file_size for item in archive.infolist())
+    if uncompressed_total > MAX_SOURCE_ARCHIVE_UNCOMPRESSED_BYTES:
+        raise GeometryParseError("Downloaded archive expands beyond the safe import limit.")
+    candidates: list[DownloadedModelCandidate] = []
+    for item in archive.infolist():
+        if item.is_dir() or PurePath(item.filename).suffix.lower() not in SUPPORTED_EXTENSIONS:
+            continue
+        data = archive.read(item)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise GeometryParseError(f"Archived model file exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB import limit.")
+        candidates.append(
+            DownloadedModelCandidate(
+                filename=safe_filename(item.filename),
+                content_type=_model_content_type(item.filename),
+                data=data,
+                source_project_url=downloaded.source_project_url,
+                source_file_url=f"{downloaded.source_file_url}#{quote(item.filename)}",
+            )
+        )
+    if not candidates:
+        raise GeometryParseError("Downloaded archive does not contain STL or 3MF model files.")
+    return candidates
+
+
+def _model_content_type(filename: str) -> str | None:
+    file_format = SUPPORTED_EXTENSIONS.get(PurePath(filename).suffix.lower())
+    if file_format == "stl":
+        return "model/stl"
+    if file_format == "3mf":
+        return "model/3mf"
+    return None
 
 
 def _downloaded_model_title(title: str | None, filename: str, selected_count: int) -> str:
