@@ -11,7 +11,9 @@ class CompatibilityCheckItemResponse(BaseModel):
 
 class CompatibilityCheckResponse(BaseModel):
     id: int
-    scan_result_id: int
+    scan_result_id: int | None
+    model_id: int | None = None
+    model_file_id: int | None = None
     printer_id: int
     status: str
     source_type: str
@@ -28,5 +30,13 @@ class CompatibilityRunResponse(BaseModel):
     scan_run_id: int
     printer_count: int
     candidate_count: int
+    check_count: int
+    checks: list[CompatibilityCheckResponse]
+
+
+class ModelCompatibilityRunResponse(BaseModel):
+    model_id: int
+    model_file_id: int
+    printer_count: int
     check_count: int
     checks: list[CompatibilityCheckResponse]

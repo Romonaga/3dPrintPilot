@@ -12,10 +12,12 @@ class CompatibilityCheck(Base):
     __tablename__ = "compatibility_checks"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    scan_result_id: Mapped[int] = mapped_column(
+    scan_result_id: Mapped[int | None] = mapped_column(
         ForeignKey("model_site_scan_results.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
+    model_id: Mapped[int | None] = mapped_column(ForeignKey("models.id", ondelete="CASCADE"))
+    model_file_id: Mapped[int | None] = mapped_column(ForeignKey("model_files.id", ondelete="CASCADE"))
     printer_id: Mapped[int] = mapped_column(ForeignKey("printers.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     source_type: Mapped[str] = mapped_column(String(40), nullable=False, default="metadata_only")
@@ -34,6 +36,8 @@ class CompatibilityCheck(Base):
 
     __table_args__ = (
         Index("ix_compatibility_checks_scan_result_id", "scan_result_id"),
+        Index("ix_compatibility_checks_model_id_created_at", "model_id", "created_at"),
+        Index("ix_compatibility_checks_model_file_id", "model_file_id"),
         Index("ix_compatibility_checks_printer_id_created_at", "printer_id", "created_at"),
         Index("ix_compatibility_checks_status_created_at", "status", "created_at"),
     )
