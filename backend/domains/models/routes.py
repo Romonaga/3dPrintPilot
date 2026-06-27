@@ -16,14 +16,12 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_db_session
 from backend.core.secrets import get_secret_cipher
 from backend.domains.models.entities import GeometryParseError
-from backend.domains.models.models import Model, ModelFile, SlicerArtifact, SourceProjectScan, SourceProjectScanFile
+from backend.domains.models.models import SourceProjectScan, SourceProjectScanFile
 from backend.domains.models.schemas.response import (
-    ModelFilePayloadResponse,
-    ModelFileResponse,
-    ModelGeometryResponse,
     ModelResponse,
     SlicerArtifactResponse,
 )
+from backend.domains.models.responses import model_response, slicer_artifact_response
 from backend.domains.models.service import MAX_UPLOAD_BYTES, SUPPORTED_EXTENSIONS, analyze_model_bytes, compress_model_payload, safe_filename
 from backend.domains.models.store import ModelStore
 from backend.domains.site_scanning.runners import (
@@ -98,7 +96,7 @@ def list_models(
     _user=Depends(require_roles("viewer")),
     store: ModelStore = Depends(get_model_store),
 ) -> list[ModelResponse]:
-    return [_model_response(model) for model in store.list_models()]
+    return [model_response(model) for model in store.list_models()]
 
 
 @router.post("/uploads", response_model=ModelResponse, status_code=201)
@@ -126,7 +124,7 @@ async def upload_model(
         analysis=analysis,
         created_by_user_id=getattr(user, "id", None),
     )
-    return _model_response(model)
+    return model_response(model)
 
 
 @router.post("/imports/downloaded-file", response_model=ModelResponse, status_code=201)
@@ -158,7 +156,7 @@ async def import_downloaded_model_file(
         payload=compress_model_payload(data),
         created_by_user_id=getattr(user, "id", None),
     )
-    return _model_response(model)
+    return model_response(model)
 
 
 @router.post("/imports/source-files/discover", response_model=SourceProjectFilesResponse)
@@ -230,7 +228,7 @@ def import_source_model_files(
             )
         except GeometryParseError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        created_models.append(_model_response(model))
+        created_models.append(model_response(model))
     return created_models
 
 
@@ -243,7 +241,7 @@ def list_slicer_artifacts(
 ) -> list[SlicerArtifactResponse]:
     if store.get_model_file(model_id, file_id) is None:
         raise HTTPException(status_code=404, detail="Model file not found")
-    return [_slicer_artifact_response(artifact) for artifact in store.list_slicer_artifacts(model_id, file_id)]
+    return [slicer_artifact_response(artifact) for artifact in store.list_slicer_artifacts(model_id, file_id)]
 
 
 @router.post("/{model_id}/files/{file_id}/slicer-artifacts", response_model=SlicerArtifactResponse, status_code=201)
@@ -286,7 +284,7 @@ async def create_slicer_artifact(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _slicer_artifact_response(artifact)
+    return slicer_artifact_response(artifact)
 
 
 @router.get("/{model_id}/files/{file_id}/payload")
@@ -348,92 +346,7 @@ def get_model(
     model = store.get_model(model_id)
     if model is None:
         raise HTTPException(status_code=404, detail="Model not found")
-    return _model_response(model)
-
-
-def _model_response(model: Model) -> ModelResponse:
-    return ModelResponse(
-        id=model.id,
-        title=model.title,
-        source_url=model.source_url,
-        status=model.status,
-        created_at=model.created_at.isoformat(),
-        updated_at=model.updated_at.isoformat(),
-        files=[_file_response(model_file) for model_file in model.files],
-    )
-
-
-def _file_response(model_file: ModelFile) -> ModelFileResponse:
-    geometry = model_file.geometry
-    payload = getattr(model_file, "payload", None)
-    return ModelFileResponse(
-        id=model_file.id,
-        filename=model_file.filename,
-        content_type=model_file.content_type,
-        file_format=model_file.file_format,
-        size_bytes=model_file.size_bytes,
-        storage_status=model_file.storage_status,
-        analysis_status=model_file.analysis_status,
-        analysis_job_id=model_file.analysis_job_id,
-        analysis_warnings=list(model_file.analysis_warnings or []),
-        geometry=(
-            ModelGeometryResponse(
-                units=geometry.units,
-                size_x_mm=geometry.size_x_mm,
-                size_y_mm=geometry.size_y_mm,
-                size_z_mm=geometry.size_z_mm,
-                min_x_mm=geometry.min_x_mm,
-                min_y_mm=geometry.min_y_mm,
-                min_z_mm=geometry.min_z_mm,
-                max_x_mm=geometry.max_x_mm,
-                max_y_mm=geometry.max_y_mm,
-                max_z_mm=geometry.max_z_mm,
-                volume_mm3=geometry.volume_mm3,
-                triangle_count=geometry.triangle_count,
-                warnings=list(geometry.warnings or []),
-            )
-            if geometry is not None
-            else None
-        ),
-        payload=(
-            ModelFilePayloadResponse(
-                source_project_url=payload.source_project_url,
-                source_file_url=payload.source_file_url,
-                compression=payload.compression,
-                original_size_bytes=payload.original_size_bytes,
-                compressed_size_bytes=payload.compressed_size_bytes,
-                original_sha256=payload.original_sha256,
-                compressed_sha256=payload.compressed_sha256,
-                created_at=payload.created_at.isoformat(),
-            )
-            if payload is not None
-            else None
-        ),
-        created_at=model_file.created_at.isoformat(),
-    )
-
-
-def _slicer_artifact_response(artifact: SlicerArtifact) -> SlicerArtifactResponse:
-    return SlicerArtifactResponse(
-        id=artifact.id,
-        model_file_id=artifact.model_file_id,
-        printer_id=artifact.printer_id,
-        output_filename=artifact.output_filename,
-        output_format=artifact.output_format,
-        content_type=artifact.content_type,
-        slicer_name=artifact.slicer_name,
-        slicer_version=artifact.slicer_version,
-        profile_name=artifact.profile_name,
-        settings=artifact.settings,
-        settings_hash=artifact.settings_hash,
-        status=artifact.status,
-        compression=artifact.compression,
-        original_size_bytes=artifact.original_size_bytes,
-        compressed_size_bytes=artifact.compressed_size_bytes,
-        original_sha256=artifact.original_sha256,
-        compressed_sha256=artifact.compressed_sha256,
-        created_at=artifact.created_at.isoformat(),
-    )
+    return model_response(model)
 
 
 def _source_site_runner(site_key: str, capability: SourceSiteCapability) -> SourceSiteRunner:
