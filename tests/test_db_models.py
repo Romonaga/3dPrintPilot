@@ -102,6 +102,8 @@ def test_compatibility_checks_are_persistable_with_items():
     item_columns = CompatibilityCheckItem.__table__.columns
 
     assert "scan_result_id" in check_columns
+    assert "model_id" in check_columns
+    assert "model_file_id" in check_columns
     assert "printer_id" in check_columns
     assert "status" in check_columns
     assert "source_type" in check_columns

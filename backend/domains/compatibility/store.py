@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -8,6 +10,13 @@ from backend.domains.compatibility.models import CompatibilityCheck, Compatibili
 from backend.domains.models.models import Model, ModelFile
 from backend.domains.printers.models import Printer
 from backend.domains.site_scanning.models import ModelSiteScanResult
+
+
+@dataclass(frozen=True)
+class ModelCompatibilityTarget:
+    model: Model
+    model_file: ModelFile
+    requirements: ModelRequirements
 
 
 class CompatibilityStore:
@@ -31,6 +40,38 @@ class CompatibilityStore:
         if printer_ids:
             statement = statement.where(Printer.id.in_(printer_ids))
         return list(self._session.scalars(statement).all())
+
+    def get_model(self, model_id: int) -> Model | None:
+        statement = (
+            select(Model)
+            .options(selectinload(Model.files).selectinload(ModelFile.geometry))
+            .where(Model.id == model_id)
+        )
+        return self._session.scalars(statement).first()
+
+    def target_for_model(self, model: Model, model_file_id: int | None = None) -> ModelCompatibilityTarget:
+        model_file = _select_model_file(model, model_file_id)
+        geometry = model_file.geometry
+        if geometry is None:
+            raise ValueError("Model file has no analyzed geometry")
+        raw_metadata = model_file.raw_metadata or {}
+        requirements = ModelRequirements(
+            name=model.title,
+            size_x_mm=geometry.size_x_mm,
+            size_y_mm=geometry.size_y_mm,
+            size_z_mm=geometry.size_z_mm,
+            material=_clean_string(raw_metadata.get("material")),
+            nozzle_temp_c=_float_or_none(raw_metadata.get("nozzle_temp_c")),
+            bed_temp_c=_float_or_none(raw_metadata.get("bed_temp_c")),
+            enclosure_required=bool(raw_metadata.get("enclosure_required", False)),
+            file_format=model_file.file_format,
+            nozzle_diameter_mm=_float_or_none(raw_metadata.get("nozzle_diameter_mm")),
+            abrasive=bool(raw_metadata.get("abrasive", False)),
+            flexible=bool(raw_metadata.get("flexible", False)),
+            color_count=max(1, int(raw_metadata.get("color_count", 1) or 1)),
+            source_type="geometry",
+        )
+        return ModelCompatibilityTarget(model=model, model_file=model_file, requirements=requirements)
 
     def requirements_for_scan_result(self, scan_result: ModelSiteScanResult) -> ModelRequirements:
         uploaded = self._find_uploaded_model(scan_result.normalized_url)
@@ -89,23 +130,37 @@ class CompatibilityStore:
             model_url=scan_result.normalized_url,
             printer_name=report.printer_name,
             duration_ms=duration_ms,
-            raw_requirements={
-                "name": requirements.name,
-                "size_x_mm": requirements.size_x_mm,
-                "size_y_mm": requirements.size_y_mm,
-                "size_z_mm": requirements.size_z_mm,
-                "material": requirements.material,
-                "nozzle_temp_c": requirements.nozzle_temp_c,
-                "bed_temp_c": requirements.bed_temp_c,
-                "enclosure_required": requirements.enclosure_required,
-                "file_format": requirements.file_format,
-                "nozzle_diameter_mm": requirements.nozzle_diameter_mm,
-                "abrasive": requirements.abrasive,
-                "flexible": requirements.flexible,
-                "color_count": requirements.color_count,
-                "source_type": requirements.source_type,
-            },
+            raw_requirements=_requirements_payload(requirements),
         )
+        return self._save_check_with_items(check, report)
+
+    def save_model_report(
+        self,
+        *,
+        target: ModelCompatibilityTarget,
+        printer: Printer,
+        report: CompatibilityReport,
+        duration_ms: int,
+        source_type: str = "geometry",
+        confidence_label: str = "high",
+    ) -> CompatibilityCheck:
+        check = CompatibilityCheck(
+            scan_result_id=None,
+            model_id=target.model.id,
+            model_file_id=target.model_file.id,
+            printer_id=printer.id,
+            status=report.status.value,
+            source_type=source_type,
+            confidence_label=confidence_label,
+            model_title=report.model_name,
+            model_url=target.model.source_url or f"/api/models/{target.model.id}",
+            printer_name=report.printer_name,
+            duration_ms=duration_ms,
+            raw_requirements=_requirements_payload(target.requirements),
+        )
+        return self._save_check_with_items(check, report)
+
+    def _save_check_with_items(self, check: CompatibilityCheck, report: CompatibilityReport) -> CompatibilityCheck:
         self._session.add(check)
         self._session.flush()
         for item in report.items:
@@ -189,6 +244,37 @@ def report_confidence_label(requirements: ModelRequirements) -> str:
     if requirements.material or requirements.file_format:
         return "medium"
     return "low"
+
+
+def _select_model_file(model: Model, model_file_id: int | None) -> ModelFile:
+    files = sorted(model.files, key=lambda item: item.id)
+    if model_file_id is not None:
+        for model_file in files:
+            if model_file.id == model_file_id:
+                return model_file
+        raise ValueError("Model file not found")
+    if not files:
+        raise ValueError("Model has no files")
+    return files[0]
+
+
+def _requirements_payload(requirements: ModelRequirements) -> dict:
+    return {
+        "name": requirements.name,
+        "size_x_mm": requirements.size_x_mm,
+        "size_y_mm": requirements.size_y_mm,
+        "size_z_mm": requirements.size_z_mm,
+        "material": requirements.material,
+        "nozzle_temp_c": requirements.nozzle_temp_c,
+        "bed_temp_c": requirements.bed_temp_c,
+        "enclosure_required": requirements.enclosure_required,
+        "file_format": requirements.file_format,
+        "nozzle_diameter_mm": requirements.nozzle_diameter_mm,
+        "abrasive": requirements.abrasive,
+        "flexible": requirements.flexible,
+        "color_count": requirements.color_count,
+        "source_type": requirements.source_type,
+    }
 
 
 def _file_format_from_name(value: str) -> str | None:

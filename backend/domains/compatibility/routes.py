@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db_session
-from backend.domains.compatibility.schemas.request import RunCompatibilityChecksRequest
+from backend.domains.compatibility.schemas.request import RunCompatibilityChecksRequest, RunModelCompatibilityChecksRequest
 from backend.domains.compatibility.schemas.response import (
     CompatibilityCheckItemResponse,
     CompatibilityCheckResponse,
     CompatibilityRunResponse,
+    ModelCompatibilityRunResponse,
 )
 from backend.domains.compatibility.service import check_compatibility
 from backend.domains.compatibility.store import (
@@ -68,6 +69,50 @@ def run_compatibility_checks(
     )
 
 
+@router.post("/models/{model_id}/checks", response_model=ModelCompatibilityRunResponse)
+def run_model_compatibility_checks(
+    model_id: int,
+    request: RunModelCompatibilityChecksRequest,
+    _user=Depends(require_roles("user")),
+    store: CompatibilityStore = Depends(get_compatibility_store),
+) -> ModelCompatibilityRunResponse:
+    model = store.get_model(model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+    try:
+        target = store.target_for_model(model, request.model_file_id)
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if "not found" in detail.lower() else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    printers = store.list_printers(request.printer_ids)
+    if not printers:
+        raise HTTPException(status_code=404, detail="No known printers found")
+
+    checks = []
+    for printer in printers:
+        started = perf_counter()
+        report = check_compatibility(printer_capabilities(printer), target.requirements)
+        duration_ms = int((perf_counter() - started) * 1000)
+        checks.append(
+            store.save_model_report(
+                target=target,
+                printer=printer,
+                report=report,
+                duration_ms=duration_ms,
+                source_type=report_source_type(target.requirements),
+                confidence_label=report_confidence_label(target.requirements),
+            )
+        )
+    return ModelCompatibilityRunResponse(
+        model_id=target.model.id,
+        model_file_id=target.model_file.id,
+        printer_count=len(printers),
+        check_count=len(checks),
+        checks=[_check_response(check) for check in checks],
+    )
+
+
 @router.get("/checks", response_model=list[CompatibilityCheckResponse])
 def list_recent_compatibility_checks(
     limit: int = 50,
@@ -81,6 +126,8 @@ def _check_response(check) -> CompatibilityCheckResponse:
     return CompatibilityCheckResponse(
         id=check.id,
         scan_result_id=check.scan_result_id,
+        model_id=getattr(check, "model_id", None),
+        model_file_id=getattr(check, "model_file_id", None),
         printer_id=check.printer_id,
         status=check.status,
         source_type=check.source_type,

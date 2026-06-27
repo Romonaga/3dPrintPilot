@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
+from backend.domains.compatibility.entities import ModelRequirements
 from backend.domains.compatibility.routes import get_compatibility_store
 from backend.domains.site_scanning.browser_link import BrowserLinkStart, BrowserLinkStatus
 from backend.domains.site_scanning.routes import (
@@ -159,6 +163,90 @@ class EmptyCompatibilityStore:
 
     def list_printers(self, printer_ids=None):
         return []
+
+
+class FakeModelCompatibilityStore:
+    def __init__(self):
+        self.saved = []
+        self.model_file = SimpleNamespace(
+            id=51,
+            file_format="stl",
+            raw_metadata={},
+            geometry=SimpleNamespace(size_x_mm=120, size_y_mm=120, size_z_mm=80),
+        )
+        self.model = SimpleNamespace(
+            id=41,
+            title="Bracket",
+            source_url="https://models.example/bracket",
+            files=[self.model_file],
+        )
+
+    def get_model(self, model_id):
+        return self.model if model_id == self.model.id else None
+
+    def target_for_model(self, model, model_file_id=None):
+        if model_file_id is not None and model_file_id != self.model_file.id:
+            raise ValueError("Model file not found")
+        return SimpleNamespace(
+            model=model,
+            model_file=self.model_file,
+            requirements=ModelRequirements(
+                name=model.title,
+                size_x_mm=self.model_file.geometry.size_x_mm,
+                size_y_mm=self.model_file.geometry.size_y_mm,
+                size_z_mm=self.model_file.geometry.size_z_mm,
+                file_format=self.model_file.file_format,
+                source_type="geometry",
+            ),
+        )
+
+    def list_printers(self, printer_ids=None):
+        printers = [
+            SimpleNamespace(
+                id=1,
+                name="Large Printer",
+                build_volume_x_mm=250,
+                build_volume_y_mm=210,
+                build_volume_z_mm=210,
+                capabilities={"supported_file_formats": ["stl", "3mf"]},
+                last_status={"state": "ready"},
+            ),
+            SimpleNamespace(
+                id=2,
+                name="Tiny Printer",
+                build_volume_x_mm=80,
+                build_volume_y_mm=80,
+                build_volume_z_mm=80,
+                capabilities={"supported_file_formats": ["stl"]},
+                last_status={"state": "ready"},
+            ),
+        ]
+        if printer_ids:
+            return [printer for printer in printers if printer.id in printer_ids]
+        return printers
+
+    def save_model_report(self, *, target, printer, report, duration_ms, source_type="geometry", confidence_label="high"):
+        check = SimpleNamespace(
+            id=70 + len(self.saved),
+            scan_result_id=None,
+            model_id=target.model.id,
+            model_file_id=target.model_file.id,
+            printer_id=printer.id,
+            status=report.status.value,
+            source_type=source_type,
+            confidence_label=confidence_label,
+            model_title=report.model_name,
+            model_url=target.model.source_url,
+            printer_name=report.printer_name,
+            duration_ms=duration_ms,
+            created_at=datetime.now(UTC),
+            items=[
+                SimpleNamespace(code=item.code, severity=item.severity.value, message=item.message)
+                for item in report.items
+            ],
+        )
+        self.saved.append(check)
+        return check
 
 
 def test_health_endpoint_returns_app_status():
@@ -368,3 +456,32 @@ def test_compatibility_api_requires_scan_candidates():
 
     assert response.status_code == 404
     assert response.json()["detail"] == "No model candidates found for scan run"
+
+
+def test_model_compatibility_api_checks_imported_model_against_known_printers():
+    store = FakeModelCompatibilityStore()
+    app = create_app()
+    app.dependency_overrides[get_compatibility_store] = lambda: store
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.post("/api/compatibility/models/41/checks", json={"model_file_id": 51})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["model_id"] == 41
+    assert body["model_file_id"] == 51
+    assert body["printer_count"] == 2
+    assert body["check_count"] == 2
+    assert {check["printer_name"]: check["status"] for check in body["checks"]} == {
+        "Large Printer": "warning",
+        "Tiny Printer": "fail",
+    }
+    first_check = body["checks"][0]
+    assert first_check["scan_result_id"] is None
+    assert first_check["model_id"] == 41
+    assert first_check["model_file_id"] == 51
+    assert first_check["source_type"] == "geometry"
+    assert first_check["confidence_label"] == "high"
+    assert any(item["code"] == "build_volume" and item["severity"] == "fail" for check in body["checks"] for item in check["items"])
+    assert len(store.saved) == 2
