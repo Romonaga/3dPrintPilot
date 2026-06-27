@@ -30,6 +30,7 @@ PRINTABLES_BROWSER_SESSION_OBSERVE_HOSTS = (
 PRINTABLES_GRAPHQL_URL = "https://api.printables.com/graphql/"
 PRINTABLES_FILES_HOST = "files.printables.com"
 PRINTABLES_REQUEST_MIN_INTERVAL_SECONDS = 1.0
+PRINTABLES_DOWNLOAD_PACK_FILE_ID_PREFIX = "download-pack:"
 SUPPORTED_MODEL_EXTENSIONS = {".stl": "stl", ".3mf": "3mf"}
 MODEL_FILES_QUERY = """
 query ModelFiles($id: ID!) {
@@ -141,10 +142,12 @@ class PrintablesSourceSiteRunner:
         model = ((payload.get("data") or {}).get("model") or {})
         if str(model.get("id") or "") != project.external_project_id:
             raise SourceSiteRunnerError("Printables project files could not be resolved for that URL.")
-        files = tuple(
+        model_files = tuple(
             _source_file(project, raw_file)
             for raw_file in sorted(model.get("stls") or [], key=lambda item: item.get("order") or 0)
         )
+        download_packs = tuple(_source_download_pack(project, raw_pack) for raw_pack in model.get("downloadPacks") or [])
+        files = (*model_files, *download_packs)
         if not files:
             raise SourceSiteRunnerError("Printables did not return any model files for that project.")
         return SourceSiteProjectFiles(
@@ -167,6 +170,21 @@ class PrintablesSourceSiteRunner:
         source_file = next((item for item in project_files.files if item.file_id == str(file_id)), None)
         if source_file is None:
             raise SourceSiteRunnerError("Selected Printables file was not found on that project.")
+        if _is_download_pack_file_id(source_file.file_id):
+            pack_id, file_type = _download_pack_link_parts(source_file.file_id)
+            link = self._download_link(project_files.external_project_id, pack_id, auth_headers, file_type=file_type)
+            parsed_link = urlparse(link)
+            if parsed_link.scheme != "https" or parsed_link.netloc.lower() != PRINTABLES_FILES_HOST:
+                raise SourceSiteRunnerError("Printables returned an unexpected download host.")
+            data, content_type = _download_bytes(link, auth_headers=auth_headers, max_bytes=max_bytes)
+            return SourceSiteDownloadedFile(
+                file_id=source_file.file_id,
+                filename=source_file.filename,
+                content_type=content_type,
+                data=data,
+                source_project_url=project_files.source_project_url,
+                source_file_url=link,
+            )
         if not source_file.supported_model_file:
             raise SourceSiteRunnerError("Selected Printables file is not an STL or 3MF model file.")
         link = self._download_link(project_files.external_project_id, source_file.file_id, auth_headers)
@@ -188,13 +206,15 @@ class PrintablesSourceSiteRunner:
         model_id: str,
         file_id: str,
         auth_headers: dict[str, str] | None,
+        *,
+        file_type: str = "stl",
     ) -> str:
         payload = _post_graphql(
             DOWNLOAD_LINK_MUTATION,
             {
                 "id": str(file_id),
                 "modelId": str(model_id),
-                "fileType": "stl",
+                "fileType": file_type,
                 "source": "model_detail",
             },
             auth_headers=auth_headers,
@@ -235,6 +255,34 @@ def _source_file(project: SourceSiteProjectRef, raw_file: dict) -> SourceSiteFil
         created_at=str(raw_file.get("created") or "").strip() or None,
         notes=str(raw_file.get("note") or "").strip() or None,
     )
+
+
+def _source_download_pack(project: SourceSiteProjectRef, raw_pack: dict) -> SourceSiteFile:
+    pack_id = str(raw_pack.get("id") or "").strip()
+    file_type = str(raw_pack.get("fileType") or "zip").strip() or "zip"
+    name = str(raw_pack.get("name") or "").strip() or "Download all files"
+    filename = name if PurePath(name).suffix.lower() == ".zip" else f"{name}.zip"
+    return SourceSiteFile(
+        file_id=f"{PRINTABLES_DOWNLOAD_PACK_FILE_ID_PREFIX}{pack_id}:{file_type}",
+        filename=filename,
+        file_format="zip",
+        size_bytes=_optional_int(raw_pack.get("fileSize")),
+        source_file_url=f"{project.source_url}/files#download-pack-{pack_id}",
+        supported_model_file=bool(pack_id),
+        notes="Printables download-all archive; supported STL and 3MF files will be imported.",
+    )
+
+
+def _is_download_pack_file_id(file_id: str) -> bool:
+    return file_id.startswith(PRINTABLES_DOWNLOAD_PACK_FILE_ID_PREFIX)
+
+
+def _download_pack_link_parts(file_id: str) -> tuple[str, str]:
+    raw_value = file_id.removeprefix(PRINTABLES_DOWNLOAD_PACK_FILE_ID_PREFIX)
+    pack_id, _, file_type = raw_value.partition(":")
+    if not pack_id:
+        raise SourceSiteRunnerError("Selected Printables download pack is invalid.")
+    return pack_id, file_type or "zip"
 
 
 def _post_graphql(query: str, variables: dict, *, auth_headers: dict[str, str] | None = None) -> dict:

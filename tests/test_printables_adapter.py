@@ -87,6 +87,9 @@ def test_printables_runner_lists_project_files_and_marks_unsupported_extensions(
                         {"id": "file-2", "name": "helper.scad", "fileSize": 100, "order": 2},
                         {"id": "file-1", "name": "cube.stl", "fileSize": 2048, "order": 1},
                     ],
+                    "downloadPacks": [
+                        {"id": "pack-1", "name": "Download all files", "fileSize": 4096, "fileType": "zip"},
+                    ],
                 }
             }
         }
@@ -100,11 +103,14 @@ def test_printables_runner_lists_project_files_and_marks_unsupported_extensions(
     )
 
     assert project_files.project_title == "Calibration Cube"
-    assert [item.filename for item in project_files.files] == ["cube.stl", "helper.scad"]
+    assert [item.filename for item in project_files.files] == ["cube.stl", "helper.scad", "Download all files.zip"]
     assert project_files.files[0].supported_model_file is True
     assert project_files.files[0].source_file_url.endswith("/files#file-file-1")
     assert project_files.files[1].file_format == "scad"
     assert project_files.files[1].supported_model_file is False
+    assert project_files.files[2].file_format == "zip"
+    assert project_files.files[2].supported_model_file is True
+    assert "download-all archive" in (project_files.files[2].notes or "")
 
 
 def test_printables_runner_downloads_selected_model_file_with_site_download_link(monkeypatch):
@@ -161,6 +167,65 @@ def test_printables_runner_downloads_selected_model_file_with_site_download_link
     assert downloaded.content_type == "model/3mf"
     assert downloaded.data == b"3mf-data"
     assert downloaded.source_file_url == "https://files.printables.com/media/prints/229198/cube.3mf"
+
+
+def test_printables_runner_downloads_project_archive_pack(monkeypatch):
+    observed_mutation_variables = None
+
+    def fake_post_graphql(query, variables, *, auth_headers=None):
+        nonlocal observed_mutation_variables
+        assert auth_headers == {"Cookie": "session=abc"}
+        if "query ModelFiles" in query:
+            return {
+                "data": {
+                    "model": {
+                        "id": "229198",
+                        "name": "Calibration Cube",
+                        "stls": [],
+                        "downloadPacks": [
+                            {"id": "pack-1", "name": "Download all files", "fileSize": 4096, "fileType": "zip"},
+                        ],
+                    }
+                }
+            }
+        observed_mutation_variables = variables
+        return {
+            "data": {
+                "getDownloadLink": {
+                    "ok": True,
+                    "errors": [],
+                    "output": {"link": "https://files.printables.com/media/prints/229198/all-files.zip"},
+                }
+            }
+        }
+
+    def fake_download_bytes(url, *, auth_headers=None, max_bytes):
+        assert url == "https://files.printables.com/media/prints/229198/all-files.zip"
+        assert auth_headers == {"Cookie": "session=abc"}
+        assert max_bytes == 1024
+        return b"zip-data", "application/zip"
+
+    monkeypatch.setattr(printables_runner_module, "_post_graphql", fake_post_graphql)
+    monkeypatch.setattr(printables_runner_module, "_download_bytes", fake_download_bytes)
+    runner = PrintablesSourceSiteRunner()
+
+    downloaded = runner.download_project_file(
+        "https://www.printables.com/model/229198-printables-calibration-cube",
+        "download-pack:pack-1:zip",
+        auth_headers={"Cookie": "session=abc"},
+        max_bytes=1024,
+    )
+
+    assert observed_mutation_variables == {
+        "id": "pack-1",
+        "modelId": "229198",
+        "fileType": "zip",
+        "source": "model_detail",
+    }
+    assert downloaded.filename == "Download all files.zip"
+    assert downloaded.content_type == "application/zip"
+    assert downloaded.data == b"zip-data"
+    assert downloaded.source_file_url == "https://files.printables.com/media/prints/229198/all-files.zip"
 
 
 def test_printables_graphql_requests_are_throttled(monkeypatch):

@@ -104,7 +104,7 @@ export function useSupportedSourceImport({
     setSelectedSiteKey(scan.siteKey);
     setProjectUrl(scan.sourceProjectUrl);
     setSourceFiles(scan);
-    setSelectedFileIds(scan.files.filter((sourceFile) => sourceFile.supportedModelFile).map((sourceFile) => sourceFile.fileId));
+    setSelectedFileIds(defaultSelectedFileIds(scan));
     setSourceError(null);
     setTitle("");
   }
@@ -124,7 +124,7 @@ export function useSupportedSourceImport({
       const discovered = await discoverSourceModelFiles({ siteKey: requestSiteKey, sourceProjectUrl: requestProjectUrl });
       setSourceFiles(discovered);
       setRecentScans((current) => [discovered, ...current.filter((scan) => scan.scanId !== discovered.scanId)].slice(0, 20));
-      setSelectedFileIds(discovered.files.filter((sourceFile) => sourceFile.supportedModelFile).map((sourceFile) => sourceFile.fileId));
+      setSelectedFileIds(defaultSelectedFileIds(discovered));
       return discovered;
     } catch (err) {
       setSourceFiles(null);
@@ -203,4 +203,10 @@ function isConfiguredDownloadRunner(site: SiteAdapter) {
     site.capabilities.includes("file_listing") &&
     site.capabilities.includes("file_download")
   );
+}
+
+function defaultSelectedFileIds(projectFiles: SourceProjectFiles) {
+  return projectFiles.files
+    .filter((sourceFile) => sourceFile.supportedModelFile && sourceFile.fileFormat !== "zip")
+    .map((sourceFile) => sourceFile.fileId);
 }

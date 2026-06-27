@@ -128,6 +128,8 @@ describe("App", () => {
     expect(within(screen.getByLabelText("Discovered source files")).getByText("Managed Triangle Project")).toBeInTheDocument();
     expect(within(screen.getByLabelText("Saved source project scans")).getByText("Managed Triangle Project")).toBeInTheDocument();
     expect(screen.getByLabelText(/triangle\.stl/i)).toBeChecked();
+    expect(screen.getByLabelText(/download all files\.zip/i)).not.toBeChecked();
+    expect(screen.getByLabelText(/download all files\.zip/i)).toBeEnabled();
     expect(screen.getByLabelText(/assembly-notes\.pdf/i)).toBeDisabled();
     expect(screen.getByText("1 projects")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download Selected (1)" })).toBeInTheDocument();
@@ -1680,6 +1682,16 @@ function sampleSourceProjectFiles() {
         supported_model_file: false,
         created_at: null,
         notes: "Unsupported documentation file."
+      },
+      {
+        file_id: "download-pack-all",
+        filename: "Download all files.zip",
+        file_format: "zip",
+        size_bytes: 8192,
+        source_file_url: "https://www.printables.com/model/123/files#download-pack-all",
+        supported_model_file: true,
+        created_at: null,
+        notes: "Printables download-all archive; supported STL and 3MF files will be imported."
       }
     ]
   };

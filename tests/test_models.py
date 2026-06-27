@@ -231,14 +231,32 @@ class FakeSourceRunner:
                     source_file_url="https://www.printables.com/model/123-triangle/files#file-scad-1",
                     supported_model_file=False,
                 ),
+                SourceSiteFile(
+                    file_id="archive-1",
+                    filename="Download all files.zip",
+                    file_format="zip",
+                    size_bytes=512,
+                    source_file_url="https://www.printables.com/model/123-triangle/files#download-pack-archive-1",
+                    supported_model_file=True,
+                    notes="Printables download-all archive; supported STL and 3MF files will be imported.",
+                ),
             ),
         )
 
     def download_project_file(self, project_url, file_id, *, auth_headers=None, max_bytes):
         self.download_headers.append(auth_headers)
         assert project_url == "https://www.printables.com/model/123-triangle"
-        assert file_id == "stl-1"
         assert max_bytes == MAX_UPLOAD_BYTES
+        if file_id == "archive-1":
+            return SourceSiteDownloadedFile(
+                file_id=file_id,
+                filename="Download all files.zip",
+                content_type="application/zip",
+                data=_sample_model_archive(),
+                source_project_url="https://www.printables.com/model/123-triangle",
+                source_file_url="https://files.printables.com/media/prints/123/all-files.zip",
+            )
+        assert file_id == "stl-1"
         return SourceSiteDownloadedFile(
             file_id=file_id,
             filename="../triangle.stl",
@@ -382,6 +400,8 @@ def test_model_source_file_discovery_returns_printables_files_without_auth_value
     assert body["files"][0]["filename"] == "triangle.stl"
     assert body["files"][0]["supported_model_file"] is True
     assert body["files"][1]["supported_model_file"] is False
+    assert body["files"][2]["filename"] == "Download all files.zip"
+    assert body["files"][2]["supported_model_file"] is True
     assert store.source_scans[0].source_project_url == "https://www.printables.com/model/123-triangle"
     assert runner.list_headers == [{"Cookie": "session=abc"}]
     assert "session=abc" not in response.text
@@ -441,6 +461,38 @@ def test_model_source_file_import_downloads_and_stores_selected_printables_files
     assert "session=abc" not in response.text
 
 
+def test_model_source_file_import_expands_printables_archive(monkeypatch):
+    store = FakeModelStore()
+    runner = FakeSourceRunner()
+    auth_store = FakeSourceAuthStore()
+    monkeypatch.setattr(model_routes, "source_site_service", FakeSourceSiteService(runner))
+    app = create_app()
+    app.dependency_overrides[get_model_store] = lambda: store
+    app.dependency_overrides[get_site_auth_profile_store] = lambda: auth_store
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/models/imports/source-files",
+        json={
+            "site_key": "printables",
+            "source_project_url": "https://www.printables.com/model/123-triangle",
+            "file_ids": ["archive-1"],
+            "title": "",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    payload = body[0]["files"][0]["payload"]
+    assert len(body) == 1
+    assert body[0]["title"] == "triangle.stl"
+    assert body[0]["files"][0]["filename"] == "triangle.stl"
+    assert payload["source_file_url"] == "https://files.printables.com/media/prints/123/all-files.zip#models/triangle.stl"
+    assert gzip_decompress(store.saved[0]["payload"].compressed_bytes) == ASCII_STL
+    assert runner.download_headers == [{"Cookie": "session=abc"}]
+
+
 def test_model_upload_rejects_oversized_files_before_parsing():
     app = create_app()
     app.dependency_overrides[get_model_store] = lambda: FakeModelStore()
@@ -489,4 +541,12 @@ def _sample_3mf() -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
         archive.writestr("3D/3dmodel.model", xml)
+    return buffer.getvalue()
+
+
+def _sample_model_archive() -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("models/triangle.stl", ASCII_STL)
+        archive.writestr("notes/readme.txt", b"Build notes")
     return buffer.getvalue()
