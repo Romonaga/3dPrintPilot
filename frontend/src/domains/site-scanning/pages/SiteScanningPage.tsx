@@ -8,13 +8,17 @@ import { ScanLimitsPanel } from "../components/ScanLimitsPanel";
 import { ScanMetrics } from "../components/ScanMetrics";
 import { ScanResultsTable } from "../components/ScanResultsTable";
 import { useSiteScan } from "../hooks/useSiteScan";
-import { type SiteAdapter } from "../types";
+import { SupportedSourceImportPanel } from "../../source-sites/components/SupportedSourceImportPanel";
+import { type SourceProjectRequest } from "../../source-sites/hooks/useSupportedSourceImport";
+import { type SiteAdapter, type SiteScanCandidate } from "../types";
 
 export default function SiteScanningPage() {
   const scan = useSiteScan();
   const [adapters, setAdapters] = useState<SiteAdapter[]>([]);
   const [adapterError, setAdapterError] = useState<string | null>(null);
+  const [sourceProjectRequest, setSourceProjectRequest] = useState<SourceProjectRequest | null>(null);
   const [savingAdapter, setSavingAdapter] = useState<string | null>(null);
+  const importSiteKey = importableSiteKey(scan.result?.summary.siteKey ?? null, adapters);
 
   useEffect(() => {
     let active = true;
@@ -48,6 +52,17 @@ export default function SiteScanningPage() {
     }
   }
 
+  function handleImportCandidate(candidate: SiteScanCandidate) {
+    if (!importSiteKey) {
+      return;
+    }
+    setSourceProjectRequest({
+      projectUrl: candidate.sourceUrl,
+      requestId: Date.now(),
+      siteKey: importSiteKey
+    });
+  }
+
   return (
     <section className="site-scan-layout" aria-label="Site scanning">
       <div className="site-scan-main">
@@ -63,7 +78,19 @@ export default function SiteScanningPage() {
           />
           {scan.error ? <p className="error-text">{scan.error}</p> : null}
         </section>
-        <ScanResultsTable result={scan.result} />
+        <ScanResultsTable
+          importSiteKey={importSiteKey}
+          onImportCandidate={handleImportCandidate}
+          result={scan.result}
+        />
+        <SupportedSourceImportPanel
+          className="panel scan-source-import-panel"
+          heading="Import Candidate Files"
+          headingId="scan-source-import-title"
+          projectRequest={sourceProjectRequest}
+          showImportedSummary
+          siteKey={importSiteKey ?? undefined}
+        />
       </div>
       <aside className="site-scan-side">
         <section className="panel adapter-panel" aria-labelledby="adapter-title">
@@ -103,4 +130,18 @@ export default function SiteScanningPage() {
       </aside>
     </section>
   );
+}
+
+function importableSiteKey(siteKey: string | null, adapters: SiteAdapter[]) {
+  if (!siteKey) {
+    return null;
+  }
+  const adapter = adapters.find((item) => item.siteKey === siteKey);
+  if (!adapter || !adapter.enabled || adapter.supportLevel === "generic_only" || !adapter.supportsDownloads) {
+    return null;
+  }
+  if (!adapter.capabilities.includes("file_listing") || !adapter.capabilities.includes("file_download")) {
+    return null;
+  }
+  return adapter.siteKey;
 }
