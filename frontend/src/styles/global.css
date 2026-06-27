@@ -491,6 +491,15 @@ h3 {
   font-size: 12px;
 }
 
+.scan-candidate-next {
+  max-width: 220px;
+  color: var(--muted);
+}
+
+.scan-candidate-action {
+  white-space: nowrap;
+}
+
 .source-file-list {
   display: grid;
   gap: 8px;

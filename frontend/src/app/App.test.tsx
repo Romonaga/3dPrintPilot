@@ -484,6 +484,54 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Scan Metrics" })).toBeInTheDocument();
   });
 
+  it("starts source file discovery from a site scan candidate that needs a file", async () => {
+    const fetchMock = mockApiFetch((input, init) => {
+      const url = String(input);
+      if (url === "/api/site-scanning/adapters") {
+        return Promise.resolve(new Response(JSON.stringify(sampleSiteAdapters()), { status: 200 }));
+      }
+      if (url === "/api/models/imports/source-files/scans") {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      if (url === "/api/site-scanning/scans" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify(sampleSiteScanResult()), { status: 200 }));
+      }
+      if (url === "/api/models/imports/source-files/discover" && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify(sampleSourceProjectFiles()), { status: 200 }));
+      }
+      return authenticatedFetch(input);
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Site Scans" }));
+    await user.clear(await screen.findByLabelText("Source URL"));
+    await user.type(screen.getByLabelText("Source URL"), "https://www.printables.com/model/123-managed-triangle");
+    await user.click(screen.getByRole("button", { name: "Scan" }));
+
+    expect(await screen.findByText("Needs model file")).toBeInTheDocument();
+    expect(screen.getByText("Import or upload geometry.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Import files" }));
+    const importPanel = screen.getByRole("region", { name: "Import Candidate Files" });
+    expect(within(importPanel).getByLabelText("Project URL")).toHaveValue("https://www.printables.com/model/123-managed-triangle");
+
+    await user.click(within(importPanel).getByRole("button", { name: "Scan Files" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/models/imports/source-files/discover",
+        expect.objectContaining({
+          body: JSON.stringify({
+            site_key: "printables",
+            source_project_url: "https://www.printables.com/model/123-managed-triangle"
+          }),
+          method: "POST"
+        })
+      )
+    );
+  });
+
   it("keeps visited view state mounted when navigating away and back", async () => {
     mockApiFetch((input) => {
       const url = String(input);
@@ -1634,6 +1682,46 @@ function sampleSourceProjectFiles() {
         notes: "Unsupported documentation file."
       }
     ]
+  };
+}
+
+function sampleSiteScanResult() {
+  return {
+    summary: {
+      scan_run_id: 44,
+      status: "completed",
+      stop_reason: "completed",
+      start_url: "https://www.printables.com/model/123-managed-triangle",
+      normalized_start_url: "https://www.printables.com/model/123-managed-triangle",
+      site_key: "printables",
+      max_depth: 0,
+      max_pages: 1,
+      max_runtime_seconds: 30,
+      same_domain_only: true,
+      per_host_concurrency: 1,
+      queued_url_count: 1,
+      scanned_url_count: 1,
+      accepted_result_count: 1,
+      rejected_url_count: 0,
+      duration_ms: 25
+    },
+    candidates: [
+      {
+        source_url: "https://www.printables.com/model/123-managed-triangle",
+        title: "Managed Triangle",
+        depth: 0,
+        parent_url: null,
+        normalized_url: "https://www.printables.com/model/123-managed-triangle",
+        inclusion_reason: "public_printables_metadata",
+        status: "needs_file",
+        confidence: 0.9,
+        evidence: ["Extracted from public Printables page metadata."],
+        license: "unknown",
+        attribution: "Printables",
+        requirements: {}
+      }
+    ],
+    rejections: []
   };
 }
 

@@ -3,7 +3,7 @@ import { FormEvent } from "react";
 import { Spinner } from "../../../components/Spinner";
 import { type UploadedModel } from "../../models/types";
 import { type SiteAdapter } from "../../site-scanning/types";
-import { useSupportedSourceImport } from "../hooks/useSupportedSourceImport";
+import { type SourceProjectRequest, useSupportedSourceImport } from "../hooks/useSupportedSourceImport";
 import { formatSourceFileSize } from "../utils/formatSourceFile";
 
 type SupportedSourceImportPanelProps = {
@@ -11,7 +11,9 @@ type SupportedSourceImportPanelProps = {
   heading?: string;
   headingId?: string;
   onImported?: (models: UploadedModel[]) => void;
+  projectRequest?: SourceProjectRequest | null;
   showImportedSummary?: boolean;
+  siteKey?: string;
 };
 
 export function SupportedSourceImportPanel({
@@ -19,9 +21,11 @@ export function SupportedSourceImportPanel({
   heading = "Import From Source",
   headingId = "supported-source-import-title",
   onImported,
-  showImportedSummary = false
+  projectRequest = null,
+  showImportedSummary = false,
+  siteKey
 }: SupportedSourceImportPanelProps) {
-  const sourceImport = useSupportedSourceImport({ onImported });
+  const sourceImport = useSupportedSourceImport({ onImported, projectRequest, siteKey });
 
   async function handleDiscoverSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

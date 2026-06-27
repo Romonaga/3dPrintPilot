@@ -5,11 +5,18 @@ import { listSiteAdapters } from "../../site-scanning/api/siteScanningApi";
 import { type SiteAdapter } from "../../site-scanning/types";
 
 type UseSupportedSourceImportOptions = {
+  projectRequest?: SourceProjectRequest | null;
   siteKey?: string;
   onImported?: (models: UploadedModel[]) => void;
 };
 
-export function useSupportedSourceImport({ siteKey, onImported }: UseSupportedSourceImportOptions = {}) {
+export type SourceProjectRequest = {
+  projectUrl: string;
+  requestId: number;
+  siteKey: string;
+};
+
+export function useSupportedSourceImport({ projectRequest, siteKey, onImported }: UseSupportedSourceImportOptions = {}) {
   const [selectedSiteKey, setSelectedSiteKey] = useState(siteKey ?? "");
   const [projectUrl, setProjectUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -56,6 +63,15 @@ export function useSupportedSourceImport({ siteKey, onImported }: UseSupportedSo
       active = false;
     };
   }, [siteKey]);
+
+  useEffect(() => {
+    if (!projectRequest) {
+      return;
+    }
+    setSelectedSiteKey(projectRequest.siteKey);
+    setProjectUrl(projectRequest.projectUrl);
+    resetSourceSelection();
+  }, [projectRequest?.requestId]);
 
   function resetSourceSelection() {
     setSourceFiles(null);
