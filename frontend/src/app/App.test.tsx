@@ -515,8 +515,8 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Import files" }));
     const importPanel = screen.getByRole("region", { name: "Import Candidate Files" });
     expect(within(importPanel).getByLabelText("Project URL")).toHaveValue("https://www.printables.com/model/123-managed-triangle");
-
-    await user.click(within(importPanel).getByRole("button", { name: "Scan Files" }));
+    const discoveredFiles = await within(importPanel).findByLabelText("Discovered source files");
+    expect(within(discoveredFiles).getByText("Managed Triangle Project")).toBeInTheDocument();
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
