@@ -3,7 +3,7 @@ from __future__ import annotations
 from backend.db.base import Base
 from backend.domains.ai.models import AiUsageEvent
 from backend.domains.compatibility.models import CompatibilityCheck, CompatibilityCheckItem
-from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry, SourceProjectScan, SourceProjectScanFile
+from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry, SlicerArtifact, SourceProjectScan, SourceProjectScanFile
 from backend.domains.printers.models import NetworkScanResult
 from backend.domains.resources.models import BackgroundJob, ResourceSample
 from backend.domains.settings.models import InstanceSetting, ProviderSecret
@@ -23,6 +23,7 @@ def test_foundation_models_are_registered_by_domain():
     assert ModelFile.__tablename__ in table_names
     assert ModelFilePayload.__tablename__ in table_names
     assert ModelGeometry.__tablename__ in table_names
+    assert SlicerArtifact.__tablename__ in table_names
     assert SourceProjectScan.__tablename__ in table_names
     assert SourceProjectScanFile.__tablename__ in table_names
     assert ResourceSample.__tablename__ in table_names
@@ -124,6 +125,21 @@ def test_model_upload_geometry_tables_are_persistable():
     assert "original_sha256" in payload_columns
     assert "triangle_count" in geometry_columns
     assert "volume_mm3" in geometry_columns
+
+
+def test_slicer_artifacts_store_printer_profile_and_payload_metadata():
+    columns = SlicerArtifact.__table__.columns
+
+    assert "model_file_id" in columns
+    assert "printer_id" in columns
+    assert "output_filename" in columns
+    assert "output_format" in columns
+    assert "slicer_name" in columns
+    assert "profile_name" in columns
+    assert "settings" in columns
+    assert "settings_hash" in columns
+    assert "compressed_bytes" in columns
+    assert "original_sha256" in columns
 
 
 def test_source_project_scan_tables_store_file_listing_metadata():

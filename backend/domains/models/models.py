@@ -6,10 +6,11 @@ from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db.base import Base
+from backend.domains.printers.models import Printer
 from backend.domains.resources.models import BackgroundJob
 from backend.domains.users.models import User
 
-_ = (BackgroundJob, User)
+_ = (BackgroundJob, Printer, User)
 
 
 class Model(Base):
@@ -59,6 +60,7 @@ class ModelFile(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    slicer_artifacts: Mapped[list["SlicerArtifact"]] = relationship(back_populates="model_file", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_model_files_model_id", "model_id"),
@@ -87,6 +89,40 @@ class ModelFilePayload(Base):
     __table_args__ = (
         UniqueConstraint("model_file_id", name="uq_model_file_payloads_model_file_id"),
         Index("ix_model_file_payloads_original_sha256", "original_sha256"),
+    )
+
+
+class SlicerArtifact(Base):
+    __tablename__ = "slicer_artifacts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    model_file_id: Mapped[int] = mapped_column(ForeignKey("model_files.id", ondelete="CASCADE"), nullable=False)
+    printer_id: Mapped[int | None] = mapped_column(ForeignKey("printers.id", ondelete="SET NULL"))
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    output_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    output_format: Mapped[str] = mapped_column(String(40), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(160))
+    slicer_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    slicer_version: Mapped[str | None] = mapped_column(String(80))
+    profile_name: Mapped[str | None] = mapped_column(String(160))
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    settings_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="stored")
+    compression: Mapped[str] = mapped_column(String(20), nullable=False)
+    compressed_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    original_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    compressed_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    original_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    compressed_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    model_file: Mapped[ModelFile] = relationship(back_populates="slicer_artifacts")
+
+    __table_args__ = (
+        Index("ix_slicer_artifacts_model_file_id", "model_file_id"),
+        Index("ix_slicer_artifacts_printer_id_created_at", "printer_id", "created_at"),
+        Index("ix_slicer_artifacts_settings_hash", "settings_hash"),
     )
 
 

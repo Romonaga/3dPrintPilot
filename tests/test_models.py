@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from gzip import decompress as gzip_decompress
 from hashlib import sha256
 from io import BytesIO
+import json
 from types import SimpleNamespace
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -42,6 +43,7 @@ class FakeModelStore:
         self.saved = []
         self.source_scans = []
         self.model_files = {}
+        self.slicer_artifacts = []
 
     def list_source_project_scans(self, limit=20):
         return self.source_scans[:limit]
@@ -86,6 +88,47 @@ class FakeModelStore:
 
     def get_model_file(self, model_id, file_id):
         return self.model_files.get((model_id, file_id))
+
+    def list_slicer_artifacts(self, model_id, file_id):
+        if (model_id, file_id) not in self.model_files:
+            return []
+        return [artifact for artifact in self.slicer_artifacts if artifact.model_file_id == file_id]
+
+    def get_slicer_artifact(self, model_id, file_id, artifact_id):
+        if (model_id, file_id) not in self.model_files:
+            return None
+        return next((artifact for artifact in self.slicer_artifacts if artifact.id == artifact_id and artifact.model_file_id == file_id), None)
+
+    def save_slicer_artifact(self, **kwargs):
+        if (kwargs["model_id"], kwargs["file_id"]) not in self.model_files:
+            raise ValueError("Model file not found")
+        payload = kwargs["payload"]
+        now = datetime.now(UTC)
+        artifact = SimpleNamespace(
+            id=31 + len(self.slicer_artifacts),
+            model_file_id=kwargs["file_id"],
+            printer_id=kwargs["printer_id"],
+            created_by_user_id=kwargs["created_by_user_id"],
+            output_filename=kwargs["output_filename"],
+            output_format=kwargs["output_format"],
+            content_type=kwargs["content_type"],
+            slicer_name=kwargs["slicer_name"],
+            slicer_version=kwargs["slicer_version"],
+            profile_name=kwargs["profile_name"],
+            settings=kwargs["settings"],
+            settings_hash=kwargs["settings_hash"],
+            status="stored",
+            compression=payload.compression,
+            compressed_bytes=payload.compressed_bytes,
+            original_size_bytes=payload.original_size_bytes,
+            compressed_size_bytes=payload.compressed_size_bytes,
+            original_sha256=payload.original_sha256,
+            compressed_sha256=payload.compressed_sha256,
+            created_at=now,
+            updated_at=now,
+        )
+        self.slicer_artifacts.insert(0, artifact)
+        return artifact
 
     def save_uploaded_model(self, **kwargs):
         self.saved.append(kwargs)
@@ -416,6 +459,80 @@ def test_model_file_payload_restore_returns_404_when_payload_is_not_stored():
 
     assert restored.status_code == 404
     assert restored.json()["detail"] == "Model file payload is not stored"
+
+
+def test_slicer_artifacts_attach_multiple_outputs_to_model_file_and_restore_bytes():
+    store = FakeModelStore()
+    app = create_app()
+    app.dependency_overrides[get_model_store] = lambda: store
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+    uploaded = client.post(
+        "/api/models/uploads",
+        data={"title": "Uploaded Triangle"},
+        files={"file": ("triangle.stl", ASCII_STL, "model/stl")},
+    )
+    first_gcode = b"; first profile\nG1 X1 Y1\n"
+    second_gcode = b"; second profile\nG1 X2 Y2\n"
+
+    assert uploaded.status_code == 201
+    first = client.post(
+        "/api/models/3/files/7/slicer-artifacts",
+        data={
+            "slicer_name": "PrusaSlicer",
+            "slicer_version": "2.9.0",
+            "printer_id": "44",
+            "profile_name": "MK4S 0.4mm PLA",
+            "settings_json": "{\"layer_height\":0.2,\"supports\":false}",
+        },
+        files={"file": ("triangle.gcode", first_gcode, "text/x.gcode")},
+    )
+    second = client.post(
+        "/api/models/3/files/7/slicer-artifacts",
+        data={
+            "slicer_name": "PrusaSlicer",
+            "profile_name": "MK4S 0.25mm PLA",
+            "settings_json": "{\"layer_height\":0.1,\"supports\":true}",
+        },
+        files={"file": ("triangle-fine.bgcode", second_gcode, "application/octet-stream")},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    first_body = first.json()
+    assert first_body["model_file_id"] == 7
+    assert first_body["printer_id"] == 44
+    assert first_body["output_filename"] == "triangle.gcode"
+    assert first_body["output_format"] == "gcode"
+    assert first_body["settings_hash"] == sha256(json.dumps({"layer_height": 0.2, "supports": False}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert first_body["original_sha256"] == sha256(first_gcode).hexdigest()
+    assert "compressed_bytes" not in first.text
+    assert gzip_decompress(store.slicer_artifacts[1].compressed_bytes) == first_gcode
+
+    listed = client.get("/api/models/3/files/7/slicer-artifacts")
+    restored = client.get("/api/models/3/files/7/slicer-artifacts/31/payload")
+
+    assert listed.status_code == 200
+    assert [artifact["output_filename"] for artifact in listed.json()] == ["triangle-fine.bgcode", "triangle.gcode"]
+    assert restored.status_code == 200
+    assert restored.content == first_gcode
+    assert "triangle.gcode" in restored.headers["content-disposition"]
+
+
+def test_slicer_artifact_create_returns_404_for_unknown_model_file():
+    app = create_app()
+    app.dependency_overrides[get_model_store] = lambda: FakeModelStore()
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/models/404/files/7/slicer-artifacts",
+        data={"slicer_name": "PrusaSlicer", "settings_json": "{}"},
+        files={"file": ("triangle.gcode", b"G1 X1\n", "text/x.gcode")},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Model file not found"
 
 
 def test_model_import_downloaded_file_requires_absolute_source_urls():

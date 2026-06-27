@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from gzip import BadGzipFile, decompress as gzip_decompress
+from hashlib import sha256
 from io import BytesIO
+import json
 from pathlib import PurePath
 from urllib.parse import quote, urlparse
 from zipfile import BadZipFile, ZipFile
@@ -14,8 +16,14 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_db_session
 from backend.core.secrets import get_secret_cipher
 from backend.domains.models.entities import GeometryParseError
-from backend.domains.models.models import Model, ModelFile, SourceProjectScan, SourceProjectScanFile
-from backend.domains.models.schemas.response import ModelFilePayloadResponse, ModelFileResponse, ModelGeometryResponse, ModelResponse
+from backend.domains.models.models import Model, ModelFile, SlicerArtifact, SourceProjectScan, SourceProjectScanFile
+from backend.domains.models.schemas.response import (
+    ModelFilePayloadResponse,
+    ModelFileResponse,
+    ModelGeometryResponse,
+    ModelResponse,
+    SlicerArtifactResponse,
+)
 from backend.domains.models.service import MAX_UPLOAD_BYTES, SUPPORTED_EXTENSIONS, analyze_model_bytes, compress_model_payload, safe_filename
 from backend.domains.models.store import ModelStore
 from backend.domains.site_scanning.runners import (
@@ -32,6 +40,7 @@ from backend.domains.users.dependencies import require_roles
 router = APIRouter(prefix="/models", tags=["models"])
 source_site_service = SiteScanService()
 MAX_SOURCE_ARCHIVE_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MAX_SLICER_ARTIFACT_BYTES = 100 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -225,6 +234,61 @@ def import_source_model_files(
     return created_models
 
 
+@router.get("/{model_id}/files/{file_id}/slicer-artifacts", response_model=list[SlicerArtifactResponse])
+def list_slicer_artifacts(
+    model_id: int,
+    file_id: int,
+    _user=Depends(require_roles("viewer")),
+    store: ModelStore = Depends(get_model_store),
+) -> list[SlicerArtifactResponse]:
+    if store.get_model_file(model_id, file_id) is None:
+        raise HTTPException(status_code=404, detail="Model file not found")
+    return [_slicer_artifact_response(artifact) for artifact in store.list_slicer_artifacts(model_id, file_id)]
+
+
+@router.post("/{model_id}/files/{file_id}/slicer-artifacts", response_model=SlicerArtifactResponse, status_code=201)
+async def create_slicer_artifact(
+    model_id: int,
+    file_id: int,
+    file: UploadFile = File(...),
+    slicer_name: str = Form(...),
+    output_format: str | None = Form(default=None),
+    slicer_version: str | None = Form(default=None),
+    printer_id: int | None = Form(default=None),
+    profile_name: str | None = Form(default=None),
+    settings_json: str = Form(default="{}"),
+    user=Depends(require_roles("user")),
+    store: ModelStore = Depends(get_model_store),
+) -> SlicerArtifactResponse:
+    data = await file.read(MAX_SLICER_ARTIFACT_BYTES + 1)
+    if len(data) > MAX_SLICER_ARTIFACT_BYTES:
+        raise HTTPException(status_code=413, detail=f"Slicer artifact exceeds the {MAX_SLICER_ARTIFACT_BYTES // (1024 * 1024)} MB import limit")
+    clean_slicer_name = slicer_name.strip()[:120]
+    if not clean_slicer_name:
+        raise HTTPException(status_code=400, detail="Slicer name is required")
+    filename = safe_filename(file.filename)
+    settings = _parse_settings_json(settings_json)
+    try:
+        artifact = store.save_slicer_artifact(
+            model_id=model_id,
+            file_id=file_id,
+            printer_id=printer_id,
+            output_filename=filename,
+            output_format=_artifact_output_format(filename, output_format),
+            content_type=file.content_type,
+            slicer_name=clean_slicer_name,
+            slicer_version=(slicer_version or "").strip()[:80] or None,
+            profile_name=(profile_name or "").strip()[:160] or None,
+            settings=settings,
+            settings_hash=_settings_hash(settings),
+            payload=compress_model_payload(data),
+            created_by_user_id=getattr(user, "id", None),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _slicer_artifact_response(artifact)
+
+
 @router.get("/{model_id}/files/{file_id}/payload")
 def restore_model_file_payload(
     model_id: int,
@@ -248,6 +312,30 @@ def restore_model_file_payload(
         content=data,
         media_type=model_file.content_type or "application/octet-stream",
         headers=_download_headers(model_file.filename),
+    )
+
+
+@router.get("/{model_id}/files/{file_id}/slicer-artifacts/{artifact_id}/payload")
+def restore_slicer_artifact_payload(
+    model_id: int,
+    file_id: int,
+    artifact_id: int,
+    _user=Depends(require_roles("viewer")),
+    store: ModelStore = Depends(get_model_store),
+) -> Response:
+    artifact = store.get_slicer_artifact(model_id, file_id, artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Slicer artifact not found")
+    if artifact.compression != "gzip":
+        raise HTTPException(status_code=409, detail="Stored slicer artifact uses an unsupported compression format")
+    try:
+        data = gzip_decompress(artifact.compressed_bytes)
+    except (BadGzipFile, OSError) as exc:
+        raise HTTPException(status_code=409, detail="Stored slicer artifact could not be restored") from exc
+    return Response(
+        content=data,
+        media_type=artifact.content_type or "application/octet-stream",
+        headers=_download_headers(artifact.output_filename),
     )
 
 
@@ -322,6 +410,29 @@ def _file_response(model_file: ModelFile) -> ModelFileResponse:
             else None
         ),
         created_at=model_file.created_at.isoformat(),
+    )
+
+
+def _slicer_artifact_response(artifact: SlicerArtifact) -> SlicerArtifactResponse:
+    return SlicerArtifactResponse(
+        id=artifact.id,
+        model_file_id=artifact.model_file_id,
+        printer_id=artifact.printer_id,
+        output_filename=artifact.output_filename,
+        output_format=artifact.output_format,
+        content_type=artifact.content_type,
+        slicer_name=artifact.slicer_name,
+        slicer_version=artifact.slicer_version,
+        profile_name=artifact.profile_name,
+        settings=artifact.settings,
+        settings_hash=artifact.settings_hash,
+        status=artifact.status,
+        compression=artifact.compression,
+        original_size_bytes=artifact.original_size_bytes,
+        compressed_size_bytes=artifact.compressed_size_bytes,
+        original_sha256=artifact.original_sha256,
+        compressed_sha256=artifact.compressed_sha256,
+        created_at=artifact.created_at.isoformat(),
     )
 
 
@@ -455,6 +566,28 @@ def _download_headers(filename: str) -> dict[str, str]:
     ascii_name = safe_name.encode("ascii", errors="ignore").decode("ascii") or "model-file"
     ascii_name = ascii_name.replace('"', "").replace("\\", "")
     return {"Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(safe_name)}"}
+
+
+def _parse_settings_json(value: str) -> dict:
+    try:
+        parsed = json.loads(value or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Slicer settings must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="Slicer settings must be a JSON object")
+    return parsed
+
+
+def _settings_hash(settings: dict) -> str:
+    encoded = json.dumps(settings, sort_keys=True, separators=(",", ":")).encode()
+    return sha256(encoded).hexdigest()
+
+
+def _artifact_output_format(filename: str, requested_format: str | None) -> str:
+    raw_format = (requested_format or "").strip().lower()
+    if raw_format:
+        return raw_format[:40]
+    return (PurePath(filename).suffix.lstrip(".").lower() or "unknown")[:40]
 
 
 def _downloaded_model_title(title: str | None, filename: str, selected_count: int) -> str:
