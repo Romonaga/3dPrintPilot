@@ -57,34 +57,39 @@ scripts/install-web-proxy.sh
 The proxy uses `systemd-socket-proxyd` to forward `http://3dprintpilot.local/`
 to the frontend on `127.0.0.1:8001`.
 
-## User Service
+## System Service
 
-The repository includes a systemd user service setup for running the local
-backend and frontend together without root:
+The repository includes a systemd system service setup for running the local
+backend and frontend together when the server boots. Install it from the account
+that should run 3dPrintPilot; the installer uses `sudo` only for the systemd
+unit installation and service control steps.
 
 ```bash
 cd frontend
 npm install
 cd ..
-scripts/install-user-service.sh
+scripts/install-system-service.sh
 ```
 
-The installer writes `3dprintpilot.service` to `~/.config/systemd/user/`,
-reloads the user systemd manager, enables the service, and starts or restarts
-it. It records the current `uv` and `npm` executable paths in the rendered
-unit, so rerun the installer if Node or `uv` move.
+The installer writes `3dprintpilot.service` to `/etc/systemd/system/`, reloads
+the systemd manager, enables the service for `multi-user.target`, and starts or
+restarts it. It records the current `uv` and `npm` executable paths plus the
+invoking user in the rendered unit, so rerun the installer if Node, `uv`, or the
+service user should change.
 
 Useful commands:
 
 ```bash
-systemctl --user status 3dprintpilot.service
-journalctl --user -u 3dprintpilot.service -f
-systemctl --user restart 3dprintpilot.service
-systemctl --user disable --now 3dprintpilot.service
+systemctl status 3dprintpilot.service
+journalctl -u 3dprintpilot.service -f
+sudo systemctl restart 3dprintpilot.service
+sudo systemctl disable --now 3dprintpilot.service
 ```
 
 Optional runtime settings can be placed in
-`~/.config/3dprintpilot/3dprintpilot.env`:
+`/etc/3dprintpilot/3dprintpilot.env`. For migration convenience, the rendered
+unit also reads the installing user's
+`~/.config/3dprintpilot/3dprintpilot.env` when it exists:
 
 ```bash
 PRINTPILOT_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/printpilot
@@ -94,12 +99,7 @@ PRINTPILOT_FRONTEND_HOST=0.0.0.0
 PRINTPILOT_FRONTEND_PORT=8001
 ```
 
-The service starts when the user logs in. To allow it to start before login,
-enable linger for the user:
-
-```bash
-loginctl enable-linger "$USER"
-```
+The service starts at server boot and does not require a user login session.
 
 Runtime check:
 
@@ -115,7 +115,7 @@ PRINTPILOT_PUBLIC_URL=http://3dprintpilot.local PRINTPILOT_SKIP_DB_CHECK=1 scrip
 
 The service uses strict configured ports. If a port is already occupied, update
 `PRINTPILOT_BACKEND_PORT` or `PRINTPILOT_FRONTEND_PORT` in the service env file
-and rerun `scripts/install-user-service.sh`.
+and rerun `scripts/install-system-service.sh`.
 
 If Postgres is intentionally unavailable during a frontend/backend smoke test:
 

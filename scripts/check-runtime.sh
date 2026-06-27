@@ -4,6 +4,7 @@ set -euo pipefail
 BACKEND_URL="${PRINTPILOT_BACKEND_URL:-http://127.0.0.1:${PRINTPILOT_BACKEND_PORT:-8002}}"
 FRONTEND_URL="${PRINTPILOT_FRONTEND_URL:-http://127.0.0.1:${PRINTPILOT_FRONTEND_PORT:-8001}}"
 SERVICE_NAME="${PRINTPILOT_SERVICE_NAME:-3dprintpilot.service}"
+SYSTEMD_UNIT_PATH="${PRINTPILOT_SYSTEMD_UNIT_PATH:-/etc/systemd/system/$SERVICE_NAME}"
 PUBLIC_URL="${PRINTPILOT_PUBLIC_URL:-}"
 SKIP_DB="${PRINTPILOT_SKIP_DB_CHECK:-0}"
 CHECK_RETRIES="${PRINTPILOT_CHECK_RETRIES:-5}"
@@ -42,17 +43,17 @@ if [[ -n "$PUBLIC_URL" ]]; then
     retry curl -fsSI "$PUBLIC_URL/" | sed -n '1,8p'
 fi
 
-section "Systemd user service"
+section "Systemd system service"
 if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user is-enabled "$SERVICE_NAME"
-    systemctl --user is-active "$SERVICE_NAME"
+    systemctl is-enabled "$SERVICE_NAME"
+    systemctl is-active "$SERVICE_NAME"
 else
     echo "systemctl not found; skipping service status"
 fi
 
 section "Installed unit syntax"
 if command -v systemd-analyze >/dev/null 2>&1; then
-    systemd-analyze verify "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$SERVICE_NAME"
+    systemd-analyze verify "$SYSTEMD_UNIT_PATH"
 else
     echo "systemd-analyze not found; skipping unit verification"
 fi

@@ -6,15 +6,18 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
 WorkingDirectory=@PROJECT_DIR@
 Environment=PATH=@SERVICE_PATH@
 Environment=UV_BIN=@UV_BIN@
 Environment=NPM_BIN=@NPM_BIN@
-EnvironmentFile=-%h/.config/3dprintpilot/3dprintpilot.env
-ExecStart=/usr/bin/env bash @PROJECT_DIR@/scripts/start-user-service.sh
+EnvironmentFile=-/etc/3dprintpilot/3dprintpilot.env
+EnvironmentFile=-@USER_ENV_FILE@
+ExecStart=/usr/bin/env bash @PROJECT_DIR@/scripts/start-service.sh
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
