@@ -45,6 +45,27 @@ class ModelFileResponse(BaseModel):
     created_at: str
 
 
+class SlicerArtifactResponse(BaseModel):
+    id: int
+    model_file_id: int
+    printer_id: int | None
+    output_filename: str
+    output_format: str
+    content_type: str | None
+    slicer_name: str
+    slicer_version: str | None
+    profile_name: str | None
+    settings: dict
+    settings_hash: str
+    status: str
+    compression: str
+    original_size_bytes: int
+    compressed_size_bytes: int
+    original_sha256: str
+    compressed_sha256: str
+    created_at: str
+
+
 class ModelResponse(BaseModel):
     id: int
     title: str

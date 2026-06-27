@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from backend.domains.models.entities import CompressedModelPayload, GeometryAnalysis
-from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry, SourceProjectScan, SourceProjectScanFile
+from backend.domains.models.models import Model, ModelFile, ModelFilePayload, ModelGeometry, SlicerArtifact, SourceProjectScan, SourceProjectScanFile
 from backend.domains.resources.store import ResourceStore
 from backend.domains.site_scanning.runners import SourceSiteProjectFiles
 
@@ -43,6 +43,67 @@ class ModelStore:
             .where(ModelFile.model_id == model_id, ModelFile.id == file_id)
         )
         return self._session.scalars(statement).first()
+
+    def list_slicer_artifacts(self, model_id: int, file_id: int) -> list[SlicerArtifact]:
+        statement = (
+            select(SlicerArtifact)
+            .join(ModelFile, SlicerArtifact.model_file_id == ModelFile.id)
+            .where(ModelFile.model_id == model_id, ModelFile.id == file_id)
+            .order_by(SlicerArtifact.created_at.desc(), SlicerArtifact.id.desc())
+        )
+        return list(self._session.scalars(statement).all())
+
+    def get_slicer_artifact(self, model_id: int, file_id: int, artifact_id: int) -> SlicerArtifact | None:
+        statement = (
+            select(SlicerArtifact)
+            .join(ModelFile, SlicerArtifact.model_file_id == ModelFile.id)
+            .where(ModelFile.model_id == model_id, ModelFile.id == file_id, SlicerArtifact.id == artifact_id)
+        )
+        return self._session.scalars(statement).first()
+
+    def save_slicer_artifact(
+        self,
+        *,
+        model_id: int,
+        file_id: int,
+        printer_id: int | None,
+        output_filename: str,
+        output_format: str,
+        content_type: str | None,
+        slicer_name: str,
+        slicer_version: str | None,
+        profile_name: str | None,
+        settings: dict,
+        settings_hash: str,
+        payload: CompressedModelPayload,
+        created_by_user_id: int | None,
+    ) -> SlicerArtifact:
+        model_file = self.get_model_file(model_id, file_id)
+        if model_file is None:
+            raise ValueError("Model file not found")
+        artifact = SlicerArtifact(
+            model_file_id=model_file.id,
+            printer_id=printer_id,
+            created_by_user_id=created_by_user_id,
+            output_filename=output_filename,
+            output_format=output_format,
+            content_type=content_type,
+            slicer_name=slicer_name,
+            slicer_version=slicer_version,
+            profile_name=profile_name,
+            settings=settings,
+            settings_hash=settings_hash,
+            compression=payload.compression,
+            compressed_bytes=payload.compressed_bytes,
+            original_size_bytes=payload.original_size_bytes,
+            compressed_size_bytes=payload.compressed_size_bytes,
+            original_sha256=payload.original_sha256,
+            compressed_sha256=payload.compressed_sha256,
+        )
+        self._session.add(artifact)
+        self._session.commit()
+        self._session.refresh(artifact)
+        return artifact
 
     def list_source_project_scans(self, limit: int = 20) -> list[SourceProjectScan]:
         statement = (
