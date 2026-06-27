@@ -322,10 +322,36 @@ def _scan_http_printers(
     network = _resolve_probe_network(target_cidr)
     hosts = _limited_hosts(network, max_hosts=max_hosts)
     checked_ports = _prioritized_probe_ports(ports)
-    discovered: dict[tuple[str, int], DiscoveredPrinter] = {}
     probe_count = len(hosts) * len(checked_ports)
     candidate_hosts = _hosts_with_open_probe_ports(hosts, checked_ports, connect_timeout_seconds)
+    discovered = _collect_http_probe_results(
+        candidate_hosts,
+        checked_ports,
+        connect_timeout_seconds,
+        scan_timeout_seconds,
+    )
 
+    printers = _sort_discovered_printers(discovered.values())
+    return PrinterScanResult(
+        summary=PrinterScanSummary(
+            status=PrinterScanStatus.COMPLETED,
+            duration_ms=int((monotonic() - started) * 1000),
+            discovered_count=len(printers),
+            method="http_probe",
+            scanned_host_count=len(hosts),
+            probe_count=probe_count,
+        ),
+        printers=printers,
+    )
+
+
+def _collect_http_probe_results(
+    candidate_hosts: tuple[str, ...],
+    checked_ports: tuple[int, ...],
+    connect_timeout_seconds: float,
+    scan_timeout_seconds: float | None,
+) -> dict[tuple[str, int], DiscoveredPrinter]:
+    discovered: dict[tuple[str, int], DiscoveredPrinter] = {}
     executor = ThreadPoolExecutor(max_workers=min(32, max(1, len(candidate_hosts))))
     futures = [
         executor.submit(_probe_host_ports, host, checked_ports, connect_timeout_seconds)
@@ -340,6 +366,7 @@ def _scan_http_printers(
             try:
                 printers = future.result()
             except Exception:
+                # Probe workers touch arbitrary LAN endpoints; one failing host must not fail the scan.
                 continue
             for printer in printers:
                 discovered[(printer.host, printer.port)] = printer
@@ -350,19 +377,7 @@ def _scan_http_printers(
             if not future.done():
                 future.cancel()
         executor.shutdown(wait=False, cancel_futures=True)
-
-    printers = _sort_discovered_printers(discovered.values())
-    return PrinterScanResult(
-        summary=PrinterScanSummary(
-            status=PrinterScanStatus.COMPLETED,
-            duration_ms=int((monotonic() - started) * 1000),
-            discovered_count=len(printers),
-            method="http_probe",
-            scanned_host_count=len(hosts),
-            probe_count=probe_count,
-        ),
-        printers=printers,
-    )
+    return discovered
 
 
 def _hosts_with_open_probe_ports(
@@ -383,6 +398,7 @@ def _hosts_with_open_probe_ports(
                 if future.result():
                     open_hosts.add(host)
             except Exception:
+                # Port preflight is best-effort; failed host probes are treated as closed.
                 continue
     finally:
         executor.shutdown(wait=False, cancel_futures=True)

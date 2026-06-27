@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 
+import pytest
+
 from local_ai_accounting import (
     CostStatus,
     OpenAIPricingRate,
@@ -160,6 +162,24 @@ def test_openai_cost_reconciliation_service_fetches_costs_and_updates_events():
     assert store.completed["status"] == "completed"
 
 
+def test_openai_cost_reconciliation_service_records_failed_run_before_reraising():
+    now = datetime(2026, 6, 14, tzinfo=timezone.utc)
+    store = FakeAiAccountingStore([])
+    service = OpenAICostReconciliationService(store, FailingOpenAICostClient())
+
+    with pytest.raises(RuntimeError, match="cost service unavailable"):
+        service.reconcile_period(
+            period_start=now,
+            period_end=datetime(2026, 6, 15, tzinfo=timezone.utc),
+        )
+
+    assert store.created["run_id"]
+    assert store.completed["run_id"] == store.created["run_id"]
+    assert store.completed["status"] == "failed"
+    assert store.completed["final_total_usd"] is None
+    assert store.completed["details"]["error"] == "cost service unavailable"
+
+
 def test_ai_task_runner_records_local_ollama_usage_when_fallback_disabled():
     store = FakeAiTaskStore()
     runner = AiTaskRunner(
@@ -247,6 +267,11 @@ class FakeOpenAICostClient:
     def fetch_costs(self, **kwargs):
         self.requested_params = kwargs
         return self.payload
+
+
+class FailingOpenAICostClient:
+    def fetch_costs(self, **kwargs):
+        raise RuntimeError("cost service unavailable")
 
 
 class FakeAiAccountingStore:

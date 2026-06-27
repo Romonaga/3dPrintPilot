@@ -234,46 +234,68 @@ class OpenAICostReconciliationService:
         )
 
         try:
-            payload = self._client.fetch_costs(
-                start_time=int(start.timestamp()),
-                end_time=int(end.timestamp()),
-                bucket_width="1d",
-                limit=180,
-            )
-            buckets = payload.get("data") or []
-            final_total = extract_openai_cost_total_usd(buckets)
-            updates = reconcile_cost_bucket(events, verified_cost_usd=final_total, reconciliation_run_id=run_id)
-            self._store.apply_event_updates(updates)
-            status = "completed"
-            details = {
-                **run_details,
-                "bucket_count": len(buckets),
-                "updated_event_count": len(updates),
-                "openai_cost_bucket_count": len(buckets),
-                "openai_raw_costs": _compact_cost_buckets(buckets),
-            }
-            self._store.complete_reconciliation_run(
-                run_id,
-                status=status,
-                final_total_usd=final_total,
-                details=details,
-            )
-            return CostReconciliationResult(
+            return self._complete_reconciliation(
                 run_id=run_id,
-                status=status,
-                period_start=start,
-                period_end=end,
-                estimated_total_usd=estimated_total,
-                final_total_usd=final_total,
-                event_count=len(events),
-                updated_event_count=len(updates),
-                bucket_count=len(buckets),
-                details=details,
+                start=start,
+                end=end,
+                events=events,
+                estimated_total=estimated_total,
+                run_details=run_details,
             )
         except Exception as exc:
-            details = {**run_details, "error": str(exc)}
-            self._store.complete_reconciliation_run(run_id, status="failed", final_total_usd=None, details=details)
+            # Reconciliation is a durable workflow boundary; every failure must close the run before re-raising.
+            self._record_failed_reconciliation(run_id, run_details, exc)
             raise
+
+    def _complete_reconciliation(
+        self,
+        *,
+        run_id: str,
+        start: datetime,
+        end: datetime,
+        events,
+        estimated_total: Decimal,
+        run_details: dict[str, Any],
+    ) -> CostReconciliationResult:
+        payload = self._client.fetch_costs(
+            start_time=int(start.timestamp()),
+            end_time=int(end.timestamp()),
+            bucket_width="1d",
+            limit=180,
+        )
+        buckets = payload.get("data") or []
+        final_total = extract_openai_cost_total_usd(buckets)
+        updates = reconcile_cost_bucket(events, verified_cost_usd=final_total, reconciliation_run_id=run_id)
+        self._store.apply_event_updates(updates)
+        details = {
+            **run_details,
+            "bucket_count": len(buckets),
+            "updated_event_count": len(updates),
+            "openai_cost_bucket_count": len(buckets),
+            "openai_raw_costs": _compact_cost_buckets(buckets),
+        }
+        self._store.complete_reconciliation_run(
+            run_id,
+            status="completed",
+            final_total_usd=final_total,
+            details=details,
+        )
+        return CostReconciliationResult(
+            run_id=run_id,
+            status="completed",
+            period_start=start,
+            period_end=end,
+            estimated_total_usd=estimated_total,
+            final_total_usd=final_total,
+            event_count=len(events),
+            updated_event_count=len(updates),
+            bucket_count=len(buckets),
+            details=details,
+        )
+
+    def _record_failed_reconciliation(self, run_id: str, run_details: dict[str, Any], exc: Exception) -> None:
+        details = {**run_details, "error": str(exc)}
+        self._store.complete_reconciliation_run(run_id, status="failed", final_total_usd=None, details=details)
 
 
 def create_openai_cost_reconciliation_service(
