@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+import httpx
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db_session
@@ -165,7 +166,10 @@ def read_printer_status(
     access_code = None
     if getattr(printer, "adapter_type", None) == "bambu_mqtt" and getattr(printer, "credential_secret_name", None):
         access_code = get_bambu_lan_access_code(session, get_secret_cipher(), printer)
-    status = fetch_read_only_status(printer, api_key=access_code)
+    try:
+        status = fetch_read_only_status(printer, api_key=access_code)
+    except (httpx.HTTPError, ValueError) as exc:
+        raise _printer_telemetry_exception(exc) from exc
     return PrinterStatusResponse(
         printer_id=printer.id,
         adapter_type=status.adapter_type,
@@ -231,6 +235,8 @@ def read_printer_job_status(
         status = fetch_moonraker_job_status(printer)
     except UnsupportedPrinterControlError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise _printer_telemetry_exception(exc) from exc
     return PrinterJobStatusResponse(
         printer_id=printer.id,
         state=status.state,
@@ -269,6 +275,8 @@ def read_printer_capability_diagnostics(
         diagnostics = fetch_moonraker_capability_diagnostics(printer)
     except UnsupportedPrinterControlError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise _printer_telemetry_exception(exc) from exc
     return PrinterCapabilityDiagnosticsResponse(
         printer_id=printer.id,
         adapter_type=diagnostics.adapter_type,
@@ -435,6 +443,12 @@ def _action_response(printer_id: int, result) -> PrinterActionResponse:
         accepted=result.accepted,
         raw_response=result.raw_response,
     )
+
+
+def _printer_telemetry_exception(exc: Exception) -> HTTPException:
+    if isinstance(exc, httpx.TimeoutException):
+        return HTTPException(status_code=504, detail="Printer telemetry timed out")
+    return HTTPException(status_code=502, detail="Printer telemetry is unavailable")
 
 
 def _temperature_response(temperature) -> PrinterTemperatureResponse | None:
