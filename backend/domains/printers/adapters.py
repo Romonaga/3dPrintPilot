@@ -12,6 +12,8 @@ import httpx
 
 from backend.domains.printers.models import Printer
 
+DEFAULT_PRINTER_TELEMETRY_TIMEOUT_SECONDS = 5.0
+
 
 @dataclass(frozen=True)
 class PrinterStatus:
@@ -126,7 +128,11 @@ class PrinterEngine:
         _ = printer
         return False
 
-    def fetch_job_status(self, printer: Printer, timeout_seconds: float = 2.0) -> MoonrakerJobStatus:
+    def fetch_job_status(
+        self,
+        printer: Printer,
+        timeout_seconds: float = DEFAULT_PRINTER_TELEMETRY_TIMEOUT_SECONDS,
+    ) -> MoonrakerJobStatus:
         _ = printer, timeout_seconds
         raise UnsupportedPrinterControlError("Job telemetry is not available for this printer")
 
@@ -140,7 +146,11 @@ class MoonrakerPrinterEngine(PrinterEngine):
         adapter_type = printer.adapter_type or infer_adapter_type(None, printer.printer_type)
         return adapter_type == self.engine_id
 
-    def fetch_job_status(self, printer: Printer, timeout_seconds: float = 2.0) -> MoonrakerJobStatus:
+    def fetch_job_status(
+        self,
+        printer: Printer,
+        timeout_seconds: float = DEFAULT_PRINTER_TELEMETRY_TIMEOUT_SECONDS,
+    ) -> MoonrakerJobStatus:
         _require_moonraker_control(printer)
         base_url = _base_url(printer)
         with httpx.Client(timeout=timeout_seconds, follow_redirects=True) as client:
@@ -283,14 +293,26 @@ def _integration_layers_for_service_type(service_type: str | None, adapter_type:
     return {"engine": "unknown", "maker_adapter": None, "model_profile": None}
 
 
-def fetch_read_only_status(printer: Printer, api_key: str | None = None, timeout_seconds: float = 2.0) -> PrinterStatus:
+def fetch_read_only_status(
+    printer: Printer,
+    api_key: str | None = None,
+    timeout_seconds: float = DEFAULT_PRINTER_TELEMETRY_TIMEOUT_SECONDS,
+) -> PrinterStatus:
     adapter_type = printer.adapter_type or infer_adapter_type(None, printer.printer_type)
-    if adapter_type == "octoprint":
-        return _fetch_octoprint_status(printer, api_key=api_key, timeout_seconds=timeout_seconds)
-    if adapter_type == "moonraker":
-        return _fetch_moonraker_status(printer, timeout_seconds=timeout_seconds)
-    if adapter_type == "bambu_mqtt":
-        return _fetch_bambu_mqtt_status(printer, access_code=api_key, timeout_seconds=timeout_seconds)
+    try:
+        if adapter_type == "octoprint":
+            return _fetch_octoprint_status(printer, api_key=api_key, timeout_seconds=timeout_seconds)
+        if adapter_type == "moonraker":
+            return _fetch_moonraker_status(printer, timeout_seconds=timeout_seconds)
+        if adapter_type == "bambu_mqtt":
+            return _fetch_bambu_mqtt_status(printer, access_code=api_key, timeout_seconds=timeout_seconds)
+    except (httpx.HTTPError, ValueError) as exc:
+        return _telemetry_unavailable_status(
+            printer,
+            adapter_type=adapter_type,
+            reason="timeout" if isinstance(exc, httpx.TimeoutException) else "unreachable",
+            timeout_seconds=timeout_seconds,
+        )
     return PrinterStatus(
         adapter_type=adapter_type or "unknown",
         state="unsupported",
@@ -303,7 +325,7 @@ def fetch_read_only_status(printer: Printer, api_key: str | None = None, timeout
 def _fetch_bambu_mqtt_status(
     printer: Printer,
     access_code: str | None = None,
-    timeout_seconds: float = 2.0,
+    timeout_seconds: float = DEFAULT_PRINTER_TELEMETRY_TIMEOUT_SECONDS,
 ) -> PrinterStatus:
     capabilities = capabilities_for_service_type("bambu_mqtt") | (printer.capabilities or {})
     capabilities["control_enabled"] = False
@@ -373,7 +395,7 @@ def fetch_bambu_mqtt_report(
     printer: Printer,
     device_id: str,
     access_code: str | None,
-    timeout_seconds: float = 2.0,
+    timeout_seconds: float = DEFAULT_PRINTER_TELEMETRY_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     if not access_code:
         raise BambuMqttTelemetryError("Bambu LAN access code is not configured")
@@ -672,7 +694,37 @@ def _fetch_moonraker_status(printer: Printer, timeout_seconds: float) -> Printer
     return parse_moonraker_status(server, printer_payload)
 
 
-def fetch_moonraker_job_status(printer: Printer, timeout_seconds: float = 2.0) -> MoonrakerJobStatus:
+def _telemetry_unavailable_status(
+    printer: Printer,
+    adapter_type: str | None,
+    reason: str,
+    timeout_seconds: float,
+) -> PrinterStatus:
+    resolved_adapter = adapter_type or "unknown"
+    capabilities = {
+        **capabilities_for_service_type(resolved_adapter),
+        **(printer.capabilities or {}),
+    }
+    return PrinterStatus(
+        adapter_type=resolved_adapter,
+        state="telemetry_unavailable",
+        capabilities=capabilities,
+        raw_status={
+            "source": resolved_adapter,
+            "reason": reason,
+            "message": f"Printer telemetry timed out after {timeout_seconds:g} seconds"
+            if reason == "timeout"
+            else "Printer telemetry is unavailable",
+            "timeout_seconds": timeout_seconds,
+        },
+        observed_at=datetime.now(UTC),
+    )
+
+
+def fetch_moonraker_job_status(
+    printer: Printer,
+    timeout_seconds: float = DEFAULT_PRINTER_TELEMETRY_TIMEOUT_SECONDS,
+) -> MoonrakerJobStatus:
     engine = engine_for_printer(printer)
     if not isinstance(engine, MoonrakerPrinterEngine):
         raise UnsupportedPrinterControlError("Moonraker file and job controls are not available for this printer")
@@ -681,7 +733,7 @@ def fetch_moonraker_job_status(printer: Printer, timeout_seconds: float = 2.0) -
 
 def fetch_moonraker_capability_diagnostics(
     printer: Printer,
-    timeout_seconds: float = 2.0,
+    timeout_seconds: float = DEFAULT_PRINTER_TELEMETRY_TIMEOUT_SECONDS,
 ) -> MoonrakerCapabilityDiagnostics:
     _require_moonraker_adapter(printer)
     base_url = _base_url(printer)

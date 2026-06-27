@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from time import monotonic, sleep
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -418,6 +419,24 @@ def test_printer_job_status_response_includes_moonraker_telemetry(monkeypatch):
     assert body["toolheads"][0]["subtype"] == "SnapSpeed"
 
 
+def test_printer_job_status_timeout_returns_gateway_timeout(monkeypatch):
+    app = create_app()
+    app.dependency_overrides[get_printer_store] = lambda: FakePrinterStore(FakeMoonrakerPrinter())
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    def timeout_job_status(printer):
+        _ = printer
+        raise httpx.TimeoutException("Moonraker did not answer in time")
+
+    monkeypatch.setattr("backend.domains.printers.routes.fetch_moonraker_job_status", timeout_job_status)
+
+    response = client.get("/api/printers/12/job-status")
+
+    assert response.status_code == 504
+    assert response.json()["detail"] == "Printer telemetry timed out"
+
+
 def test_moonraker_job_status_maps_snapmaker_u1_filament_slots():
     status = parse_moonraker_job_status(
         {
@@ -613,6 +632,32 @@ def test_bambu_mqtt_status_remains_read_only_when_live_access_code_is_missing():
     assert status.raw_status["device_id_configured"] is True
     assert status.capabilities["control_enabled"] is False
     assert status.capabilities["telemetry_source_priority"] == ["bambu_mqtt_report", "saved_capabilities"]
+
+
+def test_moonraker_read_only_status_timeout_returns_unavailable(monkeypatch):
+    class TimeoutClient:
+        def __init__(self, *args, **kwargs):
+            self.timeout = kwargs.get("timeout")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def get(self, url):
+            _ = url
+            raise httpx.TimeoutException("Moonraker did not answer in time")
+
+    monkeypatch.setattr(printer_adapters.httpx, "Client", TimeoutClient)
+
+    status = fetch_read_only_status(FakeMoonrakerPrinter(), timeout_seconds=5.0)
+
+    assert status.adapter_type == "moonraker"
+    assert status.state == "telemetry_unavailable"
+    assert status.raw_status["reason"] == "timeout"
+    assert status.raw_status["timeout_seconds"] == 5.0
+    assert status.capabilities["adapter"] == "moonraker"
 
 
 def test_bambu_mqtt_status_normalizes_report_without_exposing_access_code(monkeypatch):
