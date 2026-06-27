@@ -88,7 +88,8 @@ def test_printables_runner_lists_project_files_and_marks_unsupported_extensions(
                         {"id": "file-1", "name": "cube.stl", "fileSize": 2048, "order": 1},
                     ],
                     "downloadPacks": [
-                        {"id": "pack-1", "name": "Download all files", "fileSize": 4096, "fileType": "zip"},
+                        {"id": "print-pack", "name": "Download all files", "fileSize": 2048, "fileType": "print_files"},
+                        {"id": "model-pack", "name": "Download all files", "fileSize": 8192, "fileType": "modelFiles"},
                     ],
                 }
             }
@@ -103,7 +104,12 @@ def test_printables_runner_lists_project_files_and_marks_unsupported_extensions(
     )
 
     assert project_files.project_title == "Calibration Cube"
-    assert [item.filename for item in project_files.files] == ["cube.stl", "helper.scad", "Download all files.zip"]
+    assert [item.filename for item in project_files.files] == [
+        "cube.stl",
+        "helper.scad",
+        "All print files.zip",
+        "All model files.zip",
+    ]
     assert project_files.files[0].supported_model_file is True
     assert project_files.files[0].source_file_url.endswith("/files#file-file-1")
     assert project_files.files[1].file_format == "scad"
@@ -111,6 +117,7 @@ def test_printables_runner_lists_project_files_and_marks_unsupported_extensions(
     assert project_files.files[2].file_format == "zip"
     assert project_files.files[2].supported_model_file is True
     assert "download-all archive" in (project_files.files[2].notes or "")
+    assert project_files.files[3].source_file_url.endswith("/files#download-pack-model-pack")
 
 
 def test_printables_runner_downloads_selected_model_file_with_site_download_link(monkeypatch):
@@ -183,7 +190,7 @@ def test_printables_runner_downloads_project_archive_pack(monkeypatch):
                         "name": "Calibration Cube",
                         "stls": [],
                         "downloadPacks": [
-                            {"id": "pack-1", "name": "Download all files", "fileSize": 4096, "fileType": "zip"},
+                            {"id": "pack-1", "name": "Download all files", "fileSize": 4096, "fileType": "model_files"},
                         ],
                     }
                 }
@@ -211,7 +218,7 @@ def test_printables_runner_downloads_project_archive_pack(monkeypatch):
 
     downloaded = runner.download_project_file(
         "https://www.printables.com/model/229198-printables-calibration-cube",
-        "download-pack:pack-1:zip",
+        "download-pack:pack-1:model_files",
         auth_headers={"Cookie": "session=abc"},
         max_bytes=1024,
     )
@@ -219,10 +226,10 @@ def test_printables_runner_downloads_project_archive_pack(monkeypatch):
     assert observed_mutation_variables == {
         "id": "pack-1",
         "modelId": "229198",
-        "fileType": "zip",
+        "fileType": "model_files",
         "source": "model_detail",
     }
-    assert downloaded.filename == "Download all files.zip"
+    assert downloaded.filename == "All model files.zip"
     assert downloaded.content_type == "application/zip"
     assert downloaded.data == b"zip-data"
     assert downloaded.source_file_url == "https://files.printables.com/media/prints/229198/all-files.zip"

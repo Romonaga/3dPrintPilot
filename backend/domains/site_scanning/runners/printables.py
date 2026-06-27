@@ -32,6 +32,24 @@ PRINTABLES_FILES_HOST = "files.printables.com"
 PRINTABLES_REQUEST_MIN_INTERVAL_SECONDS = 1.0
 PRINTABLES_DOWNLOAD_PACK_FILE_ID_PREFIX = "download-pack:"
 SUPPORTED_MODEL_EXTENSIONS = {".stl": "stl", ".3mf": "3mf"}
+GENERIC_DOWNLOAD_PACK_NAMES = {"download all files", "all files", "download files"}
+DOWNLOAD_PACK_LABELS_BY_FILE_TYPE = {
+    "3mf": "All model files",
+    "model": "All model files",
+    "model_file": "All model files",
+    "model_files": "All model files",
+    "models": "All model files",
+    "stl": "All model files",
+    "stls": "All model files",
+    "g_code": "All print files",
+    "g_codes": "All print files",
+    "gcode": "All print files",
+    "gcodes": "All print files",
+    "print": "All print files",
+    "print_file": "All print files",
+    "print_files": "All print files",
+    "prints": "All print files",
+}
 MODEL_FILES_QUERY = """
 query ModelFiles($id: ID!) {
   model: print(id: $id) {
@@ -260,7 +278,7 @@ def _source_file(project: SourceSiteProjectRef, raw_file: dict) -> SourceSiteFil
 def _source_download_pack(project: SourceSiteProjectRef, raw_pack: dict) -> SourceSiteFile:
     pack_id = str(raw_pack.get("id") or "").strip()
     file_type = str(raw_pack.get("fileType") or "zip").strip() or "zip"
-    name = str(raw_pack.get("name") or "").strip() or "Download all files"
+    name = _download_pack_label(raw_pack)
     filename = name if PurePath(name).suffix.lower() == ".zip" else f"{name}.zip"
     return SourceSiteFile(
         file_id=f"{PRINTABLES_DOWNLOAD_PACK_FILE_ID_PREFIX}{pack_id}:{file_type}",
@@ -271,6 +289,29 @@ def _source_download_pack(project: SourceSiteProjectRef, raw_pack: dict) -> Sour
         supported_model_file=bool(pack_id),
         notes="Printables download-all archive; supported STL and 3MF files will be imported.",
     )
+
+
+def _download_pack_label(raw_pack: dict) -> str:
+    name = str(raw_pack.get("name") or "").strip()
+    if name and name.casefold() not in GENERIC_DOWNLOAD_PACK_NAMES:
+        return name
+    file_type = _normalize_download_pack_file_type(raw_pack.get("fileType"))
+    if label := DOWNLOAD_PACK_LABELS_BY_FILE_TYPE.get(file_type):
+        return label
+    return _fallback_download_pack_label(file_type=file_type, pack_id=str(raw_pack.get("id") or "").strip())
+
+
+def _normalize_download_pack_file_type(value: object) -> str:
+    raw_value = str(value or "").strip()
+    snake_value = re.sub(r"(?<!^)(?=[A-Z])", "_", raw_value)
+    return re.sub(r"[^a-z0-9]+", "_", snake_value.casefold()).strip("_")
+
+
+def _fallback_download_pack_label(*, file_type: str, pack_id: str) -> str:
+    base = "Download archive"
+    if file_type and file_type != "zip":
+        base = f"Download {file_type.replace('_', ' ')} archive"
+    return f"{base} {pack_id}" if pack_id else base
 
 
 def _is_download_pack_file_id(file_id: str) -> bool:
