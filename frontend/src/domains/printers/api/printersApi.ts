@@ -12,139 +12,16 @@ import {
   type PrinterStatus
 } from "../types";
 import { apiFetch } from "../../../lib/apiFetch";
-
-type ApiPrinter = {
-  id: number;
-  name: string;
-  host: string;
-  port: number;
-  protocol: string;
-  printer_type: string;
-  state: string;
-  identity_key: string | null;
-  adapter_type: string | null;
-  capabilities: Record<string, unknown>;
-  credential_configured: boolean;
-  last_status: Record<string, unknown>;
-  last_status_at: string | null;
-  build_volume_x_mm: number | null;
-  build_volume_y_mm: number | null;
-  build_volume_z_mm: number | null;
-};
-
-type ApiDiscoveredPrinter = {
-  name: string;
-  host: string;
-  port: number;
-  protocol: string;
-  service_type: string;
-  confidence: number;
-  state: string;
-  evidence?: string[];
-  scan_result_id?: number | null;
-  identity_key?: string | null;
-  matched_printer_id?: number | null;
-  capabilities?: Record<string, unknown>;
-  build_volume_x_mm?: number | null;
-  build_volume_y_mm?: number | null;
-  build_volume_z_mm?: number | null;
-};
-
-type ApiPrinterScan = {
-  summary: {
-    scan_run_id: number | null;
-    status: string;
-    duration_ms: number;
-    discovered_count: number;
-    method: string;
-    scanned_host_count: number;
-    probe_count: number;
-  };
-  printers: ApiDiscoveredPrinter[];
-  groups?: Array<{
-    host: string;
-    name: string;
-    inferred_type: string;
-    identity_key?: string | null;
-    matched_printer_id?: number | null;
-    confidence: number;
-    ports: number[];
-    capabilities: string[];
-    endpoints: ApiDiscoveredPrinter[];
-  }>;
-};
-
-type ApiPrinterJobStatus = {
-  printer_id: number;
-  state: string;
-  filename: string | null;
-  progress: number | null;
-  message: string | null;
-  bed_temperature?: ApiPrinterTemperature | null;
-  toolheads?: ApiPrinterToolheadTelemetry[];
-  raw_status: Record<string, unknown>;
-  observed_at: string;
-};
-
-type ApiPrinterStatus = {
-  printer_id: number;
-  adapter_type: string;
-  state: string;
-  capabilities: Record<string, unknown>;
-  raw_status: Record<string, unknown>;
-  observed_at: string;
-};
-
-type ApiPrinterCapabilityDiagnostics = {
-  printer_id: number;
-  adapter_type: string;
-  extension_agents_available: boolean;
-  extension_agents?: Array<Record<string, unknown>>;
-  spoolman_available: boolean;
-  spoolman_status?: Record<string, unknown> | null;
-  probe_errors?: Record<string, string>;
-  observed_at: string;
-};
-
-type ApiPrinterTemperature = {
-  current_c: number | null;
-  target_c: number | null;
-  power: number | null;
-};
-
-type ApiPrinterToolheadTelemetry = {
-  name: string;
-  label: string;
-  index: number;
-  current_temperature: ApiPrinterTemperature | null;
-  color: string | null;
-  color_source?: string | null;
-  material?: string | null;
-  material_source?: string | null;
-  vendor?: string | null;
-  subtype?: string | null;
-};
-
-type ApiPrinterFile = {
-  path: string;
-  size: number | null;
-  modified: number | null;
-  permissions: string | null;
-};
-
-type ApiPrinterActionResult = {
-  printer_id: number;
-  action: string;
-  accepted: boolean;
-  raw_response: unknown;
-};
-
-type ApiPrinterEngine = {
-  engine_id: string;
-  display_name: string;
-  description: string;
-  capabilities: Record<string, unknown>;
-};
+import {
+  fromApiPrinter,
+  fromApiPrinterActionResult,
+  fromApiPrinterCapabilityDiagnostics,
+  fromApiPrinterEngine,
+  fromApiPrinterFile,
+  fromApiPrinterJobStatus,
+  fromApiPrinterStatus
+} from "./printerApiMappers";
+import { type ApiPrinter, type ApiPrinterEngine, type ApiPrinterFile, type ApiPrinterScan } from "./printerApiTypes";
 
 export async function listPrinters(): Promise<Printer[]> {
   const response = await apiFetch("/api/printers");
@@ -386,115 +263,10 @@ export async function scanPrinters(settings: PrinterScanSettings): Promise<Print
   };
 }
 
-function fromApiPrinter(printer: ApiPrinter): Printer {
-  return {
-    id: printer.id,
-    name: printer.name,
-    host: printer.host,
-    port: printer.port,
-    protocol: printer.protocol,
-    printerType: printer.printer_type,
-    state: printer.state,
-    identityKey: printer.identity_key ?? null,
-    adapterType: printer.adapter_type,
-    capabilities: printer.capabilities,
-    credentialConfigured: printer.credential_configured,
-    lastStatus: printer.last_status,
-    lastStatusAt: printer.last_status_at,
-    buildVolumeXmm: printer.build_volume_x_mm,
-    buildVolumeYmm: printer.build_volume_y_mm,
-    buildVolumeZmm: printer.build_volume_z_mm
-  };
-}
-
 async function postPrinterAction(printerId: number, action: "pause" | "resume" | "cancel"): Promise<PrinterActionResult> {
   const response = await apiFetch(`/api/printers/${printerId}/print/${action}`, { method: "POST" });
   if (!response.ok) {
     throw new Error(`Printer ${action} failed with HTTP ${response.status}`);
   }
   return fromApiPrinterActionResult(await response.json());
-}
-
-function fromApiPrinterJobStatus(status: ApiPrinterJobStatus): PrinterJobStatus {
-  return {
-    printerId: status.printer_id,
-    state: status.state,
-    filename: status.filename,
-    progress: status.progress,
-    message: status.message,
-    bedTemperature: status.bed_temperature ? fromApiPrinterTemperature(status.bed_temperature) : null,
-    toolheads: (status.toolheads ?? []).map((toolhead) => ({
-      name: toolhead.name,
-      label: toolhead.label,
-      index: toolhead.index,
-      currentTemperature: toolhead.current_temperature ? fromApiPrinterTemperature(toolhead.current_temperature) : null,
-      color: toolhead.color,
-      colorSource: toolhead.color_source ?? null,
-      material: toolhead.material ?? null,
-      materialSource: toolhead.material_source ?? null,
-      vendor: toolhead.vendor ?? null,
-      subtype: toolhead.subtype ?? null
-    })),
-    rawStatus: status.raw_status,
-    observedAt: status.observed_at
-  };
-}
-
-function fromApiPrinterStatus(status: ApiPrinterStatus): PrinterStatus {
-  return {
-    printerId: status.printer_id,
-    adapterType: status.adapter_type,
-    state: status.state,
-    capabilities: status.capabilities,
-    rawStatus: status.raw_status,
-    observedAt: status.observed_at
-  };
-}
-
-function fromApiPrinterCapabilityDiagnostics(diagnostics: ApiPrinterCapabilityDiagnostics): PrinterCapabilityDiagnostics {
-  return {
-    printerId: diagnostics.printer_id,
-    adapterType: diagnostics.adapter_type,
-    extensionAgentsAvailable: diagnostics.extension_agents_available,
-    extensionAgents: diagnostics.extension_agents ?? [],
-    spoolmanAvailable: diagnostics.spoolman_available,
-    spoolmanStatus: diagnostics.spoolman_status ?? null,
-    probeErrors: diagnostics.probe_errors ?? {},
-    observedAt: diagnostics.observed_at
-  };
-}
-
-function fromApiPrinterEngine(engine: ApiPrinterEngine): PrinterEngine {
-  return {
-    engineId: engine.engine_id,
-    displayName: engine.display_name,
-    description: engine.description,
-    capabilities: engine.capabilities
-  };
-}
-
-function fromApiPrinterTemperature(temperature: ApiPrinterTemperature) {
-  return {
-    currentC: temperature.current_c,
-    targetC: temperature.target_c,
-    power: temperature.power
-  };
-}
-
-function fromApiPrinterFile(file: ApiPrinterFile): PrinterFile {
-  return {
-    path: file.path,
-    size: file.size,
-    modified: file.modified,
-    permissions: file.permissions
-  };
-}
-
-function fromApiPrinterActionResult(result: ApiPrinterActionResult): PrinterActionResult {
-  return {
-    printerId: result.printer_id,
-    action: result.action,
-    accepted: result.accepted,
-    rawResponse: result.raw_response
-  };
 }
