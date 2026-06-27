@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Spinner } from "../../../components/Spinner";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { listSiteAdapters, updateSiteAdapter } from "../api/siteScanningApi";
@@ -18,6 +18,7 @@ export default function SiteScanningPage() {
   const [adapterError, setAdapterError] = useState<string | null>(null);
   const [sourceProjectRequest, setSourceProjectRequest] = useState<SourceProjectRequest | null>(null);
   const [savingAdapter, setSavingAdapter] = useState<string | null>(null);
+  const importPanelRef = useRef<HTMLElement | null>(null);
   const importSiteKey = importableSiteKey(scan.result?.summary.siteKey ?? null, adapters);
 
   useEffect(() => {
@@ -61,6 +62,11 @@ export default function SiteScanningPage() {
       requestId: Date.now(),
       siteKey: importSiteKey
     });
+    requestAnimationFrame(() => {
+      if (typeof importPanelRef.current?.scrollIntoView === "function") {
+        importPanelRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
   }
 
   return (
@@ -84,9 +90,11 @@ export default function SiteScanningPage() {
           result={scan.result}
         />
         <SupportedSourceImportPanel
+          autoDiscoverProjectRequest
           className="panel scan-source-import-panel"
           heading="Import Candidate Files"
           headingId="scan-source-import-title"
+          panelRef={importPanelRef}
           projectRequest={sourceProjectRequest}
           showImportedSummary
           siteKey={importSiteKey ?? undefined}
@@ -95,7 +103,10 @@ export default function SiteScanningPage() {
       <aside className="site-scan-side">
         <section className="panel adapter-panel" aria-labelledby="adapter-title">
           <div className="panel-header">
-            <h2 id="adapter-title">Adapters</h2>
+            <div>
+              <h2 id="adapter-title">Adapters</h2>
+              <p className="muted-copy">Enabled adapters can scan matching sites; disabled adapters are skipped.</p>
+            </div>
           </div>
           <div className="adapter-list">
             {adapters.map((adapter) => (

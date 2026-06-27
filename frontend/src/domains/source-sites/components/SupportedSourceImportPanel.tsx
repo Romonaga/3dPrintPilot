@@ -1,5 +1,5 @@
 import { FileDown, Search } from "lucide-react";
-import { FormEvent } from "react";
+import { FormEvent, type Ref } from "react";
 import { Spinner } from "../../../components/Spinner";
 import { type UploadedModel } from "../../models/types";
 import { type SiteAdapter } from "../../site-scanning/types";
@@ -7,25 +7,29 @@ import { type SourceProjectRequest, useSupportedSourceImport } from "../hooks/us
 import { formatSourceFileSize } from "../utils/formatSourceFile";
 
 type SupportedSourceImportPanelProps = {
+  autoDiscoverProjectRequest?: boolean;
   className?: string;
   heading?: string;
   headingId?: string;
   onImported?: (models: UploadedModel[]) => void;
+  panelRef?: Ref<HTMLElement>;
   projectRequest?: SourceProjectRequest | null;
   showImportedSummary?: boolean;
   siteKey?: string;
 };
 
 export function SupportedSourceImportPanel({
+  autoDiscoverProjectRequest = false,
   className = "panel supported-source-panel",
   heading = "Import From Source",
   headingId = "supported-source-import-title",
   onImported,
+  panelRef,
   projectRequest = null,
   showImportedSummary = false,
   siteKey
 }: SupportedSourceImportPanelProps) {
-  const sourceImport = useSupportedSourceImport({ onImported, projectRequest, siteKey });
+  const sourceImport = useSupportedSourceImport({ autoDiscoverProjectRequest, onImported, projectRequest, siteKey });
 
   async function handleDiscoverSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,7 +42,7 @@ export function SupportedSourceImportPanel({
   }
 
   return (
-    <section className={className} aria-labelledby={headingId}>
+    <section className={className} aria-labelledby={headingId} ref={panelRef}>
       <div className="panel-header">
         <div>
           <h2 id={headingId}>{heading}</h2>

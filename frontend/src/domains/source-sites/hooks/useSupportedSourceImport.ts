@@ -5,6 +5,7 @@ import { listSiteAdapters } from "../../site-scanning/api/siteScanningApi";
 import { type SiteAdapter } from "../../site-scanning/types";
 
 type UseSupportedSourceImportOptions = {
+  autoDiscoverProjectRequest?: boolean;
   projectRequest?: SourceProjectRequest | null;
   siteKey?: string;
   onImported?: (models: UploadedModel[]) => void;
@@ -16,7 +17,12 @@ export type SourceProjectRequest = {
   siteKey: string;
 };
 
-export function useSupportedSourceImport({ projectRequest, siteKey, onImported }: UseSupportedSourceImportOptions = {}) {
+export function useSupportedSourceImport({
+  autoDiscoverProjectRequest = false,
+  projectRequest,
+  siteKey,
+  onImported
+}: UseSupportedSourceImportOptions = {}) {
   const [selectedSiteKey, setSelectedSiteKey] = useState(siteKey ?? "");
   const [projectUrl, setProjectUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -71,6 +77,9 @@ export function useSupportedSourceImport({ projectRequest, siteKey, onImported }
     setSelectedSiteKey(projectRequest.siteKey);
     setProjectUrl(projectRequest.projectUrl);
     resetSourceSelection();
+    if (autoDiscoverProjectRequest) {
+      void discoverFor(projectRequest.siteKey, projectRequest.projectUrl);
+    }
   }, [projectRequest?.requestId]);
 
   function resetSourceSelection() {
@@ -105,10 +114,14 @@ export function useSupportedSourceImport({ projectRequest, siteKey, onImported }
       setSourceError("Select a configured source site first.");
       return null;
     }
+    return discoverFor(selectedSiteKey, projectUrl);
+  }
+
+  async function discoverFor(requestSiteKey: string, requestProjectUrl: string) {
     setIsDiscovering(true);
     setSourceError(null);
     try {
-      const discovered = await discoverSourceModelFiles({ siteKey: selectedSiteKey, sourceProjectUrl: projectUrl });
+      const discovered = await discoverSourceModelFiles({ siteKey: requestSiteKey, sourceProjectUrl: requestProjectUrl });
       setSourceFiles(discovered);
       setRecentScans((current) => [discovered, ...current.filter((scan) => scan.scanId !== discovered.scanId)].slice(0, 20));
       setSelectedFileIds(discovered.files.filter((sourceFile) => sourceFile.supportedModelFile).map((sourceFile) => sourceFile.fileId));
