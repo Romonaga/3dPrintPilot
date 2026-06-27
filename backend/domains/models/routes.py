@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from gzip import BadGzipFile, decompress as gzip_decompress
 from io import BytesIO
 from pathlib import PurePath
 from urllib.parse import quote, urlparse
 from zipfile import BadZipFile, ZipFile
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -224,6 +225,32 @@ def import_source_model_files(
     return created_models
 
 
+@router.get("/{model_id}/files/{file_id}/payload")
+def restore_model_file_payload(
+    model_id: int,
+    file_id: int,
+    _user=Depends(require_roles("viewer")),
+    store: ModelStore = Depends(get_model_store),
+) -> Response:
+    model_file = store.get_model_file(model_id, file_id)
+    if model_file is None:
+        raise HTTPException(status_code=404, detail="Model file not found")
+    payload = getattr(model_file, "payload", None)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Model file payload is not stored")
+    if payload.compression != "gzip":
+        raise HTTPException(status_code=409, detail="Stored model file payload uses an unsupported compression format")
+    try:
+        data = gzip_decompress(payload.compressed_bytes)
+    except (BadGzipFile, OSError) as exc:
+        raise HTTPException(status_code=409, detail="Stored model file payload could not be restored") from exc
+    return Response(
+        content=data,
+        media_type=model_file.content_type or "application/octet-stream",
+        headers=_download_headers(model_file.filename),
+    )
+
+
 @router.get("/{model_id}", response_model=ModelResponse)
 def get_model(
     model_id: int,
@@ -421,6 +448,13 @@ def _model_content_type(filename: str) -> str | None:
     if file_format == "3mf":
         return "model/3mf"
     return None
+
+
+def _download_headers(filename: str) -> dict[str, str]:
+    safe_name = safe_filename(filename)
+    ascii_name = safe_name.encode("ascii", errors="ignore").decode("ascii") or "model-file"
+    ascii_name = ascii_name.replace('"', "").replace("\\", "")
+    return {"Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(safe_name)}"}
 
 
 def _downloaded_model_title(title: str | None, filename: str, selected_count: int) -> str:

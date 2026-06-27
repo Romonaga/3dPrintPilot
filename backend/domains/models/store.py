@@ -36,6 +36,14 @@ class ModelStore:
         )
         return self._session.scalars(statement).first()
 
+    def get_model_file(self, model_id: int, file_id: int) -> ModelFile | None:
+        statement = (
+            select(ModelFile)
+            .options(selectinload(ModelFile.payload))
+            .where(ModelFile.model_id == model_id, ModelFile.id == file_id)
+        )
+        return self._session.scalars(statement).first()
+
     def list_source_project_scans(self, limit: int = 20) -> list[SourceProjectScan]:
         statement = (
             select(SourceProjectScan)

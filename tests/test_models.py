@@ -41,6 +41,7 @@ class FakeModelStore:
     def __init__(self) -> None:
         self.saved = []
         self.source_scans = []
+        self.model_files = {}
 
     def list_source_project_scans(self, limit=20):
         return self.source_scans[:limit]
@@ -83,6 +84,9 @@ class FakeModelStore:
     def get_model(self, model_id):
         return None
 
+    def get_model_file(self, model_id, file_id):
+        return self.model_files.get((model_id, file_id))
+
     def save_uploaded_model(self, **kwargs):
         self.saved.append(kwargs)
         now = datetime.now(UTC)
@@ -105,6 +109,7 @@ class FakeModelStore:
         )
         model_file = SimpleNamespace(
             id=7,
+            model_id=3,
             filename=kwargs["filename"],
             content_type=kwargs["content_type"],
             file_format=analysis.file_format,
@@ -117,7 +122,7 @@ class FakeModelStore:
             payload=payload,
             created_at=now,
         )
-        return SimpleNamespace(
+        model = SimpleNamespace(
             id=3,
             title=kwargs["title"],
             source_url=kwargs["source_url"],
@@ -126,6 +131,8 @@ class FakeModelStore:
             updated_at=now,
             files=[model_file],
         )
+        self.model_files[(model.id, model_file.id)] = model_file
+        return model
 
     def save_downloaded_model(self, **kwargs):
         self.saved.append(kwargs)
@@ -136,6 +143,7 @@ class FakeModelStore:
             source_project_url=kwargs["source_project_url"],
             source_file_url=kwargs["source_file_url"],
             compression=compressed_payload.compression,
+            compressed_bytes=compressed_payload.compressed_bytes,
             original_size_bytes=compressed_payload.original_size_bytes,
             compressed_size_bytes=compressed_payload.compressed_size_bytes,
             original_sha256=compressed_payload.original_sha256,
@@ -159,6 +167,7 @@ class FakeModelStore:
         )
         model_file = SimpleNamespace(
             id=8,
+            model_id=4,
             filename=kwargs["filename"],
             content_type=kwargs["content_type"],
             file_format=analysis.file_format,
@@ -171,7 +180,7 @@ class FakeModelStore:
             payload=payload,
             created_at=now,
         )
-        return SimpleNamespace(
+        model = SimpleNamespace(
             id=4,
             title=kwargs["title"],
             source_url=kwargs["source_project_url"],
@@ -180,6 +189,8 @@ class FakeModelStore:
             updated_at=now,
             files=[model_file],
         )
+        self.model_files[(model.id, model_file.id)] = model_file
+        return model
 
 
 class FakeSourceAuthStore:
@@ -359,6 +370,52 @@ def test_model_import_downloaded_file_stores_compressed_payload_metadata_without
     stored_payload = store.saved[0]["payload"]
     assert gzip_decompress(stored_payload.compressed_bytes) == ASCII_STL
     assert store.saved[0]["filename"] == "unsafe-name.stl"
+
+
+def test_model_file_payload_restore_downloads_original_bytes_from_db():
+    store = FakeModelStore()
+    app = create_app()
+    app.dependency_overrides[get_model_store] = lambda: store
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    created = client.post(
+        "/api/models/imports/downloaded-file",
+        data={
+            "title": "Downloaded Triangle",
+            "source_project_url": "https://models.example/projects/triangle",
+            "source_file_url": "https://cdn.models.example/files/triangle.stl",
+        },
+        files={"file": ("../unsafe-name.stl", ASCII_STL, "model/stl")},
+    )
+
+    assert created.status_code == 201
+    restored = client.get("/api/models/4/files/8/payload")
+
+    assert restored.status_code == 200
+    assert restored.content == ASCII_STL
+    assert restored.headers["content-type"].startswith("model/stl")
+    assert "unsafe-name.stl" in restored.headers["content-disposition"]
+
+
+def test_model_file_payload_restore_returns_404_when_payload_is_not_stored():
+    store = FakeModelStore()
+    app = create_app()
+    app.dependency_overrides[get_model_store] = lambda: store
+    allow_anonymous_until_bootstrap(app)
+    client = TestClient(app)
+
+    created = client.post(
+        "/api/models/uploads",
+        data={"title": "Uploaded Triangle"},
+        files={"file": ("triangle.stl", ASCII_STL, "model/stl")},
+    )
+
+    assert created.status_code == 201
+    restored = client.get("/api/models/3/files/7/payload")
+
+    assert restored.status_code == 404
+    assert restored.json()["detail"] == "Model file payload is not stored"
 
 
 def test_model_import_downloaded_file_requires_absolute_source_urls():
