@@ -164,8 +164,9 @@ class PrintablesSourceSiteRunner:
             _source_file(project, raw_file)
             for raw_file in sorted(model.get("stls") or [], key=lambda item: item.get("order") or 0)
         )
-        download_packs = tuple(_source_download_pack(project, raw_pack) for raw_pack in model.get("downloadPacks") or [])
-        files = (*model_files, *download_packs)
+        files = model_files
+        if not files:
+            files = tuple(_source_download_pack(project, raw_pack) for raw_pack in model.get("downloadPacks") or [])
         if not files:
             raise SourceSiteRunnerError("Printables did not return any model files for that project.")
         return SourceSiteProjectFiles(

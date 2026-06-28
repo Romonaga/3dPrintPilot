@@ -107,17 +107,12 @@ def test_printables_runner_lists_project_files_and_marks_unsupported_extensions(
     assert [item.filename for item in project_files.files] == [
         "cube.stl",
         "helper.scad",
-        "All print files.zip",
-        "All model files.zip",
     ]
     assert project_files.files[0].supported_model_file is True
     assert project_files.files[0].source_file_url.endswith("/files#file-file-1")
     assert project_files.files[1].file_format == "scad"
     assert project_files.files[1].supported_model_file is False
-    assert project_files.files[2].file_format == "zip"
-    assert project_files.files[2].supported_model_file is True
-    assert "download-all archive" in (project_files.files[2].notes or "")
-    assert project_files.files[3].source_file_url.endswith("/files#download-pack-model-pack")
+    assert all(item.file_format != "zip" for item in project_files.files)
 
 
 def test_printables_runner_downloads_selected_model_file_with_site_download_link(monkeypatch):
@@ -215,6 +210,14 @@ def test_printables_runner_downloads_project_archive_pack(monkeypatch):
     monkeypatch.setattr(printables_runner_module, "_post_graphql", fake_post_graphql)
     monkeypatch.setattr(printables_runner_module, "_download_bytes", fake_download_bytes)
     runner = PrintablesSourceSiteRunner()
+
+    project_files = runner.list_project_files(
+        "https://www.printables.com/model/229198-printables-calibration-cube",
+        auth_headers={"Cookie": "session=abc"},
+    )
+    assert [item.filename for item in project_files.files] == ["All model files.zip"]
+    assert project_files.files[0].supported_model_file is True
+    assert "download-all archive" in (project_files.files[0].notes or "")
 
     downloaded = runner.download_project_file(
         "https://www.printables.com/model/229198-printables-calibration-cube",
