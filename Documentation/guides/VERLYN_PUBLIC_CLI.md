@@ -5,6 +5,14 @@ assistants inside a governed repository. It documents the product workflow only:
 do not use private Verlyn developer commands, direct database access, or shell
 provider tools as substitutes for these commands.
 
+## CLI Surface Names
+
+- `verlyn` is the installed public API-backed product CLI.
+- `python -m runtime.source_cli` is source-local developer/analyzer tooling for
+  Verlyn source checkouts.
+- `cli.py` is a developer compatibility shim only. Public product usage should
+  not be explained through `cli.py`.
+
 ## Context Resolution
 
 Most commands are repo-scoped: run them from the governed repository checkout
@@ -32,11 +40,21 @@ If a command cannot resolve the repo without an override, treat that as a
 target/login/binding issue to repair, not as a reason to hard-code overrides in
 normal workflow.
 
+Use the API service URL for `verlyn auth login --server`. A saved CLI profile
+may reuse its saved `api_base_url` for later logins, but the web/UI origin is
+not a supported CLI API surface. The web/UI service should reject public CLI
+bearer-token API calls and should not host CLI-only routes such as
+`/api/cli/auth/login`.
+
 JSON output is part of the product contract for agents and automation. Inspect
-fields such as `recommended_next_action`, `next_action`,
+`workflow_hint` first when it is present. `workflow_hint` is the canonical
+chain-aware resolver payload shared by `workflow assistant-startup --json`,
+`workflow inbox --json`, and `changes next --json`; it prevents agents from
+guessing from flat lists when chains, blockers, or branch context matter.
+Additional fields such as `recommended_next_action`, `next_action`,
 `recommended_next_command`, `review_context`, `task_rollup`, `workflow_gate`,
-`repair_status`, and `next_step` before choosing the next command. These fields
-are guidance, not permission to bypass governance or ignore the user's request.
+`repair_status`, and `next_step` remain guidance, not permission to bypass
+governance or ignore the user's request.
 
 When `verlyn auth login` runs from a repository checkout, the CLI sends a
 lightweight local governance summary with the login request. The login response
