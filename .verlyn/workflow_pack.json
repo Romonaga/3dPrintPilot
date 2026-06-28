@@ -1,16 +1,16 @@
 {
   "product": "Verlyn",
-  "workflow_pack_version": "2026.06.24.1",
+  "workflow_pack_version": "2026.06.27.1",
   "repo_name": "3dprintpilot",
   "install_mode": "governance",
   "installed_at": "2026-06-18T17:17:08.937383+00:00",
-  "refreshed_at": "2026-06-24T01:39:24.166877+00:00",
+  "refreshed_at": "2026-06-28T02:49:18.168905+00:00",
   "governance_pack": {
     "name": "verlyn-standard",
-    "version": "2026.06.24.1",
-    "manifest_hash": "0d0ac24775d0c472f447139c75c37e7533fbd2e5a6a000b486bccdc69041d933",
+    "version": "2026.06.27.1",
+    "manifest_hash": "b8fde3adfc960ecf9cd6650d52fdf675b51a84af24852faafa0ebbac8dcdcbed",
     "source": "verlyn_api",
-    "refreshed_at": "2026-06-24T01:39:24.166877+00:00",
+    "refreshed_at": "2026-06-28T02:49:18.168905+00:00",
     "repo_owned_paths": [
       "RULES.md"
     ],
@@ -45,7 +45,7 @@
       },
       ".verlyn/runtime_context.json": {
         "owner": "verlyn",
-        "sha256": "38490e778f3c36f57096453509dbc3a024db1f0b207785d475b1c1785ca31544",
+        "sha256": "5d6b98cbfd9611a0278cad836a3803e9be5363c575c9b2998d6c8f87b2660b5f",
         "required": true,
         "category": "governance",
         "purpose": "assistant_runtime_context"
@@ -59,7 +59,7 @@
       },
       ".verlyn/agent-skills/verlyn-public-cli.md": {
         "owner": "verlyn",
-        "sha256": "8677094f9fde5b8b094ebebc1e18453f3f2f7a625a1368d243cadf5d383200f3",
+        "sha256": "341d0b2df09cda0cdeebbce87e8a84ef9af18d4bee55b2aa692740508d134651",
         "required": false,
         "category": "governance",
         "purpose": "agent_skill_reference"
@@ -122,14 +122,14 @@
       },
       "Documentation/guides/VERLYN_AGENT_WORKFLOW.md": {
         "owner": "verlyn",
-        "sha256": "6188f0f4add4e10825bc3efab86d55254fc1e71e88474bd38538f88eadc0aa76",
+        "sha256": "9bef8369453d82e572df878c8d6e871ce717728b239cc2a84ef44aff004b7543",
         "required": false,
         "category": "documentation",
         "purpose": "workflow"
       },
       "Documentation/guides/VERLYN_PUBLIC_CLI.md": {
         "owner": "verlyn",
-        "sha256": "d64d8b4f2a92b7394ea277d4524ac9154d0fa3e572e035de435e570948e3883a",
+        "sha256": "eb749606cdd27c17300414b01a6701eecedc27d148628e21b635bb8b9cd48dfd",
         "required": true,
         "category": "documentation",
         "purpose": "cli_reference"
@@ -164,5 +164,5 @@
       }
     }
   },
-  "manifest_hash": "0d0ac24775d0c472f447139c75c37e7533fbd2e5a6a000b486bccdc69041d933"
+  "manifest_hash": "b8fde3adfc960ecf9cd6650d52fdf675b51a84af24852faafa0ebbac8dcdcbed"
 }
