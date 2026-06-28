@@ -4,13 +4,13 @@
   "repo_name": "3dprintpilot",
   "install_mode": "governance",
   "installed_at": "2026-06-18T17:17:08.937383+00:00",
-  "refreshed_at": "2026-06-28T02:49:18.168905+00:00",
+  "refreshed_at": "2026-06-28T23:30:43.728627+00:00",
   "governance_pack": {
     "name": "verlyn-standard",
     "version": "2026.06.27.1",
-    "manifest_hash": "b8fde3adfc960ecf9cd6650d52fdf675b51a84af24852faafa0ebbac8dcdcbed",
+    "manifest_hash": "442124d981accec01b88bafe231f8030fbf9238e9d3db26fca4d3ec7672a7107",
     "source": "verlyn_api",
-    "refreshed_at": "2026-06-28T02:49:18.168905+00:00",
+    "refreshed_at": "2026-06-28T23:30:43.728627+00:00",
     "repo_owned_paths": [
       "RULES.md"
     ],
@@ -129,7 +129,7 @@
       },
       "Documentation/guides/VERLYN_PUBLIC_CLI.md": {
         "owner": "verlyn",
-        "sha256": "eb749606cdd27c17300414b01a6701eecedc27d148628e21b635bb8b9cd48dfd",
+        "sha256": "91979e307df84f445a31b399f78252ecde089806cfd235a4d6f98688a239487d",
         "required": true,
         "category": "documentation",
         "purpose": "cli_reference"
@@ -164,5 +164,5 @@
       }
     }
   },
-  "manifest_hash": "b8fde3adfc960ecf9cd6650d52fdf675b51a84af24852faafa0ebbac8dcdcbed"
+  "manifest_hash": "442124d981accec01b88bafe231f8030fbf9238e9d3db26fca4d3ec7672a7107"
 }

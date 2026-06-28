@@ -29,7 +29,7 @@ a checkout, or performing explicit recovery:
 
 | Argument | Meaning | Normal use |
 |---|---|---|
-| `--server` | Verlyn API base URL for `verlyn auth login`; omitted login reuses saved server state when available. | First login, changing servers, or repairing a bad saved server. |
+| `--server` | Verlyn API base URL override for `verlyn auth login`; omitted login uses the configured default API server, currently `https://api.verlyn-cockpit.net`, unless saved state provides a more specific route. | Changing servers, diagnostics, automation, or repairing a bad saved server. |
 | `--username` | Username for `verlyn auth login`; omitted login prompts for it. | Automation or when avoiding an interactive username prompt. |
 | `--profile` | Saved CLI auth profile override. | Diagnostics or automation; avoid for normal repo work. |
 | `--repo-slug` | Repository identity override when the current checkout cannot determine the repo. | Diagnostics, automation, or working outside a saved checkout. |
@@ -40,11 +40,15 @@ If a command cannot resolve the repo without an override, treat that as a
 target/login/binding issue to repair, not as a reason to hard-code overrides in
 normal workflow.
 
-Use the API service URL for `verlyn auth login --server`. A saved CLI profile
-may reuse its saved `api_base_url` for later logins, but the web/UI origin is
-not a supported CLI API surface. The web/UI service should reject public CLI
-bearer-token API calls and should not host CLI-only routes such as
-`/api/cli/auth/login`.
+By default, `verlyn auth login` uses the hosted Verlyn-Cockpit API at
+`https://api.verlyn-cockpit.net`. Use `--server` only to override that API
+service URL. If a user enters a bare remote hostname such as
+`api.verlyn-cockpit.net`, the CLI normalizes it to
+`https://api.verlyn-cockpit.net`; non-localhost `http://` URLs remain rejected.
+A saved CLI profile may reuse its saved `api_base_url` for later logins, but
+the web/UI origin is not a supported CLI API surface. The web/UI service should
+reject public CLI bearer-token API calls and should not host CLI-only routes
+such as `/api/cli/auth/login`.
 
 JSON output is part of the product contract for agents and automation. Inspect
 `workflow_hint` first when it is present. `workflow_hint` is the canonical
@@ -156,16 +160,17 @@ verlyn runs --limit 3 --json
 - `workflow assert-edit-route --json` fails closed when the current checkout is
   not authorized for edits or no active route exists.
 - `target show --json` confirms which repo this checkout is bound to.
-- `changes list` shows your working changes by default.
+- `changes list` shows your non-closed changes by default.
 - `runs --limit 3 --json` shows recent API-backed analysis/run context.
 
-For diagnostics across visible owners and statuses:
+For diagnostics across visible owners and statuses, including closed history:
 
 ```bash
 verlyn changes list --owner-scope all --status-scope all
 ```
 
-Do not use undocumented shortcuts for all-scope diagnostics.
+Use `--status-scope all` only when you need older merged, archived, or canceled
+changes. Do not use undocumented shortcuts for all-scope diagnostics.
 
 ## Change Workflow
 
@@ -338,9 +343,15 @@ and repo binding are aligned:
 ```bash
 verlyn repos clone
 verlyn repos clone <repo-slug> ./local-folder --project-id <project-id>
+verlyn repos clone <repo-slug> ./local-folder --project-id <project-id> --json
 ```
 
-- Omit `repo_slug` to use interactive project/repo selection when available.
+- Use the `--json` form for automation and pass the repo slug plus project id
+  explicitly. Non-TTY/JSON automation does not prompt for ambiguous project or
+  repository selection.
+- Omit `repo_slug` to use interactive project/repo selection from a real TTY
+  session when available. Prompts are written to stderr so JSON stdout stays
+  parseable when prompts are allowed.
 - `destination` defaults to the repository name.
 - `--project-id` selects the project binding used for provider credential
   resolution.
