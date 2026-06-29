@@ -4,13 +4,13 @@
   "repo_name": "3dprintpilot",
   "install_mode": "governance",
   "installed_at": "2026-06-18T17:17:08.937383+00:00",
-  "refreshed_at": "2026-06-28T23:30:43.728627+00:00",
+  "refreshed_at": "2026-06-29T19:30:13.084747+00:00",
   "governance_pack": {
     "name": "verlyn-standard",
     "version": "2026.06.27.1",
-    "manifest_hash": "442124d981accec01b88bafe231f8030fbf9238e9d3db26fca4d3ec7672a7107",
+    "manifest_hash": "30f5e0fee502879ad550e975f5c20ac3cfed438bed2d1baa2d75496531c65927",
     "source": "verlyn_api",
-    "refreshed_at": "2026-06-28T23:30:43.728627+00:00",
+    "refreshed_at": "2026-06-29T19:30:13.084747+00:00",
     "repo_owned_paths": [
       "RULES.md"
     ],
@@ -59,7 +59,7 @@
       },
       ".verlyn/agent-skills/verlyn-public-cli.md": {
         "owner": "verlyn",
-        "sha256": "341d0b2df09cda0cdeebbce87e8a84ef9af18d4bee55b2aa692740508d134651",
+        "sha256": "51691225281387a074db6ee5cbeeaa3f11102fa1669728341d6881f96b669d1f",
         "required": false,
         "category": "governance",
         "purpose": "agent_skill_reference"
@@ -122,14 +122,14 @@
       },
       "Documentation/guides/VERLYN_AGENT_WORKFLOW.md": {
         "owner": "verlyn",
-        "sha256": "9bef8369453d82e572df878c8d6e871ce717728b239cc2a84ef44aff004b7543",
+        "sha256": "90bd0019768222d86c26f5edc4d4e1492f43dde87042b4356a1b830913bd35ce",
         "required": false,
         "category": "documentation",
         "purpose": "workflow"
       },
       "Documentation/guides/VERLYN_PUBLIC_CLI.md": {
         "owner": "verlyn",
-        "sha256": "91979e307df84f445a31b399f78252ecde089806cfd235a4d6f98688a239487d",
+        "sha256": "2ef0f423467c2e2cb631694292649ac1caa3cad4266c92b1a6931b03af7fffdb",
         "required": true,
         "category": "documentation",
         "purpose": "cli_reference"
@@ -164,5 +164,5 @@
       }
     }
   },
-  "manifest_hash": "442124d981accec01b88bafe231f8030fbf9238e9d3db26fca4d3ec7672a7107"
+  "manifest_hash": "30f5e0fee502879ad550e975f5c20ac3cfed438bed2d1baa2d75496531c65927"
 }

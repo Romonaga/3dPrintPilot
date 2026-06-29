@@ -4,6 +4,8 @@ Use this guide when an assistant or agent is working inside this repository.
 `AGENTS.md` is authoritative for policy, `CONTRIBUTING.md` is authoritative for
 commit protocol, and `RULES.md` contains repo-owned guidance. Use
 `Documentation/guides/VERLYN_PUBLIC_CLI.md` as the detailed command reference.
+This is the single assistant-facing workflow guide for Verlyn-governed repo
+sessions.
 
 ## Reload Order
 
@@ -54,6 +56,8 @@ never bypass repo policy.
 
 ## Control Path
 
+Public CLI first, API-backed workflow state, and no private bypasses.
+
 1. Installed public `verlyn` CLI commands.
 2. Web UI workflow surfaces for run creation, onboarding, and settings.
 3. Stop and record a Verlyn workflow blocker when the product path is missing
@@ -68,6 +72,8 @@ CLI login profile. Avoid `--profile`, `--server`, `--repo-slug`, and `--target`
 unless bootstrapping, diagnosing, automating outside a checkout, or performing
 explicit recovery. If normal repo work needs an override to pass, treat it as
 auth, repo binding, or checkout drift to repair through Verlyn.
+
+Normal commands are repo-scoped from the current governed checkout. Optional overrides such as `--profile`, `--server`, `--repo-slug`, `--target`, `--source-ref`, and `--commit-sha` are diagnostics, bootstrap, automation, or recovery controls, not routine workflow inputs.
 
 For vendor-specific delivery changes, query
 `/api/repos/{repo_slug}/delivery/providers` before changing provider behavior.
@@ -115,18 +121,67 @@ verlyn reviews record <change-id> --tier changed_file_review --disposition accep
 verlyn workflow gate <change-id> --scope delivery
 ```
 
-Creation and activation are separate. Draft changes are planning-only: agents
-may inspect files and flesh out change/work-item records, but must not write
-files, run write-formatters, generate source artifacts, or apply patches until
+Creation and activation are separate. Draft means planning only: agents may
+inspect files and flesh out change/work-item records, but must not write files,
+run write-formatters, generate source artifacts, or apply patches until
 `verlyn changes activate <change-id>` has bound the branch and
-`verlyn workflow assert-edit-route --json` returns `allowed: true` for that
-change.
+`verlyn workflow assert-edit-route --json` returning `allowed: true` confirms
+the edit route for that change.
 
 `verlyn changes create` seeds required starter work items. Update those
 starters in place with concrete scope, acceptance, notes, and validation
 guidance before implementation. `Review findings` is the required code/task
 review ticket when no separate human review applies. Use it to check scope,
 unrelated edits, hallucination risk, and verification before closeout.
+
+Changed-file review evidence for `prepare-pr`, `deliver`, and `deploy` must
+come from an independent reviewer. If the operator is working inside an AI
+agent, that agent must request an independent review agent or another
+independent AI path to review the full contents of every changed file and record
+that independent provenance, for example:
+
+```bash
+verlyn reviews changed-files <change-id> --independent-local-agent --reviewer <agent-name>
+```
+
+Use the first-class runner/request path when the CLI should manage this step:
+
+```bash
+verlyn reviews changed-files <change-id> --run-independent-review
+```
+
+If a supported local AI launcher is not available, the command fails closed and
+returns the whole-file prompt, spawn instructions, and exact follow-up record
+command instead of recording accepted evidence. The spawn instructions require
+inherited tool defaults and tell the agent to retry without explicit model or
+agent-type overrides when launch rejects them.
+
+The independent reviewer must use the generated changed-file review
+instructions from the CLI/API review result. That versioned rubric requires
+whole-file inspection, not diff-only inspection, and explicitly checks large
+files/functions, branch and nesting complexity, parameter count, broad exception
+handling, security/auth ordering, state and route ownership, critical-path
+tests, analyzer hotspots, and runtime/deployment risk. If a separate review
+agent or job is spawned, record its review job id, agent/session id, terminal
+status, and cleanup status; closeout fails when a recorded review job is still
+running, failed, stale, or not cleaned up.
+Use the `--review-job-id`, `--agent-id`, `--review-job-status`, and
+`--agent-cleanup-status` options on `verlyn reviews changed-files` or
+`verlyn reviews record` when the wrapper has spawned and monitored an
+independent reviewer.
+When the independent reviewer returns structured `blocking_findings`,
+`code_quality_findings`, or `test_gaps`, the closeout path creates or updates
+review-finding work items tied to that review entry, review job, severity, file,
+rubric check, and line where available. Score-relevant quality issues for a
+touched file must be actionable work items rather than accepted residual-risk
+prose. Work those items, then run a fresh independent/configured-AI
+changed-file review before retrying `deliver` or `deploy`.
+
+A resident/local self-review, deterministic fallback review, or configured-AI
+record without required usage evidence may be stored for audit, but it does not
+satisfy the closeout gate and cannot be bypassed with
+`--allow-review-findings`. Use `--allow-review-findings` only for accepted risk
+on findings produced by an independent review.
 
 ## Governance Pack
 
