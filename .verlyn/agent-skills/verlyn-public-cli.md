@@ -4,7 +4,7 @@ Use the installed public `verlyn` CLI as the control path for governed
 repository work. Repo-local `AGENTS.md`, `CONTRIBUTING.md`, and `RULES.md`
 remain authoritative.
 
-Core rule: public CLI first, API-backed workflow context, no direct PostgreSQL
+Core rule: Public CLI first, API-backed workflow context, no direct PostgreSQL
 access, no private helper scripts, no provider-secret handling, no raw provider
 tool bypasses, and no delivery-gate bypasses.
 
@@ -39,7 +39,7 @@ verlyn changes list --owner-scope all --status-scope all
 verlyn runs --limit 3 --json
 ```
 
-Inspect `workflow_hint` first when present. Use `selected_change`,
+Read Verlyn's structured JSON before guessing. Inspect `workflow_hint` first when present. Use `selected_change`,
 `recommended_action`, `recommended_command`, `safe_to_edit`, `reason_code`,
 `chain_context`, `blocked_changes`, `ready_roots`, `current_branch_context`,
 `resolver_status`, and `degraded_reason` before guessing from flat lists.
@@ -48,7 +48,7 @@ Other hints such as `recommended_next_action`, `next_action`,
 `repair_status`, and `next_step` are still useful, but they do not bypass repo
 policy.
 
-## Context And Overrides
+## Required Versus Optional CLI Inputs
 
 Normal Verlyn commands are repo-scoped from the current checkout plus the saved
 CLI login profile. Let the installed CLI resolve user, entity, project,
@@ -114,7 +114,7 @@ verlyn reviews record <change-id> --tier changed_file_review --disposition accep
 verlyn workflow gate <change-id> --scope delivery
 ```
 
-## Governance Pack
+## Governance Pack Installation
 
 Use API-backed governance commands:
 

@@ -22,6 +22,11 @@ current checkout. In normal daily work, after you are logged in and working
 inside a known repo, you should not need to pass `--profile`, `--server`,
 `--repo-slug`, or `--target`.
 
+Optional overrides such as `--profile`, `--server`, `--repo-slug`, `--target`,
+`--source-ref`, and `--commit-sha` are for bootstrap, diagnostics, automation
+outside a checkout, or explicit recovery controls. Do not use them as routine
+workflow requirements.
+
 Required daily workflow commands should resolve context from login state and
 the current checkout. Optional context arguments are overrides for special
 cases; use them only when you are bootstrapping, diagnosing, automating outside
@@ -29,7 +34,7 @@ a checkout, or performing explicit recovery:
 
 | Argument | Meaning | Normal use |
 |---|---|---|
-| `--server` | Verlyn API base URL override for `verlyn auth login`; omitted login uses the configured default API server, currently `https://api.verlyn-cockpit.net`, unless saved state provides a more specific route. | Changing servers, diagnostics, automation, or repairing a bad saved server. |
+| `--server` | Verlyn API base URL for `verlyn auth login`; omitted login uses the configured default API server, currently `https://api.verlyn-cockpit.net`, unless saved state provides a more specific route. | Changing servers, diagnostics, automation, or repairing a bad saved server. |
 | `--username` | Username for `verlyn auth login`; omitted login prompts for it. | Automation or when avoiding an interactive username prompt. |
 | `--profile` | Saved CLI auth profile override. | Diagnostics or automation; avoid for normal repo work. |
 | `--repo-slug` | Repository identity override when the current checkout cannot determine the repo. | Diagnostics, automation, or working outside a saved checkout. |
@@ -48,7 +53,10 @@ service URL. If a user enters a bare remote hostname such as
 A saved CLI profile may reuse its saved `api_base_url` for later logins, but
 the web/UI origin is not a supported CLI API surface. The web/UI service should
 reject public CLI bearer-token API calls and should not host CLI-only routes
-such as `/api/cli/auth/login`.
+such as `/api/cli/auth/login`. Before prompting for a
+password, login probes the API health route when the client supports it so
+wrong web/provider origins fail with a clear API-endpoint message instead of
+receiving credentials.
 
 JSON output is part of the product contract for agents and automation. Inspect
 `workflow_hint` first when it is present. `workflow_hint` is the canonical
@@ -98,8 +106,58 @@ verify from another directory:
 verlyn --version
 ```
 
+The install command also creates or repairs the CLI auth bootstrap state file
+with the default hosted API URL. On Windows that file is normally:
+
+```powershell
+$env:LOCALAPPDATA\Verlyn\cli_auth_session.json
+```
+
+If `LOCALAPPDATA` is unavailable, Verlyn falls back to
+`$env:APPDATA\Verlyn\cli_auth_session.json`, then
+`$env:USERPROFILE\AppData\Local\Verlyn\cli_auth_session.json`. The bootstrap
+write preserves existing saved sessions but refreshes the top-level
+`default_api_base_url` to `https://api.verlyn-cockpit.net`.
+
 Use `--dry-run --json` to inspect the planned source executable, destination,
 and PATH entry without changing the machine.
+
+### Windows Application Control Blocks
+
+If PowerShell reports:
+
+```text
+Program 'verlyn.exe' failed to run: An Application Control policy has blocked this file
+```
+
+then Windows blocked the executable before Verlyn started. Running PowerShell
+as Administrator does not normally fix WDAC, AppLocker, or Smart App Control
+policy blocks because the process is denied before `verlyn install` can run.
+
+Ask the user to collect the executable metadata and recent policy events:
+
+```powershell
+$exe = (Resolve-Path .\verlyn.exe).Path
+Get-Item $exe | Select-Object FullName,Length,CreationTime,LastWriteTime
+Get-AuthenticodeSignature $exe | Format-List *
+Get-FileHash $exe -Algorithm SHA256
+Get-Item -Stream Zone.Identifier $exe -ErrorAction SilentlyContinue
+Get-WinEvent -LogName "Microsoft-Windows-AppLocker/EXE and DLL" -MaxEvents 20 |
+  Select-Object TimeCreated,Id,ProviderName,Message
+Get-WinEvent -LogName "Microsoft-Windows-CodeIntegrity/Operational" -MaxEvents 20 |
+  Select-Object TimeCreated,Id,ProviderName,Message
+```
+
+If the only blocker is normal downloaded-file zone marking, the user can try:
+
+```powershell
+Unblock-File .\verlyn.exe
+```
+
+If the same Application Control error remains, the machine is enforcing policy.
+The fix is to use a Windows artifact trusted by the policy or have IT/security
+allow-list the Verlyn executable by publisher, file hash, or approved install
+path. Do not treat `Run as Administrator` as a bypass for policy enforcement.
 
 ## Governance Pack Commands
 
@@ -188,6 +246,10 @@ verlyn changes next
 - `changes create` creates a draft change. `--change-type` and
   `--effort-band` are required so the change can be categorized and planned.
   It also creates required starter work items for the change.
+- Change and work-item ownership is required. When the CLI defaults ownership
+  from the signed-in actor, that actor must still be an active Verlyn user
+  profile with access to the relevant entity, project, or repo; authentication
+  alone is not assignability.
 - `changes show` reads the current durable change record and prints review
   context: description, proposal sections, acceptance criteria, work items,
   review/delivery posture, chain/dependency context, and a next action. With
@@ -200,7 +262,11 @@ verlyn changes next
 - `changes update` changes metadata such as proposal sections, acceptance
   criteria, priority, dependencies, and owner.
 - `changes activate` starts implementation and binds or creates the governed
-  work branch. Do this before editing files for a change.
+  work branch. Do this before editing files for a change. Activation refuses a
+  dirty checkout, including staged, unstaged, or untracked files; commit, stash,
+  or clean existing local work before activating. `--no-checkout` does not bypass
+  this guard because activation is the workflow boundary that creates the edit
+  route.
 - `changes refresh-branch` repairs or refreshes the bound local work branch.
 - `changes next` asks Verlyn for the next unblocked change in the current chain.
 
@@ -280,6 +346,55 @@ PR step. Both commands create or update the pull request, merge it, and record
 source-control closeout. Use `deliver` when you want PR closeout only. Use
 `deploy` when you want that same PR closeout followed by provider deployment.
 
+Before either command prepares PR package artifacts, runs the delivery gate, or
+starts hosted closeout, it checks that current independent changed-file review
+evidence already exists for real source changes. The same changed-file review
+decision used by `prepare-pr` is then evaluated as part of package and delivery
+readiness. The review is scoped to the changed file list as whole files, with
+reviewer provenance, reviewed files, and the analyzer-parity rubric version
+recorded in the review outcome. The generated review instructions require the
+reviewer to inspect the full current contents of every changed file and check
+large files/functions, branch and nesting complexity, parameter count, broad
+exception handling, security/auth ordering, state and route ownership, missing
+critical-path tests, analyzer hotspots, and runtime/deployment risk. For
+changed files, the gate requires a current changed-file content fingerprint and
+rejects stale review evidence whose fingerprint no longer matches the current
+contents. When a review job or spawned agent is recorded, that job must reach a
+terminal success state and any recorded agent cleanup must be closed or
+released. The review must
+come from an independent
+reviewer: server-side review uses the entity-configured AI provider, and
+AI-assisted local closeout must record explicitly independent local review
+evidence with
+`verlyn reviews changed-files <change-id> --independent-local-agent --reviewer <agent-name>`.
+Use `verlyn reviews changed-files <change-id> --run-independent-review` when
+the public CLI should launch or request an independent local review job before
+evidence is recorded. If no supported local launcher is available, the command
+fails closed and returns the whole-file prompt, spawn instructions, and exact
+record command instead of writing accepted review evidence. The spawn
+instructions require inherited tool defaults and tell the operator or agent to
+retry without explicit model or agent-type overrides when a local AI tool
+rejects them.
+Wrappers that spawn and monitor an independent reviewer should also include
+`--review-job-id`, `--agent-id`, `--review-job-status`, and
+`--agent-cleanup-status` on `reviews changed-files` or `reviews record`.
+Structured `blocking_findings`, `code_quality_findings`, and `test_gaps` from
+an independent/configured-AI review create or update review-finding work items
+tied to the originating review entry, review job, severity, file, rubric check,
+and line where available. Score-relevant issues in touched files should be
+reported as actionable findings, not hidden in accepted residual-risk prose.
+After remediation, closeout requires a fresh changed-file review before
+`deliver` or `deploy` can continue.
+Resident/self local-agent attestations and deterministic fallback
+reviews can be recorded for audit, but they do not satisfy the closeout gate.
+Blocking findings from an independent review fail closed, create or update a
+remediation work item on the same change, and require a later clean review or an
+explicit accepted-risk override before closeout continues. Missing independent
+review evidence is not a review-finding override case. Structured
+`code_quality_findings` and `test_gaps` are always actionable review work-item
+findings regardless of severity; legacy severity counts only control blocking
+when no structured actionable finding list is present.
+
 | Command | Outcome |
 |---|---|
 | `verlyn changes deliver <change-id>` | PR closeout only. It commits local dirty work when `--commit-message` is supplied, pushes with Verlyn-managed provider credentials, opens or updates the pull request, merges it, records closeout, and returns the local checkout to the base branch when safe. It does not deploy. |
@@ -313,6 +428,7 @@ Delivery options:
 | `--merge-method` | Provider merge strategy: `merge`, `squash`, or `rebase`. The common default in Verlyn workflows is squash. |
 | `--keep-remote-branch` | Do not delete the remote work branch after merge. Use only when you intentionally need to preserve it. |
 | `--keep-local-branch` | Do not delete the local work branch after merge. The CLI still tries to return to the base branch when safe. |
+| `--allow-review-findings` | Continue after blocking findings from an independent changed-file review only after recording an accepted-risk decision. This does not bypass missing, deterministic, or resident/self review evidence. Use remediation and re-review first unless release urgency is intentionally being accepted. |
 
 Deployment-only options:
 
@@ -323,6 +439,10 @@ Deployment-only options:
 
 `--source-ref` and `--commit-sha` are recovery or explicit deployment controls.
 They are not required for normal `verlyn changes deploy <change-id>` usage.
+When the repository resolves to paired or multi-service deployment profiles,
+`changes deploy` records deployment evidence for each required provider target
+and does not treat a single successful service as a complete deployment if any
+required target is stale, pending, unknown, or failed.
 
 If a change explicitly has no governed work branch, `deliver` performs a
 no-code closeout. It closes the workflow item without opening a pull request
@@ -374,6 +494,7 @@ Use review and gate commands to keep evidence in Verlyn:
 ```bash
 verlyn workflow gate <change-id> --scope delivery
 verlyn reviews record <change-id> --tier changed_file_review --disposition accepted --summary "Changed-file review passed."
+verlyn reviews changed-files <change-id> --independent-local-agent --reviewer <agent-name>
 ```
 
 - `workflow gate` inspects whether a change is ready for a named scope such as
@@ -381,6 +502,12 @@ verlyn reviews record <change-id> --tier changed_file_review --disposition accep
 - `reviews record` writes review evidence to the durable Verlyn workflow record.
 - Changed-file review evidence is required before real source-control delivery
   unless Verlyn records a no-diff exemption.
+- `prepare-pr`, `deliver`, and `deploy` all use the same blocking
+  `review_decision` semantics for changed-file review findings and reviewer
+  independence. `deliver` and `deploy` create or update a remediation work item
+  before closeout when the review blocks. `--allow-review-findings` can only
+  override blocking findings from an independent review; missing independent
+  review evidence must be repaired with an independent review.
 
 When a command fails because the current user cannot see a repo, project, or
 change, treat that as a scope or authorization issue. Do not switch to private
