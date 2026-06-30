@@ -221,14 +221,24 @@ verlyn runs --limit 3 --json
 - `changes list` shows your non-closed changes by default.
 - `runs --limit 3 --json` shows recent API-backed analysis/run context.
 
+Workflow change and hint commands default to the authenticated user's own
+records. `workflow assistant-startup --json`, `changes list`, and
+`changes next` should not recommend another user's change or work item unless
+you explicitly ask for all-owner diagnostics. When `changes next` can identify
+an actionable work item for the selected change, it includes `next_work_item`
+and the matching `verlyn work-items show <change-id> <work-item-id>` command so
+agents can continue the current user's chain without guessing.
+
 For diagnostics across visible owners and statuses, including closed history:
 
 ```bash
 verlyn changes list --owner-scope all --status-scope all
 ```
 
-Use `--status-scope all` only when you need older merged, archived, or canceled
-changes. Do not use undocumented shortcuts for all-scope diagnostics.
+Use `--owner-scope all` only when you need cross-user diagnostic output; human
+output labels that mode explicitly. Use `--status-scope all` only when you need
+older merged, archived, or canceled changes. Do not use undocumented shortcuts
+for all-scope diagnostics.
 
 ## Change Workflow
 

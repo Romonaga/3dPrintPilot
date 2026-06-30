@@ -1,16 +1,16 @@
 {
   "product": "Verlyn",
-  "workflow_pack_version": "2026.06.27.1",
+  "workflow_pack_version": "2026.06.29.1",
   "repo_name": "3dprintpilot",
   "install_mode": "governance",
   "installed_at": "2026-06-18T17:17:08.937383+00:00",
-  "refreshed_at": "2026-06-29T19:30:13.084747+00:00",
+  "refreshed_at": "2026-06-30T13:38:25.659441+00:00",
   "governance_pack": {
     "name": "verlyn-standard",
-    "version": "2026.06.27.1",
-    "manifest_hash": "30f5e0fee502879ad550e975f5c20ac3cfed438bed2d1baa2d75496531c65927",
+    "version": "2026.06.29.1",
+    "manifest_hash": "16b8b804d4a4ca821938dca239fb042b484adf50f45e5b467cb3d9b247db30f5",
     "source": "verlyn_api",
-    "refreshed_at": "2026-06-29T19:30:13.084747+00:00",
+    "refreshed_at": "2026-06-30T13:38:25.659441+00:00",
     "repo_owned_paths": [
       "RULES.md"
     ],
@@ -101,7 +101,7 @@
       },
       ".github/workflows/verlyn-pr-gate.yml": {
         "owner": "verlyn",
-        "sha256": "1f42859145522cb4d03fb23716038938b25f17711be51d646b915c17729b00f8",
+        "sha256": "db7fab9e76d46fcba215a965b0faf7b8e37020849d9f1aa2b9de38b8d5d728db",
         "required": true,
         "category": "github",
         "purpose": "ci_gate"
@@ -129,7 +129,7 @@
       },
       "Documentation/guides/VERLYN_PUBLIC_CLI.md": {
         "owner": "verlyn",
-        "sha256": "2ef0f423467c2e2cb631694292649ac1caa3cad4266c92b1a6931b03af7fffdb",
+        "sha256": "40c2c382d141e882300c4fb205431934368bab979ae18dfeff611bdb98497079",
         "required": true,
         "category": "documentation",
         "purpose": "cli_reference"
@@ -164,5 +164,5 @@
       }
     }
   },
-  "manifest_hash": "30f5e0fee502879ad550e975f5c20ac3cfed438bed2d1baa2d75496531c65927"
+  "manifest_hash": "16b8b804d4a4ca821938dca239fb042b484adf50f45e5b467cb3d9b247db30f5"
 }
